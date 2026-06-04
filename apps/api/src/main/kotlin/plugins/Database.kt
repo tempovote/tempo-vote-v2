@@ -5,7 +5,6 @@ import com.zaxxer.hikari.HikariDataSource
 import io.ktor.server.application.*
 import org.flywaydb.core.Flyway
 import org.jetbrains.exposed.sql.Database
-import vote.tempo.db.Tables
 
 fun Application.configureDatabase() {
     val dbUrl = System.getenv("DATABASE_URL")

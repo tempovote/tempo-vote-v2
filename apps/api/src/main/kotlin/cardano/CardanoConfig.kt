@@ -1,12 +1,12 @@
 package vote.tempo.cardano
 
 import com.bloxbean.cardano.client.backend.api.BackendService
-import com.bloxbean.cardano.client.backend.kupmios.KupmiosBackendService
+import com.bloxbean.cardano.client.backend.KupmiosBackendService
 
 enum class Network { PREPROD, MAINNET }
 
 fun Network.fromNetworkId(networkId: Int): Network =
-    if (networkId == 1) MAINNET else PREPROD
+    if (networkId == 1) Network.MAINNET else Network.PREPROD
 
 /**
  * Creates a KupmiosBackendService for the given network.

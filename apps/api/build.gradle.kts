@@ -26,6 +26,7 @@ dependencies {
     // -------------------------------------------------------------------------
     implementation("com.bloxbean.cardano:cardano-client-lib:$cardanoClientVersion")
     implementation("com.bloxbean.cardano:cardano-client-backend-ogmios:$cardanoClientVersion")
+    implementation("com.bloxbean.cardano:cardano-client-governance:$cardanoClientVersion")
 
     // -------------------------------------------------------------------------
     // Ktor server

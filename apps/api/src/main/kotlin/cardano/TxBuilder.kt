@@ -1,19 +1,18 @@
 package vote.tempo.cardano
 
-import com.bloxbean.cardano.client.account.Account
-import com.bloxbean.cardano.client.address.Address
-import com.bloxbean.cardano.client.api.model.Utxo
+import com.bloxbean.cardano.client.address.Credential
 import com.bloxbean.cardano.client.common.model.Networks
-import com.bloxbean.cardano.client.governance.DRep
-import com.bloxbean.cardano.client.governance.DRepId
-import com.bloxbean.cardano.client.governance.DRepType
-import com.bloxbean.cardano.client.governance.Vote
-import com.bloxbean.cardano.client.governance.Voter
-import com.bloxbean.cardano.client.governance.VoterType
-import com.bloxbean.cardano.client.governance.actions.GovActionId
+import com.bloxbean.cardano.client.governance.LegacyDRepId
 import com.bloxbean.cardano.client.quicktx.QuickTxBuilder
 import com.bloxbean.cardano.client.quicktx.Tx
 import com.bloxbean.cardano.client.transaction.spec.governance.Anchor
+import com.bloxbean.cardano.client.transaction.spec.governance.DRep
+import com.bloxbean.cardano.client.transaction.spec.governance.DRepType
+import com.bloxbean.cardano.client.transaction.spec.governance.Vote
+import com.bloxbean.cardano.client.transaction.spec.governance.Voter
+import com.bloxbean.cardano.client.transaction.spec.governance.VoterType
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.GovActionId
+import com.bloxbean.cardano.client.util.HexUtil
 
 /**
  * TxBuilder — wraps cardano-client-lib QuickTx API for governance transactions.
@@ -35,7 +34,7 @@ class TxBuilder(private val network: Network) {
      * @param rewardAddress  bech32 stake/reward address from wallet
      * @param drepId         CIP-105 DRep ID from wallet.cip95.getDRepKey()
      * @param anchorUrl      URL to CIP-119 metadata JSON-LD on IPFS
-     * @param anchorDataHash blake2b-256 hash of the metadata file
+     * @param anchorDataHash blake2b-256 hash of the metadata file (hex)
      * @return unsigned transaction CBOR hex
      */
     fun buildDRepRegister(
@@ -45,10 +44,8 @@ class TxBuilder(private val network: Network) {
         anchorUrl: String,
         anchorDataHash: String,
     ): String {
-        val anchor = Anchor(anchorUrl, anchorDataHash)
-        // We create a temporary account wrapper to get drepCredential from drepId.
-        // This does NOT expose a private key — only the public credential is used.
-        val drepCredential = DRepId.toDrepCredential(drepId)
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val drepCredential = drepIdToCredential(drepId)
 
         val tx = Tx()
             .registerDRep(drepCredential, anchor)
@@ -66,9 +63,9 @@ class TxBuilder(private val network: Network) {
         anchorUrl: String?,
         anchorDataHash: String?,
     ): String {
-        val drepCredential = DRepId.toDrepCredential(drepId)
+        val drepCredential = drepIdToCredential(drepId)
         val tx = if (anchorUrl != null && anchorDataHash != null) {
-            Tx().updateDRep(drepCredential, Anchor(anchorUrl, anchorDataHash)).from(changeAddress)
+            Tx().updateDRep(drepCredential, Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))).from(changeAddress)
         } else {
             Tx().updateDRep(drepCredential).from(changeAddress)
         }
@@ -79,7 +76,7 @@ class TxBuilder(private val network: Network) {
      * Build an unsigned DRep deregistration (retirement) transaction.
      */
     fun buildDRepRetire(changeAddress: String, drepId: String): String {
-        val drepCredential = DRepId.toDrepCredential(drepId)
+        val drepCredential = drepIdToCredential(drepId)
         val tx = Tx()
             .unregisterDRep(drepCredential)
             .from(changeAddress)
@@ -100,7 +97,7 @@ class TxBuilder(private val network: Network) {
         rationaleUrl: String? = null,
         rationaleHash: String? = null,
     ): String {
-        val voter = Voter(VoterType.DREP_KEY_HASH, DRepId.toDrepCredential(drepId))
+        val voter = Voter(VoterType.DREP_KEY_HASH, drepIdToCredential(drepId))
         val govActionId = GovActionId(govActionTxHash, govActionIndex)
         val vote = when (voteKind.uppercase()) {
             "YES"     -> Vote.YES
@@ -125,16 +122,14 @@ class TxBuilder(private val network: Network) {
         targetDrepId: String? = null,
     ): String {
         val drep: DRep = when (delegationType.lowercase()) {
-            "abstain"       -> DRep.ABSTAIN
-            "no_confidence" -> DRep.NO_CONFIDENCE
+            "abstain"       -> DRep.abstain()
+            "no_confidence" -> DRep.noConfidence()
             else            -> {
                 requireNotNull(targetDrepId) { "targetDrepId required for 'drep' delegation type" }
-                DRepId.toDrep(targetDrepId, DRepType.ADDR_KEYHASH)
+                LegacyDRepId.toDrep(targetDrepId, DRepType.ADDR_KEYHASH)
             }
         }
 
-        // delegateVotingPowerTo requires an Account object for the stake credential.
-        // We build a minimal account from the reward address (no private key needed for building).
         val tx = Tx()
             .delegateVotingPowerTo(rewardAddress, drep)
             .from(changeAddress)
@@ -147,6 +142,20 @@ class TxBuilder(private val network: Network) {
     // -------------------------------------------------------------------------
 
     /**
+     * Convert a DRep ID (bech32 drep_...) or hex key hash to a Credential.
+     */
+    private fun drepIdToCredential(drepId: String): Credential {
+        // If it starts with "drep", it's bech32 — decode to get the key hash
+        // Otherwise treat as raw hex key hash
+        return if (drepId.startsWith("drep")) {
+            val hash = com.bloxbean.cardano.client.crypto.Bech32.decode(drepId).data
+            Credential.fromKey(hash)
+        } else {
+            Credential.fromKey(drepId)
+        }
+    }
+
+    /**
      * Complete the transaction WITHOUT signing — returns unsigned CBOR hex.
      * The frontend is responsible for signing via wallet.signTx().
      */
@@ -155,10 +164,8 @@ class TxBuilder(private val network: Network) {
         val transaction = quickTxBuilder
             .compose(tx)
             .feePayer(changeAddress)
-            .buildAndSign() // signs with a no-op signer; we strip witnesses after
-        // Return the transaction body CBOR (without signatures)
-        // cardano-client-lib returns full tx — we send as-is; wallet.signTx handles partial signing
-        return transaction.serialize()
-            ?: error("Failed to serialize transaction")
+            .build()
+        // Return the transaction CBOR hex
+        return transaction.serializeToHex()
     }
 }
