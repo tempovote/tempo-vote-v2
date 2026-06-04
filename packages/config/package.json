@@ -1,0 +1,10 @@
+{
+  "name": "@tempo/config",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./eslint": "./eslint/index.js",
+    "./typescript/*": "./typescript/*.json",
+    "./tailwind": "./tailwind/base.ts"
+  }
+}
