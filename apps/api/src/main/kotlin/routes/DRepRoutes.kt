@@ -10,6 +10,7 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import vote.tempo.cache.CardanoCache
+import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
@@ -43,7 +44,10 @@ fun Route.drepRoutes() {
         }
 
         // GET /dreps/{drepId}?network=mainnet
-        // Served from CardanoCache.drepInfo (30-min TTL per credential).
+        // Lookup order:
+        //   1. drepInfo cache (30-min TTL)
+        //   2. drepList cache pre-warmed by BackgroundPoller (no Ogmios connection needed)
+        //   3. Direct Ogmios query (fallback only — avoids concurrent WS contention with step2)
         get("/{drepId}") {
             val drepId = call.parameters["drepId"]
                 ?: return@get call.respond(mapOf("error" to "drepId required"))
@@ -52,16 +56,37 @@ fun Route.drepRoutes() {
             val credentialHex = drepIdToCredentialHex(drepId)
             val cacheKey = "${network.name}:$credentialHex"
 
+            // 1. drepInfo cache
             CardanoCache.drepInfo.getIfPresent(cacheKey)?.let { cached ->
                 call.respond(cached)
                 return@get
             }
 
+            // 2. Search the pre-warmed drepList — zero Ogmios connections, instant response.
+            // The BackgroundPoller fills drepList 3 s after startup and refreshes every 5 min.
+            // Searching here eliminates WS contention when step1 and step2 fire in parallel.
+            val fromList = searchDrepList(network, drepId, credentialHex)
+            if (fromList != null) {
+                val anchorUrl = fromList["anchorUrl"]?.takeIf { it !is JsonNull }
+                    ?.jsonPrimitive?.contentOrNull
+                val drepName = anchorUrl?.let { fetchDRepName(it) }
+
+                val response = buildJsonObject {
+                    put("isRegistered", fromList["isRegistered"]!!)
+                    put("id", drepId)
+                    put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
+                    put("anchorUrl", fromList["anchorUrl"]!!)
+                }
+                CardanoCache.drepInfo.put(cacheKey, response)
+                call.respond(response)
+                return@get
+            }
+
+            // 3. drepList not yet warm — fall back to direct Ogmios query
             val queries = OgmiosStateQueries(network)
             try {
                 val raw = queries.getDRepByIdRaw(drepId)
 
-                // Ogmios returns an array — may include abstain/noConfidence special entries
                 val drepsArray: JsonArray = when {
                     raw is JsonArray -> raw
                     raw is JsonObject && raw["delegateRepresentatives"] is JsonArray ->
@@ -69,9 +94,8 @@ fun Route.drepRoutes() {
                     else -> JsonArray(emptyList())
                 }
 
-                // Only consider entries of type "registered" (skip abstain/noConfidence)
                 val registeredDrep = drepsArray
-                    .mapNotNull { it.jsonObject }
+                    .mapNotNull { runCatching { it.jsonObject }.getOrNull() }
                     .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
 
                 val response = if (registeredDrep == null) {
@@ -82,11 +106,9 @@ fun Route.drepRoutes() {
                         put("anchorUrl", JsonNull)
                     }
                 } else {
-                    // Ogmios 6.x: anchor URL is at drep.metadata.url
                     val anchorUrl = registeredDrep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
                         ?: registeredDrep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
                     val drepName = anchorUrl?.let { fetchDRepName(it) }
-
                     buildJsonObject {
                         put("isRegistered", true)
                         put("id", drepId)
@@ -165,6 +187,43 @@ fun Route.stakeRoutes() {
                 })
             }
         }
+    }
+}
+
+/**
+ * Search the pre-warmed drepList cache for a specific DRep.
+ * Returns a partial JsonObject { isRegistered, anchorUrl } on cache hit (list is available),
+ * or null when the list is not yet populated (BackgroundPoller not started yet).
+ *
+ * Ogmios 6.x uses bech32 in the `id` field; older versions may use hex credential.
+ * We compare against both to be robust.
+ */
+private fun searchDrepList(network: Network, drepId: String, credentialHex: String): JsonObject? {
+    val listRaw = CardanoCache.drepList.getIfPresent(network.name) ?: return null
+
+    val drepsArray: JsonArray = when {
+        listRaw is JsonArray -> listRaw
+        listRaw is JsonObject && listRaw["delegateRepresentatives"] is JsonArray ->
+            listRaw["delegateRepresentatives"]!!.jsonArray
+        else -> return null
+    }
+
+    val match = drepsArray
+        .mapNotNull { runCatching { it.jsonObject }.getOrNull() }
+        .firstOrNull { entry ->
+            if (entry["type"]?.jsonPrimitive?.contentOrNull != "registered") return@firstOrNull false
+            val id = entry["id"]?.jsonPrimitive?.contentOrNull ?: return@firstOrNull false
+            id == drepId || id == credentialHex
+        }
+
+    val anchorUrl = match?.let {
+        it["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+            ?: it["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+    }
+
+    return buildJsonObject {
+        put("isRegistered", match != null)
+        put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
     }
 }
 
