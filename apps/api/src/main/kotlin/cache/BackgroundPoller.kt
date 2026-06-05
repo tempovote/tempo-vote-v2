@@ -43,9 +43,11 @@ fun Application.startBackgroundPoller() {
 }
 
 private suspend fun pollAllNetworks() {
-    for (network in Network.entries) {
-        pollNetwork(network)
-    }
+    // Only poll networks with an explicitly configured Ogmios URL.
+    // PREPROD falls back to localhost in OgmiosStateQueries, so skip it unless
+    // OGMIOS_PREPROD_URL is set — avoids noisy WARN logs when PREPROD is restricted.
+    if (System.getenv("OGMIOS_MAINNET_URL") != null) pollNetwork(Network.MAINNET)
+    if (System.getenv("OGMIOS_PREPROD_URL") != null) pollNetwork(Network.PREPROD)
 }
 
 private suspend fun pollNetwork(network: Network) {

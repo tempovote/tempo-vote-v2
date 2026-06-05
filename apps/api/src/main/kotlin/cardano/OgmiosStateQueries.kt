@@ -57,12 +57,12 @@ class OgmiosStateQueries(private val network: Network) {
         install(WebSockets)
     }
 
-    suspend fun getGovernanceActions(): JsonObject {
-        return query("queryLedgerState/governanceActions", buildJsonObject {})
+    suspend fun getGovernanceActions(): JsonElement {
+        return queryRaw("queryLedgerState/governanceActions", buildJsonObject {})
     }
 
-    suspend fun getDelegateRepresentatives(): JsonObject {
-        return query("queryLedgerState/delegateRepresentatives", buildJsonObject {})
+    suspend fun getDelegateRepresentatives(): JsonElement {
+        return queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {})
     }
 
     suspend fun getTreasury(): JsonObject {
