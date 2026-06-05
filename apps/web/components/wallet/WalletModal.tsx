@@ -8,21 +8,21 @@ import type { NetworkId } from "@tempo/wallet-bridge"
 
 // All well-known wallets — shown even if not installed
 const KNOWN_WALLETS = [
-  { id: "eternl",  label: "Eternl",  icon: "https://eternl.io/icons/favicon-96x96.png" },
-  { id: "lace",    label: "Lace",    icon: "https://www.lace.io/favicon.ico" },
-  { id: "vespr",   label: "Vespr",   icon: "https://vespr.xyz/favicon.ico" },
-  { id: "yoroi",   label: "Yoroi",   icon: "https://yoroi-wallet.com/favicon.ico" },
-  { id: "nufi",    label: "NuFi",    icon: "https://nu.fi/favicon.ico" },
-  { id: "flint",   label: "Flint",   icon: "https://flint-wallet.com/favicon.ico" },
+  { id: "eternl", label: "Eternl", icon: "https://eternl.io/icons/favicon-96x96.png" },
+  { id: "lace", label: "Lace", icon: "https://www.lace.io/favicon.ico" },
+  { id: "vespr", label: "Vespr", icon: "https://vespr.xyz/favicon.ico" },
+  { id: "yoroi", label: "Yoroi", icon: "https://yoroi-wallet.com/favicon.ico" },
+  { id: "nufi", label: "NuFi", icon: "https://nu.fi/favicon.ico" },
+  { id: "flint", label: "Flint", icon: "https://flint-wallet.com/favicon.ico" },
 ]
 
 const WALLET_INSTALL_URLS: Record<string, string> = {
   eternl: "https://eternl.io",
-  lace:   "https://www.lace.io",
-  vespr:  "https://vespr.xyz",
-  yoroi:  "https://yoroi-wallet.com",
-  nufi:   "https://nu.fi",
-  flint:  "https://flint-wallet.com",
+  lace: "https://www.lace.io",
+  vespr: "https://vespr.xyz",
+  yoroi: "https://yoroi-wallet.com",
+  nufi: "https://nu.fi",
+  flint: "https://flint-wallet.com",
 }
 
 function NetworkBadge({ networkId }: { networkId: NetworkId }) {
@@ -139,43 +139,22 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
               </div>
             </div>
 
-            {/* DRep Section — 3 states */}
-            {cip95Supported ? (
-              drepKey?.dRepIDCip105 ? (
-                /* State 1: Registered DRep — show drep1... ID */
-                <div className="p-3 rounded-xl bg-bg-card border border-border-subtle">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />
-                    <p className="text-text-muted text-xs font-medium">DRep ID (CIP-105)</p>
-                  </div>
-                  <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
-                    {drepKey.dRepIDCip105}
-                  </p>
-                </div>
-              ) : (
-                /* State 2: CIP-95 OK but not a registered DRep */
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-info/5 border border-info/20 text-xs text-info">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 mt-0.5">
-                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                  </svg>
-                  <span style={{ color: "var(--color-info)" }}>
-                    Not registered as a DRep.{" "}
-                    <a
-                      href="/"
-                      className="underline font-semibold hover:opacity-80"
-                      onClick={onClose}
-                    >
-                      Register now ↗
-                    </a>
-                  </span>
-                </div>
-              )
-            ) : (
-              /* State 3: Wallet doesn't support CIP-95 */
+            {/* DRep ID */}
+            {drepKey && (
+              <div className="p-3 rounded-xl bg-bg-card border border-border-subtle">
+                <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-105)</p>
+                <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+                  {drepKey.dRepIDCip105}
+                </p>
+              </div>
+            )}
+
+            {/* No CIP-95 notice */}
+            {!drepKey && (
               <div className="flex items-center gap-2 p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-warning">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
                 </svg>
                 Wallet doesn&apos;t support CIP-95 — governance features limited
               </div>
@@ -189,8 +168,8 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-sm font-medium transition-colors"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2"/>
-                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
                 </svg>
                 {copied ? "Copied!" : "Copy Address"}
               </button>
@@ -199,9 +178,9 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 text-sm font-medium transition-colors"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-                  <polyline points="16 17 21 12 16 7"/>
-                  <line x1="21" y1="12" x2="9" y2="12"/>
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
                 </svg>
                 Disconnect
               </button>
@@ -226,7 +205,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
             {error && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-danger/8 border border-danger/25 text-danger text-xs">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
-                  <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                  <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
                 </svg>
                 {error}
               </div>
@@ -287,7 +266,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                     {/* Install link or chevron */}
                     {isInstalled ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-muted shrink-0">
-                        <polyline points="9 18 15 12 9 6"/>
+                        <polyline points="9 18 15 12 9 6" />
                       </svg>
                     ) : (
                       <a
