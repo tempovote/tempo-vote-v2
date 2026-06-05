@@ -34,7 +34,10 @@ fun loadDotEnv(): Map<String, String> {
 
 application {
     mainClass.set("vote.tempo.ApplicationKt")
-    applicationDefaultJvmArgs = listOf("-Dio.ktor.development=${extra["development"] ?: "false"}")
+    applicationDefaultJvmArgs = listOf(
+        "-Dio.ktor.development=${extra["development"] ?: "false"}",
+        "--enable-native-access=ALL-UNNAMED",
+    )
 }
 
 repositories {
