@@ -109,8 +109,17 @@ class OgmiosStateQueries(private val network: Network) {
                 stakeDelegation = Json.parseToJsonElement(res1.readText()).jsonObject["result"]
                     ?: JsonArray(emptyList())
 
-                // Extract delegated DRep credential hex
-                val accountInfo = (stakeDelegation as? JsonArray)?.firstOrNull()?.jsonObject
+                // Extract delegated DRep credential hex.
+                // Ogmios 6.x returns rewardAccountSummaries as a JsonObject keyed by stake address,
+                // not a JsonArray — handle both formats defensively.
+                // Capture into val so Kotlin can smart-cast (stakeDelegation is a var in a closure).
+                val delegation = stakeDelegation
+                val accountInfo = when {
+                    delegation is JsonArray -> delegation.firstOrNull()?.jsonObject
+                    delegation is JsonObject -> delegation[stakeAddress]?.jsonObject
+                        ?: delegation.values.firstOrNull()?.jsonObject
+                    else -> null
+                }
                 val drepCredentialHex = accountInfo?.let { info ->
                     val delegate = info["delegateRepresentative"]?.jsonObject
                     if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered") {

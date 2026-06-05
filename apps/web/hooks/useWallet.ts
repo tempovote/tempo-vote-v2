@@ -18,69 +18,84 @@ import {
 const STORAGE_KEY = "tempo:last_wallet"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
+// Cancels any in-flight fetchDRepStatus when a new wallet connect starts.
+// Module-level because there is only one active wallet at a time.
+let _fetchController: AbortController | null = null
+
 /**
  * Fetch DRep registration + delegation status from the backend (Ogmios).
  *
- * On success  → calls setDRepStatus with confirmed on-chain data.
- * On failure  → calls setDRepStatusLoading(false), leaves isDrepRegistered=null
- *               so the UI can fall back to wallet-provided data (drepKey).
+ * Steps 1 and 2 run in parallel to minimise latency.
+ * An AbortSignal is accepted so a new connect can cancel a stale in-flight call.
  */
 async function fetchDRepStatus(
   drepId: string | null,
   stakeAddress: string | null,
   network: string,
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void,
-  setDRepStatusError: (kind: "network" | "server") => void
+  setDRepStatusError: (kind: "network" | "server") => void,
+  signal: AbortSignal
 ): Promise<void> {
   let networkError = false
 
-  // TypeError = connection refused (server not running); AbortError/TimeoutError = server slow
+  // TypeError = connection refused; AbortError/TimeoutError = server slow or call cancelled
   const safeFetch = (url: string) =>
-    fetch(url, { signal: AbortSignal.timeout(25000) }).catch((err: unknown) => {
-      if (err instanceof TypeError) networkError = true
-      return null
-    })
+    fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(25000)]) })
+      .catch((err: unknown) => {
+        if (err instanceof TypeError) networkError = true
+        return null
+      })
 
   try {
-    // Step 1: Check DRep registration
+    // Step 1 (DRep registration) and Step 2 (delegation) run in parallel.
+    // This halves latency vs sequential awaits for non-DRep wallets.
+    const [step1Res, step2Res] = await Promise.all([
+      drepId
+        ? safeFetch(`${API_URL}/dreps/${drepId}?network=${network}`)
+        : Promise.resolve(null),
+      stakeAddress
+        ? safeFetch(`${API_URL}/stake/${encodeURIComponent(stakeAddress)}/delegation?network=${network}`)
+        : Promise.resolve(null),
+    ])
+
+    // Abort guard: a new connect may have fired while we were waiting
+    if (signal.aborted) return
+
+    // Parse Step 1
     let isDrepRegistered = false
     let drepName: string | null = null
-    let step1Checked = false
+    let step1Succeeded = false
 
-    if (drepId) {
-      const res = await safeFetch(`${API_URL}/dreps/${drepId}?network=${network}`)
-      if (res?.ok) {
-        const data = await res.json().catch(() => null)
-        if (data != null) {
-          step1Checked = true
-          isDrepRegistered = data.isRegistered === true
-          drepName = data.name ?? null
-        }
+    if (step1Res?.ok) {
+      const data = await step1Res.json().catch(() => null)
+      if (data != null) {
+        step1Succeeded = true
+        isDrepRegistered = data.isRegistered === true
+        drepName = data.name ?? null
       }
     }
 
-    // Registered DRep — no delegation check needed
+    if (signal.aborted) return
+
+    // Registered DRep — delegation check not needed
     if (isDrepRegistered) {
       setDRepStatus({ isDrepRegistered: true, drepName, delegatedDrep: null })
       return
     }
 
-    // Step 2: Delegation check — mandatory for non-DRep wallets.
-    // Without it we cannot distinguish "not delegated" from "query failed",
-    // and calling setDRepStatus with delegatedDrep=null would incorrectly show GovernanceCTA.
+    // No stake address — cannot check delegation
     if (!stakeAddress) {
-      step1Checked
+      step1Succeeded
         ? setDRepStatus({ isDrepRegistered: false, drepName: null, delegatedDrep: null })
         : setDRepStatusError(networkError ? "network" : "server")
       return
     }
 
-    const res2 = await safeFetch(
-      `${API_URL}/stake/${encodeURIComponent(stakeAddress)}/delegation?network=${network}`
-    )
-    if (res2?.ok) {
-      const data = await res2.json().catch(() => null)
+    // Parse Step 2 — mandatory to distinguish "not delegated" from "query failed"
+    if (step2Res?.ok) {
+      const data = await step2Res.json().catch(() => null)
       if (data != null) {
+        if (signal.aborted) return
         const drepData = data?.delegatedDrep
         const delegatedDrep: DelegatedDrep | null = drepData
           ? { id: drepData.id, name: drepData.name ?? null }
@@ -90,9 +105,10 @@ async function fetchDRepStatus(
       }
     }
 
-    // Step 2 failed — can't confirm delegation status, show error
+    // Step 2 failed — cannot confirm delegation status
     setDRepStatusError(networkError ? "network" : "server")
   } catch (err: unknown) {
+    if (signal.aborted) return
     setDRepStatusError(err instanceof TypeError ? "network" : "server")
   }
 }
@@ -128,12 +144,17 @@ export function useWallet() {
 
     try { localStorage.setItem(STORAGE_KEY, walletName) } catch { /* SSR safe */ }
 
-    // Fire-and-forget: verify actual DRep/delegation status via Ogmios
+    // Fire-and-forget: verify actual DRep/delegation status via Ogmios.
+    // Cancel any previous in-flight call to prevent stale results overwriting fresh ones.
     if (cip95Active) {
       const network = networkId === 1 ? "mainnet" : "preprod"
       const drepId  = drepKey?.dRepIDCip105 || null
+
+      _fetchController?.abort()
+      _fetchController = new AbortController()
+
       store.setDRepStatusLoading(true)
-      fetchDRepStatus(drepId, rewardAddress, network, store.setDRepStatus, store.setDRepStatusError)
+      fetchDRepStatus(drepId, rewardAddress, network, store.setDRepStatus, store.setDRepStatusError, _fetchController.signal)
     }
   }, [store])
 
@@ -167,8 +188,10 @@ export function useWallet() {
     }
   }, [store.isConnected, _populate])
 
-  /** Disconnect — clear state + persisted key */
+  /** Disconnect — cancel in-flight status fetch, clear state + persisted key */
   const disconnect = useCallback(() => {
+    _fetchController?.abort()
+    _fetchController = null
     store.reset()
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [store])
