@@ -27,3 +27,6 @@ export { signTx, signData, submitTx } from "./sign"
 
 // CIP-95 governance
 export { getDRepKey, getDRepId, hasCip95, getRegisteredStakeKeys, getUnregisteredStakeKeys } from "./cip95"
+
+// Address utilities
+export { hexAddressToBech32 } from "./utils"
