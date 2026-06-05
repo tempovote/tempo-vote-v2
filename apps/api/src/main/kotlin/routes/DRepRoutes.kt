@@ -192,11 +192,15 @@ fun Route.stakeRoutes() {
 
 /**
  * Search the pre-warmed drepList cache for a specific DRep.
- * Returns a partial JsonObject { isRegistered, anchorUrl } on cache hit (list is available),
- * or null when the list is not yet populated (BackgroundPoller not started yet).
+ * Returns a partial JsonObject { isRegistered: true, anchorUrl } on a POSITIVE match only.
+ * Returns null when:
+ *   - The list is not yet warmed (BackgroundPoller hasn't run yet), OR
+ *   - The DRep was not found — caller falls through to a direct Ogmios query so we
+ *     never cache a false-negative (e.g. when the list just refreshed and the DRep
+ *     was newly registered).
  *
- * Ogmios 6.x uses bech32 in the `id` field; older versions may use hex credential.
- * We compare against both to be robust.
+ * Ogmios may return DRep `id` as bech32 (drep1…) or as raw hex credential hash.
+ * Both are normalised to hex before comparison so the lookup works regardless of format.
  */
 private fun searchDrepList(network: Network, drepId: String, credentialHex: String): JsonObject? {
     val listRaw = CardanoCache.drepList.getIfPresent(network.name) ?: return null
@@ -213,16 +217,22 @@ private fun searchDrepList(network: Network, drepId: String, credentialHex: Stri
         .firstOrNull { entry ->
             if (entry["type"]?.jsonPrimitive?.contentOrNull != "registered") return@firstOrNull false
             val id = entry["id"]?.jsonPrimitive?.contentOrNull ?: return@firstOrNull false
-            id == drepId || id == credentialHex
+            // Normalise to hex for robust comparison:
+            //   • list has bech32, input is bech32  → id == drepId
+            //   • list has hex,    input is hex     → id == credentialHex
+            //   • list has bech32, input is hex     → decode list entry and compare
+            //   • list has hex,    input is bech32  → id == credentialHex (same value)
+            id == drepId || id == credentialHex ||
+                (id.startsWith("drep") &&
+                    runCatching { drepIdToCredentialHex(id) }.getOrNull() == credentialHex)
         }
+        ?: return null  // not found — fall through to Ogmios so we never cache false-negatives
 
-    val anchorUrl = match?.let {
-        it["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-            ?: it["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-    }
+    val anchorUrl = match["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+        ?: match["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
 
     return buildJsonObject {
-        put("isRegistered", match != null)
+        put("isRegistered", true)
         put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
     }
 }
