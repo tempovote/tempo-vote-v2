@@ -94,6 +94,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // -------------------------------------------------------------------------
+    // Cache — Caffeine (high-performance JVM cache, replaces manual ConcurrentHashMap+TTL)
+    // -------------------------------------------------------------------------
+    implementation("com.github.ben-manes.caffeine:caffeine:3.2.0")
+
+    // -------------------------------------------------------------------------
     // Logging
     // -------------------------------------------------------------------------
     implementation("ch.qos.logback:logback-classic:1.5.16")

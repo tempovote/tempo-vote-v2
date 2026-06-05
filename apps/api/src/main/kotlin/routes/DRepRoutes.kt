@@ -9,17 +9,12 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
 
 private val httpClient = HttpClient(CIO)
-
-// In-memory DRep info cache keyed by "network:credentialHex".
-// Avoids repeated Ogmios queries + external HTTP calls for the same DRep.
-// TTL: 30 minutes — DRep metadata changes rarely.
-private val drepInfoCache = java.util.concurrent.ConcurrentHashMap<String, Pair<JsonObject, Long>>()
-private const val DREP_CACHE_TTL_MS = 30L * 60 * 1_000
 
 /**
  * GET /dreps/{drepId}?network=mainnet
@@ -32,14 +27,23 @@ fun Route.drepRoutes() {
     route("/dreps") {
 
         // GET /dreps?network=mainnet — list all registered DReps
+        // Served from CardanoCache.drepList (pre-warmed by BackgroundPoller every 5 min).
         get {
             val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+
+            CardanoCache.drepList.getIfPresent(network.name)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
             val queries = OgmiosStateQueries(network)
             val result = queries.getDelegateRepresentatives()
+            CardanoCache.drepList.put(network.name, result)
             call.respond(result)
         }
 
         // GET /dreps/{drepId}?network=mainnet
+        // Served from CardanoCache.drepInfo (30-min TTL per credential).
         get("/{drepId}") {
             val drepId = call.parameters["drepId"]
                 ?: return@get call.respond(mapOf("error" to "drepId required"))
@@ -47,14 +51,10 @@ fun Route.drepRoutes() {
 
             val credentialHex = drepIdToCredentialHex(drepId)
             val cacheKey = "${network.name}:$credentialHex"
-            val now = System.currentTimeMillis()
 
-            // Return cached response immediately if still fresh
-            drepInfoCache[cacheKey]?.let { (cached, expiry) ->
-                if (expiry > now) {
-                    call.respond(cached)
-                    return@get
-                }
+            CardanoCache.drepInfo.getIfPresent(cacheKey)?.let { cached ->
+                call.respond(cached)
+                return@get
             }
 
             val queries = OgmiosStateQueries(network)
@@ -74,31 +74,28 @@ fun Route.drepRoutes() {
                     .mapNotNull { it.jsonObject }
                     .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
 
-                if (registeredDrep == null) {
-                    val response = buildJsonObject {
+                val response = if (registeredDrep == null) {
+                    buildJsonObject {
                         put("isRegistered", false)
                         put("id", drepId)
                         put("name", JsonNull)
                         put("anchorUrl", JsonNull)
                     }
-                    drepInfoCache[cacheKey] = Pair(response, now + DREP_CACHE_TTL_MS)
-                    call.respond(response)
-                    return@get
+                } else {
+                    // Ogmios 6.x: anchor URL is at drep.metadata.url
+                    val anchorUrl = registeredDrep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: registeredDrep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                    val drepName = anchorUrl?.let { fetchDRepName(it) }
+
+                    buildJsonObject {
+                        put("isRegistered", true)
+                        put("id", drepId)
+                        put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
+                        put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                    }
                 }
 
-                // Ogmios 6.x: anchor URL is at drep.metadata.url
-                val anchorUrl = registeredDrep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                    ?: registeredDrep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-
-                val drepName = anchorUrl?.let { fetchDRepName(it) }
-
-                val response = buildJsonObject {
-                    put("isRegistered", true)
-                    put("id", drepId)
-                    put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
-                    put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                }
-                drepInfoCache[cacheKey] = Pair(response, now + DREP_CACHE_TTL_MS)
+                CardanoCache.drepInfo.put(cacheKey, response)
                 call.respond(response)
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
@@ -114,16 +111,25 @@ fun Route.stakeRoutes() {
 
         // GET /stake/{stakeAddress}/delegation?network=mainnet
         // Returns which DRep this stake address has delegated voting power to.
-        // Intentionally returns name:null — client fetches the name via GET /dreps/{id}
-        // so this endpoint responds in a single Ogmios round-trip (no external HTTP).
+        // Served from CardanoCache.stakeDeleg (60-s TTL) — reconnects/page refreshes
+        // within one minute are instant. Intentionally returns name:null; the client
+        // background-fetches the name via /dreps/{id} (served from drepInfo cache).
         get("/{stakeAddress}/delegation") {
             val stakeAddress = call.parameters["stakeAddress"]
                 ?: return@get call.respond(mapOf("error" to "stakeAddress required"))
             val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
-            val queries = OgmiosStateQueries(network)
 
+            val cacheKey = "${network.name}:$stakeAddress"
+
+            // Cache hit — respond instantly, no Ogmios round-trip
+            CardanoCache.stakeDeleg.getIfPresent(cacheKey)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
+            // Cache miss — single Ogmios query, no external HTTP
+            val queries = OgmiosStateQueries(network)
             try {
-                // Single Ogmios query — fast path (no external HTTP, no second WS query)
                 val delegationRaw = queries.getStakeDelegation(stakeAddress)
 
                 val accountInfo = when {
@@ -140,18 +146,19 @@ fun Route.stakeRoutes() {
                     } else null
                 }
 
-                if (drepCredential == null) {
-                    call.respond(buildJsonObject { put("delegatedDrep", JsonNull) })
-                    return@get
+                val response = if (drepCredential == null) {
+                    buildJsonObject { put("delegatedDrep", JsonNull) }
+                } else {
+                    buildJsonObject {
+                        putJsonObject("delegatedDrep") {
+                            put("id", drepCredential)
+                            put("name", JsonNull)
+                        }
+                    }
                 }
 
-                // Return DRep credential immediately; name is resolved by the client via /dreps/{id}
-                call.respond(buildJsonObject {
-                    putJsonObject("delegatedDrep") {
-                        put("id", drepCredential)
-                        put("name", JsonNull)
-                    }
-                })
+                CardanoCache.stakeDeleg.put(cacheKey, response)
+                call.respond(response)
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
                     put("error", e.message ?: "Ogmios query failed")

@@ -3,6 +3,7 @@ package vote.tempo
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
+import vote.tempo.cache.startBackgroundPoller
 import vote.tempo.plugins.*
 
 fun main() {
@@ -17,4 +18,5 @@ fun Application.module() {
     configureStatusPages()
     configureDatabase()
     configureRouting()
+    startBackgroundPoller()
 }
