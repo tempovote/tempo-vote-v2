@@ -26,8 +26,13 @@ export async function getDRepKey(api: WalletApi): Promise<DRepKey> {
   }
 
   // Method 1: Eternl / wallets that provide the full DRepKey object
+  // dRepIDCip105 may be empty on some wallets — derive from pubDRepKey as fallback
   if (typeof api.cip95.getDRepKey === "function") {
-    return api.cip95.getDRepKey()
+    const key = await api.cip95.getDRepKey()
+    return {
+      ...key,
+      dRepIDCip105: key.dRepIDCip105 || pubDRepKeyToDrepId(key.pubDRepKey),
+    }
   }
 
   // Method 2: CIP-95 standard — only returns the raw public key hex
