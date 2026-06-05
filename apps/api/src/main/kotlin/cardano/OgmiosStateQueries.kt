@@ -21,11 +21,14 @@ typealias JsonResult = JsonElement
  *
  * Ogmios JSON-RPC WebSocket protocol: https://ogmios.dev/api/
  */
+/** Convert http(s):// → ws(s):// so Ktor's WebSocket client can connect. */
+private fun String.toWsUrl() = replace(Regex("^https://"), "wss://").replace(Regex("^http://"), "ws://")
+
 class OgmiosStateQueries(private val network: Network) {
 
     private val ogmiosUrl = when (network) {
-        Network.PREPROD -> System.getenv("OGMIOS_PREPROD_URL") ?: "ws://localhost:1337"
-        Network.MAINNET -> System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")
+        Network.PREPROD -> (System.getenv("OGMIOS_PREPROD_URL") ?: "ws://localhost:1337").toWsUrl()
+        Network.MAINNET -> (System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")).toWsUrl()
     }
 
     private val client = HttpClient(CIO) {
