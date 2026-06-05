@@ -62,8 +62,11 @@ Implement `POST /metadata/upload`:
   - [x] Error handling: missing PINATA_JWT, Pinata API errors, validation errors
 - [x] **1.2** Xóa stub `metadataRoutes()` khỏi `StubRoutes.kt`
 - [x] **1.3** Thêm `MetadataUploadRequest`/`Response` schemas vào `packages/types/src/api/metadata.ts`
-- [ ] **1.4** Thêm `PINATA_JWT=...` vào `.env.example`
-- [ ] **1.5** Test thủ công: `curl POST /metadata/upload` với Pinata JWT thật
+- [x] **1.4** Thêm `PINATA_JWT=...` vào `.env.example`
+- [x] **1.5** Test thủ công: `curl POST /metadata/upload` với Pinata JWT thật
+  - Upload OK: `ipfs://QmdDJw5di9toqqBYHfVYpL3vgoQMFvHyfrWDsjf8bn3a1P`
+  - Hash OK: `fcbb986e...` (blake2b-256)
+  - IPFS gateway verify OK — CIP-119 JSON-LD đúng format
 
 ---
 
