@@ -51,7 +51,8 @@ interface WalletModalProps {
 export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
   const {
     isConnected, isConnecting, error,
-    name, networkId, changeAddress, drepKey, hasCip95: cip95Supported,
+    name, networkId, changeAddress, drepKey, drepName, delegatedDrep,
+    hasCip95: cip95Supported,
     connect, disconnect, availableWallets,
   } = useWallet()
 
@@ -139,18 +140,62 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
               </div>
             </div>
 
-            {/* DRep ID */}
+            {/* Case 1: Registered as DRep — show Name + DRep ID (CIP-129) */}
             {drepKey && (
-              <div className="p-3 rounded-xl bg-bg-card border border-border-subtle">
-                <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-105)</p>
-                <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
-                  {drepKey.dRepIDCip105}
-                </p>
+              <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+                <div className="p-3">
+                  <p className="text-text-muted text-xs mb-1 font-medium">DRep Name</p>
+                  <p className="text-text-primary text-sm font-semibold">
+                    {drepName ?? "—"}
+                  </p>
+                </div>
+                <div className="p-3">
+                  <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-129)</p>
+                  <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+                    {drepKey.dRepIDCip105 || "—"}
+                  </p>
+                </div>
               </div>
             )}
 
+            {/* Case 2: Not a DRep */}
+            {!drepKey && cip95Supported && (
+              delegatedDrep ? (
+                /* Case 2b: Delegated */
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-success">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Delegated to &ldquo;{delegatedDrep.name ?? truncateAddress(delegatedDrep.id, 8)}&rdquo;
+                </div>
+              ) : (
+                /* Case 2a: Not delegated — CTA */
+                <div className="p-3 rounded-xl bg-bg-card border border-border-subtle space-y-3">
+                  <p className="text-text-secondary text-xs leading-relaxed">
+                    Tham gia quản trị Cardano bằng cách delegate cho DRep hoặc tự đăng ký trở thành DRep.
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <a
+                      href="/dreps"
+                      onClick={onClose}
+                      className="flex items-center justify-center py-2 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-xs font-medium transition-colors"
+                    >
+                      Tìm DRep để delegate
+                    </a>
+                    <a
+                      href="/dreps/register"
+                      onClick={onClose}
+                      className="flex items-center justify-center py-2 rounded-lg bg-accent/15 border border-accent/30 text-accent-light hover:bg-accent/25 text-xs font-medium transition-colors"
+                    >
+                      Đăng ký trở thành DRep
+                    </a>
+                  </div>
+                </div>
+              )
+            )}
+
             {/* No CIP-95 notice */}
-            {!drepKey && (
+            {!cip95Supported && (
               <div className="flex items-center gap-2 p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-warning">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                   <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -159,7 +204,6 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 Wallet doesn&apos;t support CIP-95 — governance features limited
               </div>
             )}
-
 
             {/* Actions */}
             <div className="flex gap-2">

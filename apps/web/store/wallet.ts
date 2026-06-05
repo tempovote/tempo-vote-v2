@@ -1,6 +1,11 @@
 import { create } from "zustand"
 import type { WalletApi, NetworkId, DRepKey } from "@tempo/wallet-bridge"
 
+export interface DelegatedDrep {
+  id: string
+  name: string | null
+}
+
 interface WalletState {
   api: WalletApi | null
   name: string | null
@@ -8,6 +13,8 @@ interface WalletState {
   changeAddress: string | null
   rewardAddress: string | null
   drepKey: DRepKey | null
+  drepName: string | null           // on-chain metadata name, fetched separately
+  delegatedDrep: DelegatedDrep | null  // DRep the wallet has delegated voting power to
   hasCip95: boolean
   isConnected: boolean
   isConnecting: boolean
@@ -28,6 +35,8 @@ const initialState: WalletState = {
   changeAddress: null,
   rewardAddress: null,
   drepKey: null,
+  drepName: null,
+  delegatedDrep: null,
   hasCip95: false,
   isConnected: false,
   isConnecting: false,
