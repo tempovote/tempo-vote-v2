@@ -9,6 +9,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
@@ -26,20 +27,37 @@ fun Route.drepRoutes() {
     route("/dreps") {
 
         // GET /dreps?network=mainnet — list all registered DReps
+        // Served from CardanoCache.drepList (pre-warmed by BackgroundPoller every 5 min).
         get {
             val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+
+            CardanoCache.drepList.getIfPresent(network.name)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
             val queries = OgmiosStateQueries(network)
             val result = queries.getDelegateRepresentatives()
+            CardanoCache.drepList.put(network.name, result)
             call.respond(result)
         }
 
         // GET /dreps/{drepId}?network=mainnet
+        // Served from CardanoCache.drepInfo (30-min TTL per credential).
         get("/{drepId}") {
             val drepId = call.parameters["drepId"]
                 ?: return@get call.respond(mapOf("error" to "drepId required"))
             val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
-            val queries = OgmiosStateQueries(network)
 
+            val credentialHex = drepIdToCredentialHex(drepId)
+            val cacheKey = "${network.name}:$credentialHex"
+
+            CardanoCache.drepInfo.getIfPresent(cacheKey)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
+            val queries = OgmiosStateQueries(network)
             try {
                 val raw = queries.getDRepByIdRaw(drepId)
 
@@ -56,29 +74,29 @@ fun Route.drepRoutes() {
                     .mapNotNull { it.jsonObject }
                     .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
 
-                if (registeredDrep == null) {
-                    call.respond(buildJsonObject {
+                val response = if (registeredDrep == null) {
+                    buildJsonObject {
                         put("isRegistered", false)
                         put("id", drepId)
                         put("name", JsonNull)
                         put("anchorUrl", JsonNull)
-                    })
-                    return@get
+                    }
+                } else {
+                    // Ogmios 6.x: anchor URL is at drep.metadata.url
+                    val anchorUrl = registeredDrep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: registeredDrep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                    val drepName = anchorUrl?.let { fetchDRepName(it) }
+
+                    buildJsonObject {
+                        put("isRegistered", true)
+                        put("id", drepId)
+                        put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
+                        put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                    }
                 }
 
-                val drep = registeredDrep
-                // Ogmios 6.x: anchor URL is at drep.metadata.url
-                val anchorUrl = drep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                    ?: drep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-
-                val drepName = anchorUrl?.let { fetchDRepName(it) }
-
-                call.respond(buildJsonObject {
-                    put("isRegistered", true)
-                    put("id", drepId)
-                    put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
-                    put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                })
+                CardanoCache.drepInfo.put(cacheKey, response)
+                call.respond(response)
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
                     put("error", e.message ?: "Ogmios query failed")
@@ -93,15 +111,26 @@ fun Route.stakeRoutes() {
 
         // GET /stake/{stakeAddress}/delegation?network=mainnet
         // Returns which DRep this stake address has delegated voting power to.
+        // Served from CardanoCache.stakeDeleg (60-s TTL) — reconnects/page refreshes
+        // within one minute are instant. Intentionally returns name:null; the client
+        // background-fetches the name via /dreps/{id} (served from drepInfo cache).
         get("/{stakeAddress}/delegation") {
             val stakeAddress = call.parameters["stakeAddress"]
                 ?: return@get call.respond(mapOf("error" to "stakeAddress required"))
             val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
-            val queries = OgmiosStateQueries(network)
 
+            val cacheKey = "${network.name}:$stakeAddress"
+
+            // Cache hit — respond instantly, no Ogmios round-trip
+            CardanoCache.stakeDeleg.getIfPresent(cacheKey)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
+            // Cache miss — single Ogmios query, no external HTTP
+            val queries = OgmiosStateQueries(network)
             try {
-                // Single WS session: get delegation + DRep info in one round-trip
-                val (delegationRaw, drepInfoRaw) = queries.getStakeDelegationWithDRepInfo(stakeAddress)
+                val delegationRaw = queries.getStakeDelegation(stakeAddress)
 
                 val accountInfo = when {
                     delegationRaw is JsonArray -> delegationRaw.firstOrNull()?.jsonObject
@@ -110,40 +139,26 @@ fun Route.stakeRoutes() {
                     else -> null
                 }
 
-                val drepId = accountInfo?.let { info ->
+                val drepCredential = accountInfo?.let { info ->
                     val delegate = info["delegateRepresentative"]?.jsonObject
                     if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered") {
                         delegate["id"]?.jsonPrimitive?.contentOrNull
                     } else null
                 }
 
-                if (drepId == null) {
-                    call.respond(buildJsonObject { put("delegatedDrep", JsonNull) })
-                    return@get
+                val response = if (drepCredential == null) {
+                    buildJsonObject { put("delegatedDrep", JsonNull) }
+                } else {
+                    buildJsonObject {
+                        putJsonObject("delegatedDrep") {
+                            put("id", drepCredential)
+                            put("name", JsonNull)
+                        }
+                    }
                 }
 
-                // DRep info already fetched in the same WS session — no extra connection needed
-                val drepName = drepInfoRaw?.let { raw ->
-                    val drepsArr = when {
-                        raw is JsonArray -> raw
-                        raw is JsonObject && raw["delegateRepresentatives"] is JsonArray ->
-                            raw["delegateRepresentatives"]!!.jsonArray
-                        else -> JsonArray(emptyList())
-                    }
-                    val registeredEntry = drepsArr.mapNotNull { it.jsonObject }
-                        .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
-                    val anchorUrl = registeredEntry
-                        ?.let { it["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                            ?: it["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull }
-                    anchorUrl?.let { fetchDRepName(it) }
-                }
-
-                call.respond(buildJsonObject {
-                    putJsonObject("delegatedDrep") {
-                        put("id", drepId)
-                        put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
-                    }
-                })
+                CardanoCache.stakeDeleg.put(cacheKey, response)
+                call.respond(response)
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
                     put("error", e.message ?: "Ogmios query failed")

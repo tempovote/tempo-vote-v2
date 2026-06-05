@@ -100,7 +100,27 @@ async function fetchDRepStatus(
         const delegatedDrep: DelegatedDrep | null = drepData
           ? { id: drepData.id, name: drepData.name ?? null }
           : null
+
+        // Show delegation status immediately — name may be null (backend omits it for speed)
         setDRepStatus({ isDrepRegistered: false, drepName: null, delegatedDrep })
+
+        // Background-fetch the DRep name via /dreps/{id} (served from cache after first hit)
+        if (delegatedDrep && !delegatedDrep.name) {
+          safeFetch(`${API_URL}/dreps/${encodeURIComponent(delegatedDrep.id)}?network=${network}`)
+            .then(res => res?.json().catch(() => null))
+            .then(nameData => {
+              if (signal.aborted) return
+              const name: string | null = nameData?.name ?? null
+              if (name) {
+                setDRepStatus({
+                  isDrepRegistered: false,
+                  drepName: null,
+                  delegatedDrep: { id: delegatedDrep.id, name },
+                })
+              }
+            })
+            .catch(() => { /* name is optional — ignore failures */ })
+        }
         return
       }
     }
