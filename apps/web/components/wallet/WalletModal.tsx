@@ -51,7 +51,7 @@ interface WalletModalProps {
 export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
   const {
     isConnected, isConnecting, error,
-    name, networkId, changeAddress, drepKey,
+    name, networkId, changeAddress, drepKey, hasCip95: cip95Supported,
     connect, disconnect, availableWallets,
   } = useWallet()
 
@@ -140,17 +140,19 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
             </div>
 
             {/* DRep ID */}
-            {drepKey && (
+            {drepKey && (drepKey.dRepIDCip105 || drepKey.pubDRepKey) && (
               <div className="p-3 rounded-xl bg-bg-card border border-border-subtle">
-                <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-105)</p>
+                <p className="text-text-muted text-xs mb-1 font-medium">
+                  {drepKey.dRepIDCip105 ? "DRep ID (CIP-105)" : "DRep Public Key"}
+                </p>
                 <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
-                  {drepKey.dRepIDCip105}
+                  {drepKey.dRepIDCip105 || drepKey.pubDRepKey}
                 </p>
               </div>
             )}
 
-            {/* No CIP-95 notice */}
-            {!drepKey && (
+            {/* No CIP-95 notice — only if wallet truly doesn't support it */}
+            {!cip95Supported && (
               <div className="flex items-center gap-2 p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-warning">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                   <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>

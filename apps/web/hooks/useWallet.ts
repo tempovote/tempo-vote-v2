@@ -9,7 +9,9 @@ import {
   getChangeAddress,
   getRewardAddresses,
   getDRepKey,
+  hasCip95,
   isWalletEnabled,
+  hexAddressToBech32,
 } from "@tempo/wallet-bridge"
 
 const STORAGE_KEY = "tempo:last_wallet"
@@ -20,18 +22,28 @@ export function useWallet() {
   /** Internal: fetch all wallet data after enabling */
   const _populate = useCallback(async (walletName: string) => {
     const api = await connectWallet(walletName)
-    const networkId    = await getNetworkId(api)
-    const changeAddress = await getChangeAddress(api)
-    const rewardAddresses = await getRewardAddresses(api)
-    const drepKey = await getDRepKey(api).catch(() => null)
+    const networkId       = await getNetworkId(api)
+    const changeAddressHex = await getChangeAddress(api)
+    const rewardAddresses  = await getRewardAddresses(api)
+
+    // Decode CIP-30 hex address → human-readable bech32 (addr1... / addr_test1...)
+    const changeAddress = hexAddressToBech32(changeAddressHex, networkId)
+    const rewardAddress = rewardAddresses[0]
+      ? hexAddressToBech32(rewardAddresses[0], networkId)
+      : null
+
+    // Try to get DRep key (CIP-95). Null if wallet doesn't support it or user hasn't set it up.
+    const drepKey     = await getDRepKey(api).catch(() => null)
+    const cip95Active = hasCip95(api)
 
     store.setWallet({
       api,
       name: walletName,
       networkId,
       changeAddress,
-      rewardAddress: rewardAddresses[0] ?? null,
+      rewardAddress,
       drepKey,
+      hasCip95: cip95Active,
       isConnected: true,
     })
 
