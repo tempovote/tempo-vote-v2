@@ -10,6 +10,7 @@ fun Application.configureRouting() {
         transactionRoutes()
         governanceRoutes()
         drepRoutes()
+        stakeRoutes()
         pollRoutes()
         communityRoutes()
         metadataRoutes()

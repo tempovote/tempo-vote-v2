@@ -51,7 +51,8 @@ interface WalletModalProps {
 export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
   const {
     isConnected, isConnecting, error,
-    name, networkId, changeAddress, drepKey, drepName, delegatedDrep,
+    name, networkId, changeAddress, drepKey,
+    drepName, isDrepRegistered, delegatedDrep, drepStatusLoading,
     hasCip95: cip95Supported,
     connect, disconnect, availableWallets,
   } = useWallet()
@@ -140,28 +141,32 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
               </div>
             </div>
 
-            {/* Case 1: Registered as DRep — show Name + DRep ID (CIP-129) */}
-            {drepKey && (
-              <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
-                <div className="p-3">
-                  <p className="text-text-muted text-xs mb-1 font-medium">DRep Name</p>
-                  <p className="text-text-primary text-sm font-semibold">
-                    {drepName ?? "—"}
-                  </p>
+            {/* ── Governance status (CIP-95 only) ── */}
+            {cip95Supported && (
+              drepStatusLoading ? (
+                /* Fetching on-chain status */
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-bg-card border border-border-subtle text-xs text-text-muted">
+                  <div className="spinner shrink-0" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                  Checking governance status...
                 </div>
-                <div className="p-3">
-                  <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-129)</p>
-                  <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
-                    {drepKey.dRepIDCip105 || "—"}
-                  </p>
+              ) : isDrepRegistered ? (
+                /* Case 1: Registered DRep — show Name + DRep ID (CIP-129) */
+                <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+                  <div className="p-3">
+                    <p className="text-text-muted text-xs mb-1 font-medium">DRep Name</p>
+                    <p className="text-text-primary text-sm font-semibold">
+                      {drepName ?? "—"}
+                    </p>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-129)</p>
+                    <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+                      {drepKey?.dRepIDCip105 || "—"}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* Case 2: Not a DRep */}
-            {!drepKey && cip95Supported && (
-              delegatedDrep ? (
-                /* Case 2b: Delegated */
+              ) : delegatedDrep ? (
+                /* Case 2: Not a DRep, but has delegated voting power */
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-success">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                     <polyline points="20 6 9 17 4 12" />
@@ -169,7 +174,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   Delegated to &ldquo;{delegatedDrep.name ?? truncateAddress(delegatedDrep.id, 8)}&rdquo;
                 </div>
               ) : (
-                /* Case 2a: Not delegated — CTA */
+                /* Case 3: Not a DRep and no delegation — CTA */
                 <div className="p-3 rounded-xl bg-bg-card border border-border-subtle space-y-3">
                   <p className="text-text-secondary text-xs leading-relaxed">
                     Tham gia quản trị Cardano bằng cách delegate cho DRep hoặc tự đăng ký trở thành DRep.

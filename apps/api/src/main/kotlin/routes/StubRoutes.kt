@@ -11,13 +11,6 @@ fun Route.healthRoutes() {
 
 // Stubs — to be implemented in Week 2-3
 
-fun Route.drepRoutes() {
-    route("/dreps") {
-        get { call.respond(mapOf("TODO" to "DRep list from Ogmios")) }
-        get("/{drepId}") { call.respond(mapOf("TODO" to "DRep detail")) }
-    }
-}
-
 fun Route.pollRoutes() {
     route("/polls") {
         get    { call.respond(mapOf("TODO" to "List internal polls")) }

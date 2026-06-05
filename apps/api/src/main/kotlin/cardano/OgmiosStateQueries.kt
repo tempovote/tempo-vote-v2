@@ -6,6 +6,9 @@ import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.serialization.json.*
 
+// Raw JSON element (may be object or array) — for queries that return arrays
+typealias JsonResult = JsonElement
+
 /**
  * OgmiosStateQueries — direct WebSocket queries to Ogmios for on-chain governance data.
  *
@@ -70,10 +73,39 @@ class OgmiosStateQueries(private val network: Network) {
         return query("queryLedgerState/protocolParameters", buildJsonObject {})
     }
 
+    /**
+     * Query a specific DRep by ID, returning the raw JsonElement result.
+     * Ogmios returns an array of matching DRep objects.
+     */
+    suspend fun getDRepByIdRaw(drepId: String): JsonElement {
+        val params = buildJsonObject {
+            putJsonArray("keys") { add(buildJsonObject { put("id", drepId) }) }
+        }
+        return queryRaw("queryLedgerState/delegateRepresentatives", params)
+    }
+
+    /**
+     * Query stake address delegation info (Conway era).
+     * Returns DRep delegation and pool delegation for the given stake address.
+     * Method: queryLedgerState/rewardAccountSummaries
+     */
+    suspend fun getStakeDelegation(stakeAddress: String): JsonElement {
+        val params = buildJsonObject {
+            putJsonArray("keys") { add(stakeAddress) }
+        }
+        return queryRaw("queryLedgerState/rewardAccountSummaries", params)
+    }
+
     // -------------------------------------------------------------------------
 
     private suspend fun query(method: String, params: JsonObject): JsonObject {
-        var result: JsonObject = buildJsonObject {}
+        val result = queryRaw(method, params)
+        return result.jsonObject
+    }
+
+    /** Like query() but returns JsonElement — handles both array and object results. */
+    private suspend fun queryRaw(method: String, params: JsonObject): JsonElement {
+        var result: JsonElement = buildJsonObject {}
         client.webSocket(ogmiosUrl) {
             val request = buildJsonObject {
                 put("jsonrpc", "2.0")
@@ -85,7 +117,7 @@ class OgmiosStateQueries(private val network: Network) {
 
             val response = incoming.receive() as Frame.Text
             val json = Json.parseToJsonElement(response.readText()).jsonObject
-            result = json["result"]?.jsonObject ?: buildJsonObject {}
+            result = json["result"] ?: buildJsonObject {}
         }
         return result
     }
