@@ -1,11 +1,16 @@
 "use client"
 
+import { useState, useRef } from "react"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
+
 export interface DRepFormData {
   givenName: string
   motivations: string
   objectives: string
   qualifications: string
   imageUrl: string
+  imagePreviewUrl: string  // local blob URL for display (not stored on-chain)
   paymentAddress: string
   doNotList: boolean
   references: { type: string; label: string; uri: string }[]
@@ -21,6 +26,50 @@ interface Props {
 
 export default function RegisterDRepForm({ data, step, onChange, onNext, onBack }: Props) {
   const set = (patch: Partial<DRepFormData>) => onChange({ ...data, ...patch })
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "error">("idle")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Unpin previous IPFS upload if being replaced
+    if (data.imageUrl.startsWith("ipfs://")) {
+      fetch(`${API_URL}/metadata/unpin/${data.imageUrl.slice(7)}`, { method: "DELETE" }).catch(() => {})
+    }
+
+    const localUrl = URL.createObjectURL(file)
+    setImagePreview(localUrl)
+    setUploadState("uploading")
+    set({ imageUrl: "" })
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(((reader.result as string).split(",")[1]) ?? "")
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      const res = await fetch(`${API_URL}/metadata/upload-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
+      })
+
+      if (!res.ok) throw new Error("Upload failed")
+      const { imageUrl } = await res.json()
+      set({ imageUrl, imagePreviewUrl: localUrl })
+      setUploadState("idle")
+    } catch {
+      setUploadState("error")
+      URL.revokeObjectURL(localUrl)
+      setImagePreview(null)
+    }
+    // Reset file input so same file can be re-selected
+    e.target.value = ""
+  }
 
   const addReference = () =>
     set({ references: [...data.references, { type: "Link", label: "", uri: "" }] })
@@ -55,17 +104,74 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
           </p>
         </div>
 
-        {/* imageUrl */}
+        {/* imageUrl — URL input or local file upload */}
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1.5">
-            URL ảnh đại diện
+            Ảnh đại diện
           </label>
+
+          {/* Preview */}
+          {(imagePreview || data.imageUrl) && (
+            <div className="flex items-center gap-3 mb-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imagePreview || data.imageUrl}
+                alt="preview"
+                className="w-14 h-14 rounded-full object-cover border border-border-subtle"
+              />
+              {uploadState === "uploading" && (
+                <div className="flex items-center gap-2 text-text-muted text-xs">
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Đang upload lên IPFS...
+                </div>
+              )}
+              {uploadState === "idle" && data.imageUrl && (
+                <p className="text-text-muted text-xs break-all line-clamp-2">{data.imageUrl}</p>
+              )}
+            </div>
+          )}
+
+          {/* Input row */}
+          <div className="flex gap-2">
+            <input
+              className="input flex-1 text-sm"
+              placeholder="https://example.com/avatar.png"
+              value={data.imageUrl}
+              onChange={e => {
+                const newUrl = e.target.value
+                if (data.imageUrl.startsWith("ipfs://") && !newUrl.startsWith("ipfs://")) {
+                  fetch(`${API_URL}/metadata/unpin/${data.imageUrl.slice(7)}`, { method: "DELETE" }).catch(() => {})
+                }
+                set({ imageUrl: newUrl, imagePreviewUrl: "" })
+                setImagePreview(null)
+                setUploadState("idle")
+              }}
+              disabled={uploadState === "uploading"}
+            />
+            <button
+              type="button"
+              className="btn-outline text-xs px-3 shrink-0"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadState === "uploading"}
+            >
+              {uploadState === "uploading" ? "Đang tải..." : "Tải tệp lên"}
+            </button>
+          </div>
           <input
-            className="input w-full"
-            placeholder="https://example.com/avatar.png"
-            value={data.imageUrl}
-            onChange={e => set({ imageUrl: e.target.value })}
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileSelect}
           />
+          {uploadState === "error" && (
+            <p className="text-danger text-xs mt-1">
+              Upload thất bại. Vui lòng thử lại hoặc dán URL trực tiếp.
+            </p>
+          )}
         </div>
 
         {/* paymentAddress */}

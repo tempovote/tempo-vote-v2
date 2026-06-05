@@ -13,6 +13,7 @@ import com.bloxbean.cardano.client.transaction.spec.governance.Voter
 import com.bloxbean.cardano.client.transaction.spec.governance.VoterType
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.GovActionId
 import com.bloxbean.cardano.client.util.HexUtil
+import java.math.BigInteger
 
 /**
  * TxBuilder — wraps cardano-client-lib QuickTx API for governance transactions.
@@ -165,7 +166,19 @@ class TxBuilder(private val network: Network) {
             .compose(tx)
             .feePayer(changeAddress)
             .build()
-        // Return the transaction CBOR hex
+
+        // QuickTxBuilder estimates fee assuming 1 VKey witness, but governance TXs need 2
+        // (payment key + DRep cert key). Pad fee by 10,000 lovelace (~100 bytes margin)
+        // so Ogmios doesn't reject with "Insufficient fee".
+        val padding = BigInteger.valueOf(10_000L)
+        val body = transaction.body
+        body.fee = body.fee.add(padding)
+        body.outputs.firstOrNull { it.address == changeAddress }?.let { changeOut ->
+            if (changeOut.value.coin >= padding) {
+                changeOut.value.coin = changeOut.value.coin.subtract(padding)
+            }
+        }
+
         return transaction.serializeToHex()
     }
 }

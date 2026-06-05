@@ -23,6 +23,7 @@ const EMPTY_FORM: DRepFormData = {
   objectives: "",
   qualifications: "",
   imageUrl: "",
+  imagePreviewUrl: "",
   paymentAddress: "",
   doNotList: false,
   references: [],
@@ -65,6 +66,12 @@ function StepIndicator({ current }: { current: number }) {
   )
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function toDisplayUrl(url: string): string {
+  if (url.startsWith("ipfs://")) return `https://ipfs.io/ipfs/${url.slice(7)}`
+  return url
+}
+
 // ─── Confirm step ────────────────────────────────────────────────────────────
 function ConfirmStep({
   data,
@@ -81,62 +88,88 @@ function ConfirmStep({
   isLoading: boolean
   statusLabel: string | null
 }) {
-  const filledFields = [
-    data.motivations && "Động lực",
-    data.objectives && "Mục tiêu",
-    data.qualifications && "Năng lực",
-    data.imageUrl && "Ảnh đại diện",
-    data.paymentAddress && "Địa chỉ nhận phí",
-    data.references.length > 0 && `${data.references.length} liên kết`,
-  ].filter(Boolean)
+  const profileSections = [
+    data.motivations && { label: "Động lực", text: data.motivations },
+    data.objectives && { label: "Mục tiêu", text: data.objectives },
+    data.qualifications && { label: "Kinh nghiệm & Năng lực", text: data.qualifications },
+  ].filter(Boolean) as { label: string; text: string }[]
 
   return (
-    <div className="space-y-5">
-      {/* DRep preview */}
-      <div className="card-static space-y-4">
-        <div className="flex items-center gap-4">
-          {data.imageUrl ? (
+    <div className="space-y-4">
+      {/* DRep identity + DRep ID */}
+      <div className="card-static space-y-3">
+        <div className="flex items-center gap-3">
+          {(data.imagePreviewUrl || data.imageUrl) ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={data.imageUrl} alt="avatar" className="w-14 h-14 rounded-full object-cover shrink-0" />
+            <img
+              src={data.imagePreviewUrl || toDisplayUrl(data.imageUrl)}
+              alt="avatar"
+              className="w-12 h-12 rounded-full object-cover shrink-0"
+            />
           ) : (
-            <div className="w-14 h-14 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-xl shrink-0">
+            <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-lg shrink-0">
               {data.givenName.charAt(0).toUpperCase()}
             </div>
           )}
-          <div>
-            <p className="text-text-primary font-bold text-lg">{data.givenName}</p>
-            {data.doNotList && (
-              <span className="badge text-xs">Ẩn khỏi danh sách</span>
-            )}
+          <div className="min-w-0 flex-1">
+            <p className="text-text-primary font-bold">{data.givenName}</p>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {data.doNotList && <span className="badge text-xs">Ẩn khỏi danh sách</span>}
+              {data.paymentAddress && <span className="badge text-xs">Địa chỉ nhận phí</span>}
+            </div>
           </div>
         </div>
-
-        {filledFields.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {filledFields.map(f => (
-              <span key={String(f)} className="badge text-xs">{String(f)}</span>
-            ))}
+        {drepId && (
+          <div className="border-t border-border-subtle pt-3">
+            <p className="text-text-muted text-xs font-medium mb-1">DRep ID (on-chain)</p>
+            <p className="font-mono text-xs text-text-secondary break-all">{drepId}</p>
           </div>
         )}
       </div>
 
-      {/* DRep ID */}
-      {drepId && (
-        <div className="card-static">
-          <p className="text-text-muted text-xs font-medium mb-1">DRep ID (on-chain)</p>
-          <p className="font-mono text-xs text-text-secondary break-all">{drepId}</p>
+      {/* Profile content preview */}
+      {profileSections.length > 0 && (
+        <div className="card-static space-y-3">
+          {profileSections.map(({ label, text }) => (
+            <div key={label}>
+              <p className="text-text-secondary text-sm font-semibold mb-1">{label}</p>
+              <p className="text-text-secondary text-sm leading-relaxed">{text}</p>
+            </div>
+          ))}
+          {data.references.length > 0 && (
+            <div>
+              <p className="text-text-secondary text-sm font-semibold mb-1">Liên kết tham chiếu</p>
+              <ul className="space-y-1">
+                {data.references.filter(r => r.label || r.uri).map((r, i) => (
+                  <li key={i} className="text-xs">
+                    <span className="text-text-secondary font-medium">{r.label || r.type}</span>
+                    {r.uri && <span className="text-text-muted break-all"> — {r.uri}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Fee notice */}
-      <div className="notice">
-        <p className="text-text-primary text-sm font-medium mb-1">Phí đăng ký</p>
-        <ul className="text-text-secondary text-xs space-y-0.5">
-          <li>• Deposit: <span className="text-text-primary font-medium">500 ADA</span> (hoàn lại khi retire)</li>
-          <li>• Network fee: <span className="text-text-primary font-medium">~0.2 ADA</span></li>
-          <li>• Metadata upload: <span className="text-text-primary font-medium">miễn phí</span> (Pinata)</li>
-        </ul>
-        <p className="text-text-muted text-xs mt-2">
+      {/* Fee breakdown */}
+      <div className="card-static space-y-2">
+        <p className="text-text-primary text-sm font-semibold">Phí đăng ký</p>
+        <div className="space-y-1.5 text-xs">
+          <div className="flex justify-between items-center">
+            <span className="text-text-muted">Deposit (hoàn lại khi retire)</span>
+            <span className="text-text-primary font-medium">500 ADA</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-text-muted">Network fee</span>
+            <span className="text-text-primary font-medium">~0.2 ADA</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-text-muted">Metadata upload (Pinata)</span>
+            <span className="text-text-primary font-medium">miễn phí</span>
+          </div>
+        </div>
+        <p className="text-text-muted text-xs border-t border-border-subtle pt-2">
           Số tiền chính xác sẽ hiển thị trong ví khi ký.
         </p>
       </div>
@@ -164,6 +197,27 @@ function ConfirmStep({
   )
 }
 
+// ─── Error helpers ───────────────────────────────────────────────────────────
+function friendlyError(msg: string): { title: string; detail: string } {
+  const m = msg.toLowerCase()
+  if (m.includes("declined") || m.includes("refuse") || m.includes("cancel")) {
+    return { title: "Giao dịch bị từ chối", detail: "Bạn đã huỷ ký trong ví. Nhấn \"Thử lại\" để đăng ký lại." }
+  }
+  if (m.includes("insufficient funds") || m.includes("insufficient balance") || m.includes("not enough ada")) {
+    return { title: "Số dư không đủ", detail: "Cần ít nhất ~500.2 ADA (500 ADA deposit + phí mạng ~0.2 ADA)." }
+  }
+  if (m.includes("timeout") || m.includes("timed out")) {
+    return { title: "Hết thời gian chờ", detail: "Yêu cầu mất quá nhiều thời gian. Vui lòng kiểm tra kết nối và thử lại." }
+  }
+  if (m.includes("already registered") || m.includes("already exists")) {
+    return { title: "Đã đăng ký trước đó", detail: "DRep ID này đã được đăng ký on-chain." }
+  }
+  if (m.includes("pinata") || m.includes("ipfs") || m.includes("upload")) {
+    return { title: "Upload metadata thất bại", detail: "Không thể tải metadata lên IPFS. Kiểm tra cấu hình Pinata JWT và thử lại." }
+  }
+  return { title: "Đăng ký thất bại", detail: msg }
+}
+
 // ─── Main page ───────────────────────────────────────────────────────────────
 export default function RegisterDRepPage() {
   const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId } = useWallet()
@@ -175,6 +229,8 @@ export default function RegisterDRepPage() {
   const [txHash, setTxHash] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [statusLabel, setStatusLabel] = useState<string | null>(null)
+  // Cache anchor data so retries skip the IPFS metadata re-upload
+  const [anchorCache, setAnchorCache] = useState<{ anchorUrl: string; anchorDataHash: string } | null>(null)
 
   const drepId = drepKey?.dRepIDCip105 ?? null
   const isSubmitting = wizardStep === "uploading" || wizardStep === "signing"
@@ -245,38 +301,44 @@ export default function RegisterDRepPage() {
     setError(null)
 
     try {
-      // Step: upload metadata to IPFS
-      setWizardStep("uploading")
-      setStatusLabel("Đang upload metadata lên IPFS...")
+      let anchor = anchorCache
 
-      const uploadRes = await fetch(`${API_URL}/metadata/upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          drepId,
-          givenName: formData.givenName,
-          motivations: formData.motivations || undefined,
-          objectives: formData.objectives || undefined,
-          qualifications: formData.qualifications || undefined,
-          imageUrl: formData.imageUrl || undefined,
-          paymentAddress: formData.paymentAddress || undefined,
-          doNotList: formData.doNotList,
-          references: formData.references.filter(r => r.label && r.uri),
-        }),
-      })
+      if (!anchor) {
+        // Upload metadata to IPFS only if not already done (first attempt or form changed)
+        setWizardStep("uploading")
+        setStatusLabel("Đang upload metadata lên IPFS...")
 
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({}))
-        throw new Error(err.error ?? "Upload metadata thất bại")
+        const uploadRes = await fetch(`${API_URL}/metadata/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            drepId,
+            givenName: formData.givenName,
+            motivations: formData.motivations || undefined,
+            objectives: formData.objectives || undefined,
+            qualifications: formData.qualifications || undefined,
+            imageUrl: formData.imageUrl || undefined,
+            paymentAddress: formData.paymentAddress || undefined,
+            doNotList: formData.doNotList,
+            references: formData.references.filter(r => r.label && r.uri),
+          }),
+        })
+
+        if (!uploadRes.ok) {
+          const err = await uploadRes.json().catch(() => ({}))
+          throw new Error(err.error ?? "Upload metadata thất bại")
+        }
+
+        const { anchorUrl, anchorDataHash } = await uploadRes.json()
+        anchor = { anchorUrl, anchorDataHash }
+        setAnchorCache(anchor)
       }
-
-      const { anchorUrl, anchorDataHash } = await uploadRes.json()
 
       // Step: build + sign + submit TX
       setWizardStep("signing")
       setStatusLabel("Đang yêu cầu ký giao dịch trong ví...")
 
-      const hash = await submitTx("DREP_REGISTER", { drepId, anchorUrl, anchorDataHash })
+      const hash = await submitTx("DREP_REGISTER", { drepId, anchorUrl: anchor.anchorUrl, anchorDataHash: anchor.anchorDataHash })
 
       // Update wallet store optimistically
       setDRepStatus({ isDrepRegistered: true, drepName: formData.givenName, delegatedDrep: null })
@@ -286,7 +348,9 @@ export default function RegisterDRepPage() {
       setWizardStep("success")
     } catch (err: unknown) {
       setStatusLabel(null)
-      setError(err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định")
+      const msg = err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định"
+      console.error("[DRep Register] error:", msg, err)
+      setError(msg)
       setWizardStep("error")
     }
   }
@@ -316,7 +380,7 @@ export default function RegisterDRepPage() {
             <RegisterDRepForm
               data={formData}
               step={1}
-              onChange={setFormData}
+              onChange={(d) => { setFormData(d); setAnchorCache(null) }}
               onNext={() => setWizardStep("step2")}
               onBack={() => {}}
             />
@@ -326,7 +390,7 @@ export default function RegisterDRepPage() {
             <RegisterDRepForm
               data={formData}
               step={2}
-              onChange={setFormData}
+              onChange={(d) => { setFormData(d); setAnchorCache(null) }}
               onNext={() => setWizardStep("confirm")}
               onBack={() => setWizardStep("step1")}
             />
@@ -343,22 +407,47 @@ export default function RegisterDRepPage() {
             />
           )}
 
-          {wizardStep === "error" && (
-            <div className="space-y-5">
-              <div className="notice-warning">
-                <p className="text-text-primary font-medium text-sm mb-1">Đăng ký thất bại</p>
-                <p className="text-text-secondary text-sm">{error}</p>
+          {wizardStep === "error" && (() => {
+            const rawError = error ?? "Đã xảy ra lỗi không xác định"
+            const { title, detail } = friendlyError(rawError)
+            const showRaw = detail === rawError // only show raw block for unrecognised errors
+            return (
+              <div className="space-y-5">
+                <div className="card-static space-y-2">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-danger/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <svg className="w-4 h-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-text-primary font-semibold text-sm">{title}</p>
+                      {!showRaw && <p className="text-text-secondary text-sm mt-0.5 leading-relaxed">{detail}</p>}
+                      {showRaw && (
+                        <pre className="mt-1 text-xs text-text-muted bg-bg-elevated rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
+                          {rawError}
+                        </pre>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button className="btn-outline flex-1" onClick={() => setWizardStep("confirm")}>
+                    ← Thử lại
+                  </button>
+                  <button className="btn-outline flex-1" onClick={() => {
+                    if (formData.imageUrl.startsWith("ipfs://")) {
+                      fetch(`${API_URL}/metadata/unpin/${formData.imageUrl.slice(7)}`, { method: "DELETE" }).catch(() => {})
+                    }
+                    setFormData(EMPTY_FORM)
+                    setWizardStep("step1")
+                  }}>
+                    Bắt đầu lại
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-3">
-                <button className="btn-outline flex-1" onClick={() => setWizardStep("confirm")}>
-                  ← Thử lại
-                </button>
-                <button className="btn-outline flex-1" onClick={() => { setFormData(EMPTY_FORM); setWizardStep("step1") }}>
-                  Bắt đầu lại
-                </button>
-              </div>
-            </div>
-          )}
+            )
+          })()}
 
           {wizardStep === "success" && txHash && (
             <RegisterDRepSuccess

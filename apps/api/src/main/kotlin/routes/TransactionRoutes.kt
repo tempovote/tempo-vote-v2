@@ -10,6 +10,12 @@ import vote.tempo.cardano.TxBuilder
 import vote.tempo.cardano.getBackendService
 import vote.tempo.cardano.networkFromString
 import com.bloxbean.cardano.client.backend.api.BackendService
+import com.bloxbean.cardano.client.transaction.spec.Transaction
+import com.bloxbean.cardano.client.transaction.spec.TransactionWitnessSet
+import com.bloxbean.cardano.client.util.HexUtil
+import co.nstant.`in`.cbor.CborDecoder
+import co.nstant.`in`.cbor.model.Map as CborMap
+import java.io.ByteArrayInputStream
 
 @Serializable
 data class BuildTxRequest(
@@ -37,7 +43,12 @@ data class BuildTxRequest(
 data class BuildTxResponse(val unsignedTxCbor: String)
 
 @Serializable
-data class SubmitTxRequest(val signedTx: String, val network: String)
+data class SubmitTxRequest(
+    val network: String,
+    val signedTx: String? = null,            // legacy: full signed TX CBOR
+    val unsignedTxCbor: String? = null,      // preferred: unsigned TX from /tx/build
+    val witnessSetCbor: String? = null,      // preferred: witness set from wallet.signTx
+)
 
 @Serializable
 data class SubmitTxResponse(val txHash: String)
@@ -109,13 +120,30 @@ fun Route.transactionRoutes() {
             val backendService: BackendService = getBackendService(network)
 
             runCatching {
-                val result = backendService.transactionService.submitTransaction(
-                    req.signedTx.hexToByteArray()
-                )
-                result.value ?: error("Submit returned null txHash")
+                val txBytes = when {
+                    req.unsignedTxCbor != null && req.witnessSetCbor != null -> {
+                        // Assemble full signed TX: merge body from unsigned TX with wallet witness set
+                        val unsignedTx = Transaction.deserialize(HexUtil.decodeHexString(req.unsignedTxCbor))
+                        val witnessBytes = HexUtil.decodeHexString(req.witnessSetCbor)
+                        val witnessMap = CborDecoder(ByteArrayInputStream(witnessBytes)).decode().first() as CborMap
+                        val witnessSet = TransactionWitnessSet.deserialize(witnessMap)
+                        unsignedTx.witnessSet = witnessSet
+                        unsignedTx.serialize()
+                    }
+                    req.signedTx != null -> req.signedTx.hexToByteArray()
+                    else -> error("Provide either signedTx or both unsignedTxCbor + witnessSetCbor")
+                }
+
+                val result = backendService.transactionService.submitTransaction(txBytes)
+                if (!result.isSuccessful) {
+                    error(result.response ?: "Ogmios submit failed (no response body)")
+                }
+                result.value ?: error("Ogmios submit succeeded but txHash is null (response: ${result.response})")
             }.fold(
                 onSuccess = { txHash -> call.respond(SubmitTxResponse(txHash)) },
-                onFailure = { e -> call.respond(HttpStatusCode.BadRequest, ErrorResponse(e.message ?: "Submit failed")) }
+                onFailure = { e ->
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponse(e.message ?: "Submit failed"))
+                }
             )
         }
     }

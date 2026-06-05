@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import Navbar from "@/components/layout/Navbar"
 import Footer from "@/components/layout/Footer"
+import { ExtensionErrorFilter } from "@/components/ExtensionErrorFilter"
 import "./globals.css"
 
 const inter = Inter({
@@ -24,6 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="bg-bg-primary text-text-primary min-h-screen flex flex-col" suppressHydrationWarning>
+        <ExtensionErrorFilter />
         <Navbar />
         <main className="flex-1">{children}</main>
         <Footer />

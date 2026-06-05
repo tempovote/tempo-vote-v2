@@ -1,7 +1,7 @@
 "use client"
 
 import { useWalletStore } from "@/store/wallet"
-import { signTx, getUtxos, getChangeAddress, getRewardAddresses } from "@tempo/wallet-bridge"
+import { signTx, getUtxos, getChangeAddress, getRewardAddresses, hexAddressToBech32 } from "@tempo/wallet-bridge"
 import type { BuildTxRequest, BuildTxResponse } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -17,18 +17,24 @@ export function useTx() {
     if (!api) throw new Error("Wallet not connected")
 
     // 1. Collect wallet data needed by backend to build tx
-    const [utxos, changeAddress, rewardAddresses] = await Promise.all([
+    // CIP-30 returns hex CBOR addresses — convert to bech32 for cardano-client-lib
+    const [utxos, changeAddressRaw, rewardAddressesRaw] = await Promise.all([
       getUtxos(api),
       getChangeAddress(api),
       getRewardAddresses(api),
     ])
+    const net = networkId ?? 0
+    const changeAddress = hexAddressToBech32(changeAddressRaw, net)
+    const rewardAddress = rewardAddressesRaw[0]
+      ? hexAddressToBech32(rewardAddressesRaw[0], net)
+      : ""
 
     // 2. Build unsigned tx on backend
     const buildReq: BuildTxRequest = {
       txType,
       utxos,
       changeAddress,
-      rewardAddress: rewardAddresses[0] ?? "",
+      rewardAddress,
       network: networkId === 1 ? "mainnet" : "preprod",
       ...params,
     }
@@ -46,14 +52,19 @@ export function useTx() {
 
     const { unsignedTxCbor }: BuildTxResponse = await buildRes.json()
 
-    // 3. Sign in wallet (private key never leaves the wallet)
-    const signedTxCbor = await signTx(api, unsignedTxCbor)
+    // 3. Sign in wallet — CIP-30 signTx returns the transaction_witness_set
+    const witnessSetCbor = await signTx(api, unsignedTxCbor, false)
 
-    // 4. Submit via backend (which uses ogmios to submit)
+    // 4. Send unsigned TX + witness set to backend for assembly + Ogmios submit
+    // Backend assembles the full signed TX (body + witnesses) before submitting
     const submitRes = await fetch(`${API_URL}/tx/submit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ signedTx: signedTxCbor, network: networkId === 1 ? "mainnet" : "preprod" }),
+      body: JSON.stringify({
+        unsignedTxCbor,
+        witnessSetCbor,
+        network: networkId === 1 ? "mainnet" : "preprod",
+      }),
     })
 
     if (!submitRes.ok) {
@@ -62,6 +73,7 @@ export function useTx() {
     }
 
     const { txHash } = await submitRes.json()
+    if (!txHash) throw new Error("Submit returned null txHash")
     return txHash
   }
 
