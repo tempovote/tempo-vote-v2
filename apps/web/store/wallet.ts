@@ -30,6 +30,7 @@ interface WalletActions {
   setDRepStatusLoading: (v: boolean) => void
   setConnecting: (v: boolean) => void
   setError: (msg: string) => void
+  clearError: () => void
   reset: () => void
 }
 
@@ -58,5 +59,6 @@ export const useWalletStore = create<WalletState & WalletActions>((set) => ({
   setDRepStatusLoading: (v) => set({ drepStatusLoading: v }),
   setConnecting: (v) => set({ isConnecting: v }),
   setError: (msg) => set({ error: msg, isConnecting: false }),
+  clearError: () => set({ error: null }),
   reset: () => set(initialState),
 }))

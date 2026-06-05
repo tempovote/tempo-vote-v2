@@ -19,25 +19,26 @@ const STORAGE_KEY = "tempo:last_wallet"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
 /**
- * Fetch DRep registration status + delegation info from the backend.
- * Runs in the background after wallet connect — never blocks the UI.
+ * Fetch DRep registration + delegation status from the backend (Ogmios).
  *
- * Logic:
- *  1. If drepId provided → GET /dreps/{id} → check isRegistered + fetch name
- *  2. If not registered (or no drepId) + stakeAddress → GET /stake/{addr}/delegation
+ * On success  → calls setDRepStatus with confirmed on-chain data.
+ * On failure  → calls setDRepStatusLoading(false), leaves isDrepRegistered=null
+ *               so the UI can fall back to wallet-provided data (drepKey).
  */
 async function fetchDRepStatus(
   drepId: string | null,
   stakeAddress: string | null,
   network: string,
-  setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void
+  setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void,
+  setDRepStatusLoading: (v: boolean) => void
 ): Promise<void> {
   let isDrepRegistered = false
   let drepName: string | null = null
   let delegatedDrep: DelegatedDrep | null = null
+  let apiCallSucceeded = false
 
   try {
-    // Step 1: Check if this wallet's DRep key is actually registered on-chain
+    // Step 1: Check if this wallet's DRep key is registered on-chain
     if (drepId) {
       const res = await fetch(`${API_URL}/dreps/${drepId}?network=${network}`, {
         signal: AbortSignal.timeout(8000),
@@ -45,34 +46,47 @@ async function fetchDRepStatus(
 
       if (res?.ok) {
         const data = await res.json().catch(() => null)
-        if (data) {
+        if (data != null) {
+          apiCallSucceeded = true
           isDrepRegistered = data.isRegistered === true
           drepName = data.name ?? null
         }
       }
     }
 
-    // Step 2: If not a registered DRep, check what DRep this stake address delegated to
+    // Step 2: If not a registered DRep, check delegation for this stake address
     if (!isDrepRegistered && stakeAddress) {
-      const res = await fetch(`${API_URL}/stake/${encodeURIComponent(stakeAddress)}/delegation?network=${network}`, {
-        signal: AbortSignal.timeout(8000),
-      }).catch(() => null)
+      const res = await fetch(
+        `${API_URL}/stake/${encodeURIComponent(stakeAddress)}/delegation?network=${network}`,
+        { signal: AbortSignal.timeout(8000) }
+      ).catch(() => null)
 
       if (res?.ok) {
         const data = await res.json().catch(() => null)
-        if (data?.delegatedDrep) {
-          delegatedDrep = {
-            id: data.delegatedDrep.id,
-            name: data.delegatedDrep.name ?? null,
+        if (data != null) {
+          apiCallSucceeded = true
+          if (data?.delegatedDrep) {
+            delegatedDrep = {
+              id: data.delegatedDrep.id,
+              name: data.delegatedDrep.name ?? null,
+            }
           }
         }
       }
     }
-  } catch {
-    // Silent fail — UI will show CTA (not delegated state)
-  }
 
-  setDRepStatus({ isDrepRegistered, drepName, delegatedDrep })
+    if (apiCallSucceeded) {
+      // Confirmed data from Ogmios — use it
+      setDRepStatus({ isDrepRegistered, drepName, delegatedDrep })
+    } else {
+      // Backend reachable but returned no usable data — stop loading, keep isDrepRegistered=null
+      setDRepStatusLoading(false)
+    }
+  } catch {
+    // Network error — backend/Ogmios unavailable
+    // Leave isDrepRegistered=null so UI falls back to wallet-provided drepKey
+    setDRepStatusLoading(false)
+  }
 }
 
 export function useWallet() {
@@ -85,15 +99,13 @@ export function useWallet() {
     const changeAddressHex = await getChangeAddress(api)
     const rewardAddresses  = await getRewardAddresses(api)
 
-    // Decode CIP-30 hex address → human-readable bech32 (addr1... / addr_test1...)
     const changeAddress = hexAddressToBech32(changeAddressHex, networkId)
     const rewardAddress = rewardAddresses[0]
       ? hexAddressToBech32(rewardAddresses[0], networkId)
       : null
 
-    // Try to get DRep key (CIP-95). Null if wallet doesn't support it.
-    const drepKey      = await getDRepKey(api).catch(() => null)
-    const cip95Active  = hasCip95(api)
+    const drepKey     = await getDRepKey(api).catch(() => null)
+    const cip95Active = hasCip95(api)
 
     store.setWallet({
       api,
@@ -106,22 +118,21 @@ export function useWallet() {
       isConnected: true,
     })
 
-    // Persist wallet name for auto-reconnect
     try { localStorage.setItem(STORAGE_KEY, walletName) } catch { /* SSR safe */ }
 
-    // Fire-and-forget: check actual DRep registration + delegation status via Ogmios
+    // Fire-and-forget: verify actual DRep/delegation status via Ogmios
     if (cip95Active) {
       const network = networkId === 1 ? "mainnet" : "preprod"
       const drepId  = drepKey?.dRepIDCip105 || null
       store.setDRepStatusLoading(true)
-      fetchDRepStatus(drepId, rewardAddress, network, store.setDRepStatus)
-        .catch(() => store.setDRepStatusLoading(false))
+      fetchDRepStatus(drepId, rewardAddress, network, store.setDRepStatus, store.setDRepStatusLoading)
     }
   }, [store])
 
-  /** User-initiated connect — shows wallet popup */
+  /** User-initiated connect */
   const connect = useCallback(async (walletName: string) => {
     try {
+      store.clearError()
       store.setConnecting(true)
       await _populate(walletName)
     } catch (err) {
@@ -133,19 +144,17 @@ export function useWallet() {
 
   /** Silent reconnect on page load — no popup if wallet already approved */
   const autoReconnect = useCallback(async () => {
-    if (store.isConnected) return          // already connected
+    if (store.isConnected) return
     let savedWallet: string | null = null
     try { savedWallet = localStorage.getItem(STORAGE_KEY) } catch { return }
     if (!savedWallet) return
 
-    // Check wallet is still installed + already enabled (no popup)
     const enabled = await isWalletEnabled(savedWallet).catch(() => false)
     if (!enabled) return
 
     try {
       await _populate(savedWallet)
     } catch {
-      // Silent fail — user will connect manually
       try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
     }
   }, [store.isConnected, _populate])
@@ -156,7 +165,6 @@ export function useWallet() {
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [store])
 
-  // Run auto-reconnect once on mount
   useEffect(() => {
     autoReconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
