@@ -4,6 +4,7 @@ import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 
 // Raw JSON element (may be object or array) — for queries that return arrays
@@ -43,6 +44,8 @@ fun drepIdToCredentialHex(drepId: String): String {
     return bytes.joinToString("") { "%02x".format(it) }
 }
 
+private const val WS_TIMEOUT_MS = 20_000L
+
 class OgmiosStateQueries(private val network: Network) {
 
     private val ogmiosUrl = when (network) {
@@ -72,51 +75,94 @@ class OgmiosStateQueries(private val network: Network) {
 
     /**
      * Query a specific DRep by ID (bech32 drep1... or hex credential hash).
-     * Ogmios 6.x requires the credential as a plain hex string in the keys array.
      * Returns the raw Ogmios result array (includes abstain/noConfidence entries).
      */
     suspend fun getDRepByIdRaw(drepId: String): JsonElement {
         val credentialHex = drepIdToCredentialHex(drepId)
-        val params = buildJsonObject {
+        return queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {
             putJsonArray("keys") { add(credentialHex) }
-        }
-        return queryRaw("queryLedgerState/delegateRepresentatives", params)
+        })
+    }
+
+    suspend fun getStakeDelegation(stakeAddress: String): JsonElement {
+        return queryRaw("queryLedgerState/rewardAccountSummaries", buildJsonObject {
+            putJsonArray("keys") { add(stakeAddress) }
+        })
     }
 
     /**
-     * Query stake address delegation info (Conway era).
-     * Method: queryLedgerState/rewardAccountSummaries
-     * Keys: array of bech32 stake addresses (stake1u...)
+     * Get stake delegation AND the delegated DRep's info in a SINGLE WebSocket session.
+     * Avoids opening two separate connections for the common "who is this wallet delegated to?" flow.
+     * Returns (delegationResult, drepInfoResult?) — drepInfoResult is null if not delegated to a registered DRep.
      */
-    suspend fun getStakeDelegation(stakeAddress: String): JsonElement {
-        val params = buildJsonObject {
-            putJsonArray("keys") { add(stakeAddress) }
+    suspend fun getStakeDelegationWithDRepInfo(stakeAddress: String): Pair<JsonElement, JsonElement?> {
+        var stakeDelegation: JsonElement = JsonArray(emptyList())
+        var drepInfo: JsonElement? = null
+
+        withTimeout(WS_TIMEOUT_MS) {
+            client.webSocket(ogmiosUrl) {
+                // Query 1: stake delegation
+                send(Frame.Text(buildRequest("queryLedgerState/rewardAccountSummaries", buildJsonObject {
+                    putJsonArray("keys") { add(stakeAddress) }
+                }).toString()))
+                val res1 = incoming.receive() as Frame.Text
+                stakeDelegation = Json.parseToJsonElement(res1.readText()).jsonObject["result"]
+                    ?: JsonArray(emptyList())
+
+                // Extract delegated DRep credential hex.
+                // Ogmios 6.x returns rewardAccountSummaries as a JsonObject keyed by stake address,
+                // not a JsonArray — handle both formats defensively.
+                // Capture into val so Kotlin can smart-cast (stakeDelegation is a var in a closure).
+                val delegation = stakeDelegation
+                val accountInfo = when {
+                    delegation is JsonArray -> delegation.firstOrNull()?.jsonObject
+                    delegation is JsonObject -> delegation[stakeAddress]?.jsonObject
+                        ?: delegation.values.firstOrNull()?.jsonObject
+                    else -> null
+                }
+                val drepCredentialHex = accountInfo?.let { info ->
+                    val delegate = info["delegateRepresentative"]?.jsonObject
+                    if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered") {
+                        delegate["id"]?.jsonPrimitive?.contentOrNull
+                    } else null
+                }
+
+                // Query 2: DRep details — reuse same WS session
+                if (drepCredentialHex != null) {
+                    send(Frame.Text(buildRequest("queryLedgerState/delegateRepresentatives", buildJsonObject {
+                        putJsonArray("keys") { add(drepCredentialHex) }
+                    }).toString()))
+                    val res2 = incoming.receive() as Frame.Text
+                    drepInfo = Json.parseToJsonElement(res2.readText()).jsonObject["result"]
+                }
+            }
         }
-        return queryRaw("queryLedgerState/rewardAccountSummaries", params)
+        return Pair(stakeDelegation, drepInfo)
     }
 
     // -------------------------------------------------------------------------
 
     private suspend fun query(method: String, params: JsonObject): JsonObject {
-        val result = queryRaw(method, params)
-        return result.jsonObject
+        return queryRaw(method, params).jsonObject
     }
 
     private suspend fun queryRaw(method: String, params: JsonObject): JsonElement {
         var result: JsonElement = buildJsonObject {}
-        client.webSocket(ogmiosUrl) {
-            val request = buildJsonObject {
-                put("jsonrpc", "2.0")
-                put("method", method)
-                put("params", params)
-                put("id", "tempo-${System.currentTimeMillis()}")
+        withTimeout(WS_TIMEOUT_MS) {
+            client.webSocket(ogmiosUrl) {
+                send(Frame.Text(buildRequest(method, params).toString()))
+                val response = incoming.receive() as Frame.Text
+                result = Json.parseToJsonElement(response.readText()).jsonObject["result"]
+                    ?: buildJsonObject {}
             }
-            send(Frame.Text(request.toString()))
-
-            val response = incoming.receive() as Frame.Text
-            val json = Json.parseToJsonElement(response.readText()).jsonObject
-            result = json["result"] ?: buildJsonObject {}
         }
         return result
+    }
+
+    private fun buildRequest(method: String, params: JsonObject) = buildJsonObject {
+        put("jsonrpc", "2.0")
+        put("method", method)
+        put("params", params)
+        put("id", "tempo-${System.currentTimeMillis()}")
     }
 }

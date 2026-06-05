@@ -7,6 +7,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
@@ -99,18 +100,16 @@ fun Route.stakeRoutes() {
             val queries = OgmiosStateQueries(network)
 
             try {
-                val raw = queries.getStakeDelegation(stakeAddress)
+                // Single WS session: get delegation + DRep info in one round-trip
+                val (delegationRaw, drepInfoRaw) = queries.getStakeDelegationWithDRepInfo(stakeAddress)
 
-                // Ogmios 6.x rewardAccountSummaries response is an array:
-                // [{ "credential": "hex", "delegateRepresentative": { "type": "registered", "id": "hex" }, ... }]
                 val accountInfo = when {
-                    raw is JsonArray -> raw.firstOrNull()?.jsonObject
-                    raw is JsonObject -> raw[stakeAddress]?.jsonObject
-                        ?: raw.values.firstOrNull()?.jsonObject
+                    delegationRaw is JsonArray -> delegationRaw.firstOrNull()?.jsonObject
+                    delegationRaw is JsonObject -> delegationRaw[stakeAddress]?.jsonObject
+                        ?: delegationRaw.values.firstOrNull()?.jsonObject
                     else -> null
                 }
 
-                // DRep delegation is at delegateRepresentative.id (hex credential hash)
                 val drepId = accountInfo?.let { info ->
                     val delegate = info["delegateRepresentative"]?.jsonObject
                     if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered") {
@@ -123,13 +122,12 @@ fun Route.stakeRoutes() {
                     return@get
                 }
 
-                // Optionally fetch the DRep's name via its anchor metadata
-                val drepName = try {
-                    val drepRaw = queries.getDRepByIdRaw(drepId)
+                // DRep info already fetched in the same WS session — no extra connection needed
+                val drepName = drepInfoRaw?.let { raw ->
                     val drepsArr = when {
-                        drepRaw is JsonArray -> drepRaw
-                        drepRaw is JsonObject && drepRaw["delegateRepresentatives"] is JsonArray ->
-                            drepRaw["delegateRepresentatives"]!!.jsonArray
+                        raw is JsonArray -> raw
+                        raw is JsonObject && raw["delegateRepresentatives"] is JsonArray ->
+                            raw["delegateRepresentatives"]!!.jsonArray
                         else -> JsonArray(emptyList())
                     }
                     val registeredEntry = drepsArr.mapNotNull { it.jsonObject }
@@ -138,7 +136,7 @@ fun Route.stakeRoutes() {
                         ?.let { it["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
                             ?: it["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull }
                     anchorUrl?.let { fetchDRepName(it) }
-                } catch (_: Exception) { null }
+                }
 
                 call.respond(buildJsonObject {
                     putJsonObject("delegatedDrep") {
@@ -162,11 +160,13 @@ fun Route.stakeRoutes() {
  */
 private suspend fun fetchDRepName(anchorUrl: String): String? {
     return try {
-        val response = httpClient.get(anchorUrl)
-        val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-        json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
-            ?: json["givenName"]?.jsonPrimitive?.contentOrNull
-            ?: json["name"]?.jsonPrimitive?.contentOrNull
+        withTimeout(5_000L) {
+            val response = httpClient.get(anchorUrl)
+            val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
+                ?: json["givenName"]?.jsonPrimitive?.contentOrNull
+                ?: json["name"]?.jsonPrimitive?.contentOrNull
+        }
     } catch (_: Exception) {
         null
     }
