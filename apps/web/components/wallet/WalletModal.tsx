@@ -46,12 +46,14 @@ function truncateAddress(addr: string, chars = 8): string {
 function DRepInfoPanel({ drepName, drepId }: { drepName: string | null; drepId: string | null }) {
   return (
     <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+      {drepName && (
+        <div className="p-3">
+          <p className="text-text-muted text-xs mb-1 font-medium">DRep Name</p>
+          <p className="text-text-primary text-sm font-semibold">{drepName}</p>
+        </div>
+      )}
       <div className="p-3">
-        <p className="text-text-muted text-xs mb-1 font-medium">DRep Name</p>
-        <p className="text-text-primary text-sm font-semibold">{drepName ?? "—"}</p>
-      </div>
-      <div className="p-3">
-        <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-129)</p>
+        <p className="text-text-muted text-xs mb-1 font-medium">Your DRep ID</p>
         <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
           {drepId || "—"}
         </p>
@@ -64,7 +66,7 @@ function GovernanceStatusUnavailable({ drepId }: { drepId: string | null }) {
   return (
     <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
       <div className="p-3">
-        <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-129)</p>
+        <p className="text-text-muted text-xs mb-1 font-medium">Your DRep ID</p>
         <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
           {drepId || "—"}
         </p>
@@ -220,7 +222,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  Delegated to &ldquo;{delegatedDrep.name ?? truncateAddress(delegatedDrep.id, 8)}&rdquo;
+                  Delegated to: &ldquo;{delegatedDrep.name ?? truncateAddress(delegatedDrep.id, 8)}&rdquo;
                 </div>
               ) : isDrepRegistered === false ? (
                 /* Confirmed by Ogmios: not DRep, not delegated */

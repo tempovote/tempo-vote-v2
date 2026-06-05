@@ -1,4 +1,4 @@
-val ktorVersion = "3.1.0"
+val ktorVersion = "3.2.0"
 val exposedVersion = "0.57.0"
 val cardanoClientVersion = "0.7.0-beta1"
 
@@ -10,6 +10,27 @@ plugins {
 
 group = "vote.tempo"
 version = "0.1.0"
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    sourceCompatibility = "21"
+    targetCompatibility = "21"
+}
+
+// Load .env from workspace root into the run task environment
+fun loadDotEnv(): Map<String, String> {
+    val envFile = rootDir.resolve(".env")
+    if (!envFile.exists()) return emptyMap()
+    return envFile.readLines()
+        .filter { it.isNotBlank() && !it.startsWith("#") && "=" in it }
+        .associate { line ->
+            val idx = line.indexOf("=")
+            line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+        }
+}
 
 application {
     mainClass.set("vote.tempo.ApplicationKt")
@@ -43,6 +64,7 @@ dependencies {
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
+    implementation("io.ktor:ktor-client-websockets:$ktorVersion")
 
     // -------------------------------------------------------------------------
     // Database — Exposed ORM + PostgreSQL + Flyway migrations
@@ -83,4 +105,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.named<JavaExec>("run") {
+    environment(loadDotEnv())
 }

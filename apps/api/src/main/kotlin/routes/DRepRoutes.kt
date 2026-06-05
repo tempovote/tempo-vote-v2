@@ -9,6 +9,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.json.*
 import vote.tempo.cardano.OgmiosStateQueries
+import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
 
 private val httpClient = HttpClient(CIO)
@@ -41,7 +42,7 @@ fun Route.drepRoutes() {
             try {
                 val raw = queries.getDRepByIdRaw(drepId)
 
-                // Ogmios may return array directly or wrapped in an object
+                // Ogmios returns an array — may include abstain/noConfidence special entries
                 val drepsArray: JsonArray = when {
                     raw is JsonArray -> raw
                     raw is JsonObject && raw["delegateRepresentatives"] is JsonArray ->
@@ -49,7 +50,12 @@ fun Route.drepRoutes() {
                     else -> JsonArray(emptyList())
                 }
 
-                if (drepsArray.isEmpty()) {
+                // Only consider entries of type "registered" (skip abstain/noConfidence)
+                val registeredDrep = drepsArray
+                    .mapNotNull { it.jsonObject }
+                    .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
+
+                if (registeredDrep == null) {
                     call.respond(buildJsonObject {
                         put("isRegistered", false)
                         put("id", drepId)
@@ -59,10 +65,10 @@ fun Route.drepRoutes() {
                     return@get
                 }
 
-                val drep = drepsArray[0].jsonObject
-                // Anchor URL is at drep.anchor.url or drep.metadata.url (varies by Ogmios version)
-                val anchorUrl = drep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                    ?: drep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                val drep = registeredDrep
+                // Ogmios 6.x: anchor URL is at drep.metadata.url
+                val anchorUrl = drep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                    ?: drep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
 
                 val drepName = anchorUrl?.let { fetchDRepName(it) }
 
@@ -95,19 +101,21 @@ fun Route.stakeRoutes() {
             try {
                 val raw = queries.getStakeDelegation(stakeAddress)
 
-                // Ogmios rewardAccountSummaries response:
-                // { "stake1u...": { "drep": { "type": "keyHash", "id": "drep1..." }, ... } }
+                // Ogmios 6.x rewardAccountSummaries response is an array:
+                // [{ "credential": "hex", "delegateRepresentative": { "type": "registered", "id": "hex" }, ... }]
                 val accountInfo = when {
+                    raw is JsonArray -> raw.firstOrNull()?.jsonObject
                     raw is JsonObject -> raw[stakeAddress]?.jsonObject
                         ?: raw.values.firstOrNull()?.jsonObject
                     else -> null
                 }
 
-                // DRep delegation field — try multiple known Ogmios response shapes
+                // DRep delegation is at delegateRepresentative.id (hex credential hash)
                 val drepId = accountInfo?.let { info ->
-                    info["drep"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
-                        ?: info["voting"]?.jsonObject?.get("drep")?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
-                        ?: info["delegate"]?.jsonObject?.get("drep")?.jsonPrimitive?.contentOrNull
+                    val delegate = info["delegateRepresentative"]?.jsonObject
+                    if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered") {
+                        delegate["id"]?.jsonPrimitive?.contentOrNull
+                    } else null
                 }
 
                 if (drepId == null) {
@@ -115,7 +123,7 @@ fun Route.stakeRoutes() {
                     return@get
                 }
 
-                // Optionally fetch the DRep's name
+                // Optionally fetch the DRep's name via its anchor metadata
                 val drepName = try {
                     val drepRaw = queries.getDRepByIdRaw(drepId)
                     val drepsArr = when {
@@ -124,9 +132,11 @@ fun Route.stakeRoutes() {
                             drepRaw["delegateRepresentatives"]!!.jsonArray
                         else -> JsonArray(emptyList())
                     }
-                    val anchorUrl = drepsArr.firstOrNull()?.jsonObject
-                        ?.let { it["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                            ?: it["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull }
+                    val registeredEntry = drepsArr.mapNotNull { it.jsonObject }
+                        .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
+                    val anchorUrl = registeredEntry
+                        ?.let { it["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                            ?: it["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull }
                     anchorUrl?.let { fetchDRepName(it) }
                 } catch (_: Exception) { null }
 
