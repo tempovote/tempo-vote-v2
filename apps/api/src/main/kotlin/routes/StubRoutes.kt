@@ -28,9 +28,3 @@ fun Route.communityRoutes() {
     }
 }
 
-fun Route.metadataRoutes() {
-    route("/metadata") {
-        // POST /metadata/upload — upload CIP-119 JSON-LD to IPFS, return anchorUrl + anchorDataHash
-        post("/upload") { call.respond(mapOf("TODO" to "Upload metadata to IPFS")) }
-    }
-}
