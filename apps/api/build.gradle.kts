@@ -94,6 +94,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // -------------------------------------------------------------------------
+    // Crypto — blake2b-256 for CIP-119 anchor hash (transitive via cardano-client-lib, explicit for compile)
+    // -------------------------------------------------------------------------
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78")
+
+    // -------------------------------------------------------------------------
     // Cache — Caffeine (high-performance JVM cache, replaces manual ConcurrentHashMap+TTL)
     // -------------------------------------------------------------------------
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.0")
