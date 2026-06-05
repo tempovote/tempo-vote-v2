@@ -30,19 +30,20 @@ async function fetchDRepStatus(
   stakeAddress: string | null,
   network: string,
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void,
-  setDRepStatusLoading: (v: boolean) => void
+  setDRepStatusError: (kind: "network" | "server") => void
 ): Promise<void> {
   let isDrepRegistered = false
   let drepName: string | null = null
   let delegatedDrep: DelegatedDrep | null = null
   let apiCallSucceeded = false
+  let networkError = false
 
   try {
     // Step 1: Check if this wallet's DRep key is registered on-chain
     if (drepId) {
       const res = await fetch(`${API_URL}/dreps/${drepId}?network=${network}`, {
         signal: AbortSignal.timeout(8000),
-      }).catch(() => null)
+      }).catch(() => { networkError = true; return null })
 
       if (res?.ok) {
         const data = await res.json().catch(() => null)
@@ -59,7 +60,7 @@ async function fetchDRepStatus(
       const res = await fetch(
         `${API_URL}/stake/${encodeURIComponent(stakeAddress)}/delegation?network=${network}`,
         { signal: AbortSignal.timeout(8000) }
-      ).catch(() => null)
+      ).catch(() => { networkError = true; return null })
 
       if (res?.ok) {
         const data = await res.json().catch(() => null)
@@ -76,16 +77,12 @@ async function fetchDRepStatus(
     }
 
     if (apiCallSucceeded) {
-      // Confirmed data from Ogmios — use it
       setDRepStatus({ isDrepRegistered, drepName, delegatedDrep })
     } else {
-      // Backend reachable but returned no usable data — stop loading, keep isDrepRegistered=null
-      setDRepStatusLoading(false)
+      setDRepStatusError(networkError ? "network" : "server")
     }
   } catch {
-    // Network error — backend/Ogmios unavailable
-    // Leave isDrepRegistered=null so UI falls back to wallet-provided drepKey
-    setDRepStatusLoading(false)
+    setDRepStatusError("network")
   }
 }
 
@@ -125,7 +122,7 @@ export function useWallet() {
       const network = networkId === 1 ? "mainnet" : "preprod"
       const drepId  = drepKey?.dRepIDCip105 || null
       store.setDRepStatusLoading(true)
-      fetchDRepStatus(drepId, rewardAddress, network, store.setDRepStatus, store.setDRepStatusLoading)
+      fetchDRepStatus(drepId, rewardAddress, network, store.setDRepStatus, store.setDRepStatusError)
     }
   }, [store])
 

@@ -62,20 +62,33 @@ function DRepInfoPanel({ drepName, drepId }: { drepName: string | null; drepId: 
   )
 }
 
-function GovernanceStatusUnavailable({ drepId }: { drepId: string | null }) {
+function GovernanceStatusUnavailable({
+  drepId,
+  errorKind,
+}: {
+  drepId: string | null
+  errorKind: "network" | "server" | null
+}) {
+  const msg =
+    errorKind === "network"
+      ? "API server not running — start the Kotlin backend"
+      : "On-chain status unavailable"
+
   return (
     <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
-      <div className="p-3">
-        <p className="text-text-muted text-xs mb-1 font-medium">Your DRep ID</p>
-        <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
-          {drepId || "—"}
-        </p>
-      </div>
+      {drepId && (
+        <div className="p-3">
+          <p className="text-text-muted text-xs mb-1 font-medium">Your DRep ID</p>
+          <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+            {drepId}
+          </p>
+        </div>
+      )}
       <div className="flex items-center gap-2 p-3">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-text-muted">
           <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
-        <p className="text-text-muted text-xs">On-chain status unavailable</p>
+        <p className="text-text-muted text-xs">{msg}</p>
       </div>
     </div>
   )
@@ -116,7 +129,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
   const {
     isConnected, isConnecting, error,
     name, networkId, changeAddress, drepKey,
-    drepName, isDrepRegistered, delegatedDrep, drepStatusLoading,
+    drepName, isDrepRegistered, delegatedDrep, drepStatusLoading, drepStatusError,
     hasCip95: cip95Supported,
     connect, disconnect, availableWallets,
   } = useWallet()
@@ -229,7 +242,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 <GovernanceCTA onClose={onClose} />
               ) : drepKey ? (
                 /* isDrepRegistered === null: backend/Ogmios unavailable — show ID only, no status claim */
-                <GovernanceStatusUnavailable drepId={drepKey.dRepIDCip105 || null} />
+                <GovernanceStatusUnavailable drepId={drepKey.dRepIDCip105 || null} errorKind={drepStatusError} />
               ) : (
                 /* No DRep key and no backend data */
                 <GovernanceCTA onClose={onClose} />
