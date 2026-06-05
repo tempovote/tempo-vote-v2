@@ -139,20 +139,39 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
               </div>
             </div>
 
-            {/* DRep ID */}
-            {drepKey && (drepKey.dRepIDCip105 || drepKey.pubDRepKey) && (
-              <div className="p-3 rounded-xl bg-bg-card border border-border-subtle">
-                <p className="text-text-muted text-xs mb-1 font-medium">
-                  {drepKey.dRepIDCip105 ? "DRep ID (CIP-105)" : "DRep Public Key"}
-                </p>
-                <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
-                  {drepKey.dRepIDCip105 || drepKey.pubDRepKey}
-                </p>
-              </div>
-            )}
-
-            {/* No CIP-95 notice — only if wallet truly doesn't support it */}
-            {!cip95Supported && (
+            {/* DRep Section — 3 states */}
+            {cip95Supported ? (
+              drepKey?.dRepIDCip105 ? (
+                /* State 1: Registered DRep — show drep1... ID */
+                <div className="p-3 rounded-xl bg-bg-card border border-border-subtle">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />
+                    <p className="text-text-muted text-xs font-medium">DRep ID (CIP-105)</p>
+                  </div>
+                  <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+                    {drepKey.dRepIDCip105}
+                  </p>
+                </div>
+              ) : (
+                /* State 2: CIP-95 OK but not a registered DRep */
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-info/5 border border-info/20 text-xs text-info">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 mt-0.5">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  <span style={{ color: "var(--color-info)" }}>
+                    Not registered as a DRep.{" "}
+                    <a
+                      href="/"
+                      className="underline font-semibold hover:opacity-80"
+                      onClick={onClose}
+                    >
+                      Register now ↗
+                    </a>
+                  </span>
+                </div>
+              )
+            ) : (
+              /* State 3: Wallet doesn't support CIP-95 */
               <div className="flex items-center gap-2 p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-warning">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                   <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
@@ -161,6 +180,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 Wallet doesn&apos;t support CIP-95 — governance features limited
               </div>
             )}
+
 
             {/* Actions */}
             <div className="flex gap-2">
