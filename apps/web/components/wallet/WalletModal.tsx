@@ -60,6 +60,25 @@ function DRepInfoPanel({ drepName, drepId }: { drepName: string | null; drepId: 
   )
 }
 
+function GovernanceStatusUnavailable({ drepId }: { drepId: string | null }) {
+  return (
+    <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+      <div className="p-3">
+        <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-129)</p>
+        <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+          {drepId || "—"}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 p-3">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-text-muted">
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <p className="text-text-muted text-xs">On-chain status unavailable</p>
+      </div>
+    </div>
+  )
+}
+
 function GovernanceCTA({ onClose }: { onClose: () => void }) {
   return (
     <div className="p-3 rounded-xl bg-bg-card border border-border-subtle space-y-3">
@@ -207,8 +226,8 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 /* Confirmed by Ogmios: not DRep, not delegated */
                 <GovernanceCTA onClose={onClose} />
               ) : drepKey ? (
-                /* isDrepRegistered === null: backend unavailable, fall back to wallet key */
-                <DRepInfoPanel drepName={null} drepId={drepKey.dRepIDCip105 || null} />
+                /* isDrepRegistered === null: backend/Ogmios unavailable — show ID only, no status claim */
+                <GovernanceStatusUnavailable drepId={drepKey.dRepIDCip105 || null} />
               ) : (
                 /* No DRep key and no backend data */
                 <GovernanceCTA onClose={onClose} />
@@ -275,9 +294,13 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   </svg>
                   <span>{error}</span>
                 </div>
-                {/no account found|reconnect/i.test(error) && (
+                {/no account found|reconnect|locked/i.test(error) && (
                   <div className="flex items-center justify-between pl-5">
-                    <span className="text-text-muted">Wallet session expired — reload to fix.</span>
+                    <span className="text-text-muted">
+                      {/locked/i.test(error)
+                        ? "Unlock your wallet then try again, or reload."
+                        : "Wallet session expired — reload to fix."}
+                    </span>
                     <button
                       onClick={() => window.location.reload()}
                       className="text-accent-light hover:underline font-medium shrink-0 ml-2"

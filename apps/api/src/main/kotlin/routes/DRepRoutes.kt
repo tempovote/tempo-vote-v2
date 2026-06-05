@@ -4,6 +4,7 @@ import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.json.*
@@ -72,11 +73,7 @@ fun Route.drepRoutes() {
                     put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
                 })
             } catch (e: Exception) {
-                call.respond(buildJsonObject {
-                    put("isRegistered", false)
-                    put("id", drepId)
-                    put("name", JsonNull)
-                    put("anchorUrl", JsonNull)
+                call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
                     put("error", e.message ?: "Ogmios query failed")
                 })
             }
@@ -140,8 +137,7 @@ fun Route.stakeRoutes() {
                     }
                 })
             } catch (e: Exception) {
-                call.respond(buildJsonObject {
-                    put("delegatedDrep", JsonNull)
+                call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
                     put("error", e.message ?: "Ogmios query failed")
                 })
             }
