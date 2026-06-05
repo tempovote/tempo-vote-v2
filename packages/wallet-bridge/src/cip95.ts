@@ -1,10 +1,21 @@
 import type { WalletApi, DRepKey, PubStakeKey } from "./types"
 
 /**
+ * Check if the wallet supports CIP-95 governance.
+ * Checks for the api.cip95 namespace (populated when enable({ extensions: [{ cip: 95 }] })).
+ */
+export function hasCip95(api: WalletApi): boolean {
+  return !!api.cip95
+}
+
+/**
  * Get the DRep key from a CIP-95 enabled wallet.
- * Returns the DRep public key + CIP-105 bech32 DRep ID.
  *
- * @throws if wallet does not support CIP-95
+ * Tries methods in this order:
+ * 1. api.cip95.getDRepKey()      — Eternl-specific extension (returns full DRepKey)
+ * 2. api.cip95.getPubDRepKey()   — CIP-95 standard (returns raw hex pubkey only)
+ *
+ * @throws if wallet does not support CIP-95 or no method is available
  */
 export async function getDRepKey(api: WalletApi): Promise<DRepKey> {
   if (!api.cip95) {
@@ -12,22 +23,33 @@ export async function getDRepKey(api: WalletApi): Promise<DRepKey> {
       "Wallet does not support CIP-95. Make sure you enabled the governance extension."
     )
   }
-  return api.cip95.getDRepKey()
+
+  // Method 1: Eternl / wallets that provide the full DRepKey object
+  if (typeof api.cip95.getDRepKey === "function") {
+    return api.cip95.getDRepKey()
+  }
+
+  // Method 2: CIP-95 standard — only returns the raw public key hex
+  if (typeof api.cip95.getPubDRepKey === "function") {
+    const pubDRepKey = await api.cip95.getPubDRepKey()
+    return {
+      pubDRepKey,
+      dRepIDCip105: "",   // Cannot derive bech32 without hashing library
+      dRepIDBech32: undefined,
+    }
+  }
+
+  throw new Error("CIP-95 extension found but no getDRepKey / getPubDRepKey method available.")
 }
 
 /** Returns the DRep ID in bech32 format (drep1...) or null if not available */
 export async function getDRepId(api: WalletApi): Promise<string | null> {
   try {
     const key = await getDRepKey(api)
-    return key.dRepIDCip105 ?? key.dRepIDBech32 ?? null
+    return key.dRepIDCip105 || key.dRepIDBech32 || null
   } catch {
     return null
   }
-}
-
-/** Check if the wallet supports CIP-95 governance */
-export function hasCip95(api: WalletApi): boolean {
-  return !!api.cip95
 }
 
 /** Get registered stake keys */

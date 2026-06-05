@@ -8,6 +8,7 @@ interface WalletState {
   changeAddress: string | null
   rewardAddress: string | null
   drepKey: DRepKey | null
+  hasCip95: boolean
   isConnected: boolean
   isConnecting: boolean
   error: string | null
@@ -27,6 +28,7 @@ const initialState: WalletState = {
   changeAddress: null,
   rewardAddress: null,
   drepKey: null,
+  hasCip95: false,
   isConnected: false,
   isConnecting: false,
   error: null,
