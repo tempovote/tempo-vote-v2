@@ -32,57 +32,68 @@ async function fetchDRepStatus(
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void,
   setDRepStatusError: (kind: "network" | "server") => void
 ): Promise<void> {
-  let isDrepRegistered = false
-  let drepName: string | null = null
-  let delegatedDrep: DelegatedDrep | null = null
-  let apiCallSucceeded = false
   let networkError = false
 
-  try {
-    // Step 1: Check if this wallet's DRep key is registered on-chain
-    if (drepId) {
-      const res = await fetch(`${API_URL}/dreps/${drepId}?network=${network}`, {
-        signal: AbortSignal.timeout(8000),
-      }).catch(() => { networkError = true; return null })
+  // TypeError = connection refused (server not running); AbortError/TimeoutError = server slow
+  const safeFetch = (url: string) =>
+    fetch(url, { signal: AbortSignal.timeout(25000) }).catch((err: unknown) => {
+      if (err instanceof TypeError) networkError = true
+      return null
+    })
 
+  try {
+    // Step 1: Check DRep registration
+    let isDrepRegistered = false
+    let drepName: string | null = null
+    let step1Checked = false
+
+    if (drepId) {
+      const res = await safeFetch(`${API_URL}/dreps/${drepId}?network=${network}`)
       if (res?.ok) {
         const data = await res.json().catch(() => null)
         if (data != null) {
-          apiCallSucceeded = true
+          step1Checked = true
           isDrepRegistered = data.isRegistered === true
           drepName = data.name ?? null
         }
       }
     }
 
-    // Step 2: If not a registered DRep, check delegation for this stake address
-    if (!isDrepRegistered && stakeAddress) {
-      const res = await fetch(
-        `${API_URL}/stake/${encodeURIComponent(stakeAddress)}/delegation?network=${network}`,
-        { signal: AbortSignal.timeout(8000) }
-      ).catch(() => { networkError = true; return null })
+    // Registered DRep — no delegation check needed
+    if (isDrepRegistered) {
+      setDRepStatus({ isDrepRegistered: true, drepName, delegatedDrep: null })
+      return
+    }
 
-      if (res?.ok) {
-        const data = await res.json().catch(() => null)
-        if (data != null) {
-          apiCallSucceeded = true
-          if (data?.delegatedDrep) {
-            delegatedDrep = {
-              id: data.delegatedDrep.id,
-              name: data.delegatedDrep.name ?? null,
-            }
-          }
-        }
+    // Step 2: Delegation check — mandatory for non-DRep wallets.
+    // Without it we cannot distinguish "not delegated" from "query failed",
+    // and calling setDRepStatus with delegatedDrep=null would incorrectly show GovernanceCTA.
+    if (!stakeAddress) {
+      step1Checked
+        ? setDRepStatus({ isDrepRegistered: false, drepName: null, delegatedDrep: null })
+        : setDRepStatusError(networkError ? "network" : "server")
+      return
+    }
+
+    const res2 = await safeFetch(
+      `${API_URL}/stake/${encodeURIComponent(stakeAddress)}/delegation?network=${network}`
+    )
+    if (res2?.ok) {
+      const data = await res2.json().catch(() => null)
+      if (data != null) {
+        const drepData = data?.delegatedDrep
+        const delegatedDrep: DelegatedDrep | null = drepData
+          ? { id: drepData.id, name: drepData.name ?? null }
+          : null
+        setDRepStatus({ isDrepRegistered: false, drepName: null, delegatedDrep })
+        return
       }
     }
 
-    if (apiCallSucceeded) {
-      setDRepStatus({ isDrepRegistered, drepName, delegatedDrep })
-    } else {
-      setDRepStatusError(networkError ? "network" : "server")
-    }
-  } catch {
-    setDRepStatusError("network")
+    // Step 2 failed — can't confirm delegation status, show error
+    setDRepStatusError(networkError ? "network" : "server")
+  } catch (err: unknown) {
+    setDRepStatusError(err instanceof TypeError ? "network" : "server")
   }
 }
 
