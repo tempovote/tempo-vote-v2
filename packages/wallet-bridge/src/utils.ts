@@ -1,5 +1,19 @@
 import { bech32 } from "bech32"
+import { blake2b } from "@noble/hashes/blake2.js"
 import type { NetworkId } from "./types"
+
+/**
+ * Derive a CIP-129 DRep ID from a raw public DRep key (hex).
+ * Formula: bech32("drep", blake2b_224(pubkey))
+ */
+export function pubDRepKeyToDrepId(pubDRepKeyHex: string): string {
+  const pubKeyBytes = Uint8Array.from(
+    pubDRepKeyHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16))
+  )
+  const hash = blake2b(pubKeyBytes, { dkLen: 28 })
+  const words = bech32.toWords(hash)
+  return bech32.encode("drep", words, 200)
+}
 
 /**
  * Convert a CIP-30 hex-encoded address to bech32 format.

@@ -43,6 +43,70 @@ function truncateAddress(addr: string, chars = 8): string {
   return `${addr.slice(0, chars)}...${addr.slice(-chars)}`
 }
 
+function DRepInfoPanel({ drepName, drepId }: { drepName: string | null; drepId: string | null }) {
+  return (
+    <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+      {drepName && (
+        <div className="p-3">
+          <p className="text-text-muted text-xs mb-1 font-medium">DRep Name</p>
+          <p className="text-text-primary text-sm font-semibold">{drepName}</p>
+        </div>
+      )}
+      <div className="p-3">
+        <p className="text-text-muted text-xs mb-1 font-medium">Your DRep ID</p>
+        <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+          {drepId || "—"}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function GovernanceStatusUnavailable({ drepId }: { drepId: string | null }) {
+  return (
+    <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+      <div className="p-3">
+        <p className="text-text-muted text-xs mb-1 font-medium">Your DRep ID</p>
+        <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
+          {drepId || "—"}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 p-3">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-text-muted">
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <p className="text-text-muted text-xs">On-chain status unavailable</p>
+      </div>
+    </div>
+  )
+}
+
+function GovernanceCTA({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="p-3 rounded-xl bg-bg-card border border-border-subtle space-y-3">
+      <p className="text-text-secondary text-xs leading-relaxed">
+        Tham gia quản trị Cardano bằng cách delegate cho DRep hoặc tự đăng ký trở thành DRep.
+      </p>
+      <div className="flex flex-col gap-2">
+        <a
+          href="/dreps"
+          onClick={onClose}
+          className="flex items-center justify-center py-2 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-xs font-medium transition-colors"
+        >
+          Tìm DRep để delegate
+        </a>
+        <a
+          href="/dreps/register"
+          onClick={onClose}
+          className="flex items-center justify-center py-2 rounded-lg bg-accent/15 border border-accent/30 text-accent-light hover:bg-accent/25 text-xs font-medium transition-colors"
+        >
+          Đăng ký trở thành DRep
+        </a>
+      </div>
+    </div>
+  )
+}
+
 interface WalletModalProps {
   isOpen: boolean
   onClose: () => void
@@ -51,7 +115,9 @@ interface WalletModalProps {
 export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
   const {
     isConnected, isConnecting, error,
-    name, networkId, changeAddress, drepKey, hasCip95: cip95Supported,
+    name, networkId, changeAddress, drepKey,
+    drepName, isDrepRegistered, delegatedDrep, drepStatusLoading,
+    hasCip95: cip95Supported,
     connect, disconnect, availableWallets,
   } = useWallet()
 
@@ -139,18 +205,39 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
               </div>
             </div>
 
-            {/* DRep ID */}
-            {drepKey && (
-              <div className="p-3 rounded-xl bg-bg-card border border-border-subtle">
-                <p className="text-text-muted text-xs mb-1 font-medium">DRep ID (CIP-105)</p>
-                <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
-                  {drepKey.dRepIDCip105}
-                </p>
-              </div>
+            {/* ── Governance status (CIP-95 only) ── */}
+            {cip95Supported && (
+              drepStatusLoading ? (
+                /* Fetching on-chain status from Ogmios */
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-bg-card border border-border-subtle text-xs text-text-muted">
+                  <div className="spinner shrink-0" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                  Checking governance status...
+                </div>
+              ) : isDrepRegistered === true ? (
+                /* Confirmed by Ogmios: registered DRep */
+                <DRepInfoPanel drepName={drepName} drepId={drepKey?.dRepIDCip105 ?? null} />
+              ) : isDrepRegistered === false && delegatedDrep ? (
+                /* Confirmed by Ogmios: not DRep, has delegated */
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-success">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Delegated to: &ldquo;{delegatedDrep.name ?? truncateAddress(delegatedDrep.id, 8)}&rdquo;
+                </div>
+              ) : isDrepRegistered === false ? (
+                /* Confirmed by Ogmios: not DRep, not delegated */
+                <GovernanceCTA onClose={onClose} />
+              ) : drepKey ? (
+                /* isDrepRegistered === null: backend/Ogmios unavailable — show ID only, no status claim */
+                <GovernanceStatusUnavailable drepId={drepKey.dRepIDCip105 || null} />
+              ) : (
+                /* No DRep key and no backend data */
+                <GovernanceCTA onClose={onClose} />
+              )
             )}
 
             {/* No CIP-95 notice */}
-            {!drepKey && (
+            {!cip95Supported && (
               <div className="flex items-center gap-2 p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-warning">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                   <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -159,7 +246,6 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 Wallet doesn&apos;t support CIP-95 — governance features limited
               </div>
             )}
-
 
             {/* Actions */}
             <div className="flex gap-2">
@@ -203,11 +289,28 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
         {!isConnected && !isConnecting && (
           <div className="space-y-3">
             {error && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-danger/8 border border-danger/25 text-danger text-xs">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
-                  <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
-                </svg>
-                {error}
+              <div className="p-3 rounded-lg bg-danger/8 border border-danger/25 text-xs space-y-2">
+                <div className="flex items-start gap-2 text-danger">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 mt-0.5">
+                    <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                  </svg>
+                  <span>{error}</span>
+                </div>
+                {/no account found|reconnect|locked/i.test(error) && (
+                  <div className="flex items-center justify-between pl-5">
+                    <span className="text-text-muted">
+                      {/locked/i.test(error)
+                        ? "Unlock your wallet then try again, or reload."
+                        : "Wallet session expired — reload to fix."}
+                    </span>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="text-accent-light hover:underline font-medium shrink-0 ml-2"
+                    >
+                      Reload ↺
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

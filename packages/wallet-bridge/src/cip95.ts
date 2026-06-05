@@ -1,4 +1,5 @@
 import type { WalletApi, DRepKey, PubStakeKey } from "./types"
+import { pubDRepKeyToDrepId } from "./utils"
 
 /**
  * Check if the wallet supports CIP-95 governance.
@@ -25,8 +26,13 @@ export async function getDRepKey(api: WalletApi): Promise<DRepKey> {
   }
 
   // Method 1: Eternl / wallets that provide the full DRepKey object
+  // dRepIDCip105 may be empty on some wallets — derive from pubDRepKey as fallback
   if (typeof api.cip95.getDRepKey === "function") {
-    return api.cip95.getDRepKey()
+    const key = await api.cip95.getDRepKey()
+    return {
+      ...key,
+      dRepIDCip105: key.dRepIDCip105 || pubDRepKeyToDrepId(key.pubDRepKey),
+    }
   }
 
   // Method 2: CIP-95 standard — only returns the raw public key hex
@@ -34,7 +40,7 @@ export async function getDRepKey(api: WalletApi): Promise<DRepKey> {
     const pubDRepKey = await api.cip95.getPubDRepKey()
     return {
       pubDRepKey,
-      dRepIDCip105: "",   // Cannot derive bech32 without hashing library
+      dRepIDCip105: pubDRepKeyToDrepId(pubDRepKey),
       dRepIDBech32: undefined,
     }
   }

@@ -18,10 +18,8 @@ fun Network.fromNetworkId(networkId: Int): Network =
  */
 fun getBackendService(network: Network): BackendService {
     val ogmiosUrl = when (network) {
-        Network.PREPROD -> System.getenv("OGMIOS_PREPROD_URL")
-            ?: error("OGMIOS_PREPROD_URL not set")
-        Network.MAINNET -> System.getenv("OGMIOS_MAINNET_URL")
-            ?: error("OGMIOS_MAINNET_URL not set")
+        Network.PREPROD -> (System.getenv("OGMIOS_PREPROD_URL") ?: error("OGMIOS_PREPROD_URL not set")).toWsUrl()
+        Network.MAINNET -> (System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")).toWsUrl()
     }
     val kupoUrl = when (network) {
         Network.PREPROD -> System.getenv("KUPO_PREPROD_URL")
@@ -31,6 +29,9 @@ fun getBackendService(network: Network): BackendService {
     }
     return KupmiosBackendService(ogmiosUrl, kupoUrl)
 }
+
+/** Convert http(s):// → ws(s):// for KupmiosBackendService which expects WebSocket URLs. */
+private fun String.toWsUrl() = replace(Regex("^https://"), "wss://").replace(Regex("^http://"), "ws://")
 
 fun networkFromString(s: String): Network = when (s.lowercase()) {
     "mainnet" -> Network.MAINNET
