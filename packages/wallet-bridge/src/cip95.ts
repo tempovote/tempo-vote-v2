@@ -1,4 +1,5 @@
 import type { WalletApi, DRepKey, PubStakeKey } from "./types"
+import { pubDRepKeyToDrepId } from "./utils"
 
 /**
  * Check if the wallet supports CIP-95 governance.
@@ -34,7 +35,7 @@ export async function getDRepKey(api: WalletApi): Promise<DRepKey> {
     const pubDRepKey = await api.cip95.getPubDRepKey()
     return {
       pubDRepKey,
-      dRepIDCip105: "",   // Cannot derive bech32 without hashing library
+      dRepIDCip105: pubDRepKeyToDrepId(pubDRepKey),
       dRepIDBech32: undefined,
     }
   }
