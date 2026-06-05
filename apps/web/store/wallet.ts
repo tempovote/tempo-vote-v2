@@ -18,6 +18,8 @@ interface WalletState {
   isDrepRegistered: boolean | null
   delegatedDrep: DelegatedDrep | null
   drepStatusLoading: boolean
+  // "network" = API server unreachable; "server" = Ogmios/backend error; null = no error
+  drepStatusError: "network" | "server" | null
   hasCip95: boolean
   isConnected: boolean
   isConnecting: boolean
@@ -25,9 +27,10 @@ interface WalletState {
 }
 
 interface WalletActions {
-  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading">) => void
+  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError">) => void
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void
   setDRepStatusLoading: (v: boolean) => void
+  setDRepStatusError: (kind: "network" | "server") => void
   setConnecting: (v: boolean) => void
   setError: (msg: string) => void
   clearError: () => void
@@ -45,6 +48,7 @@ const initialState: WalletState = {
   isDrepRegistered: null,
   delegatedDrep: null,
   drepStatusLoading: false,
+  drepStatusError: null,
   hasCip95: false,
   isConnected: false,
   isConnecting: false,
@@ -55,8 +59,9 @@ export const useWalletStore = create<WalletState & WalletActions>((set) => ({
   ...initialState,
   setWallet: (data) => set({ ...data, isConnecting: false, error: null }),
   setDRepStatus: ({ isDrepRegistered, drepName, delegatedDrep }) =>
-    set({ isDrepRegistered, drepName, delegatedDrep, drepStatusLoading: false }),
+    set({ isDrepRegistered, drepName, delegatedDrep, drepStatusLoading: false, drepStatusError: null }),
   setDRepStatusLoading: (v) => set({ drepStatusLoading: v }),
+  setDRepStatusError: (kind) => set({ drepStatusError: kind, drepStatusLoading: false }),
   setConnecting: (v) => set({ isConnecting: v }),
   setError: (msg) => set({ error: msg, isConnecting: false }),
   clearError: () => set({ error: null }),
