@@ -53,16 +53,19 @@ class OgmiosStateQueries(private val network: Network) {
         Network.MAINNET -> (System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")).toWsUrl()
     }
 
-    private val client = HttpClient(CIO) {
-        install(WebSockets)
+    companion object {
+        // Shared across all instances — avoids spinning up a new NIO thread pool per request.
+        private val client = HttpClient(CIO) {
+            install(WebSockets)
+        }
     }
 
-    suspend fun getGovernanceActions(): JsonObject {
-        return query("queryLedgerState/governanceActions", buildJsonObject {})
+    suspend fun getGovernanceActions(): JsonElement {
+        return queryRaw("queryLedgerState/governanceActions", buildJsonObject {})
     }
 
-    suspend fun getDelegateRepresentatives(): JsonObject {
-        return query("queryLedgerState/delegateRepresentatives", buildJsonObject {})
+    suspend fun getDelegateRepresentatives(): JsonElement {
+        return queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {})
     }
 
     suspend fun getTreasury(): JsonObject {
