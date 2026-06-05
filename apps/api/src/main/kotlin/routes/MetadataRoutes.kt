@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -19,6 +20,13 @@ private val okHttp = OkHttpClient.Builder()
     .connectTimeout(10, TimeUnit.SECONDS)
     .readTimeout(30, TimeUnit.SECONDS)
     .build()
+
+@Serializable
+data class ImageUploadRequest(
+    val base64: String,
+    val mimeType: String = "image/jpeg",
+    val filename: String = "avatar",
+)
 
 @Serializable
 data class MetadataUploadRequest(
@@ -45,6 +53,58 @@ fun Route.metadataRoutes() {
         // POST /metadata/upload
         // Build CIP-119 JSON-LD, calculate blake2b-256 hash, upload to Pinata IPFS.
         // Returns { anchorUrl, anchorDataHash } for use in DREP_REGISTER TX.
+        // POST /metadata/upload-image
+        // Accept base64-encoded image, upload to Pinata IPFS, return { imageUrl }.
+        post("/upload-image") {
+            val pinataJwt = System.getenv("PINATA_JWT")
+                ?: return@post call.respond(
+                    HttpStatusCode.InternalServerError,
+                    mapOf("error" to "PINATA_JWT not configured")
+                )
+
+            val req = try {
+                call.receive<ImageUploadRequest>()
+            } catch (e: Exception) {
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("error" to "Invalid request: ${e.message}")
+                )
+            }
+
+            val imageBytes = try {
+                java.util.Base64.getDecoder().decode(req.base64)
+            } catch (e: Exception) {
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("error" to "Invalid base64 data")
+                )
+            }
+
+            val ipfsHash = try {
+                uploadImageToPinata(pinataJwt, imageBytes, req.filename, req.mimeType)
+            } catch (e: Exception) {
+                return@post call.respond(
+                    HttpStatusCode.BadGateway,
+                    mapOf("error" to "Pinata upload failed: ${e.message}")
+                )
+            }
+
+            call.respond(mapOf("imageUrl" to "ipfs://$ipfsHash"))
+        }
+
+        delete("/unpin/{hash}") {
+            val hash = call.parameters["hash"]
+                ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Missing hash"))
+            val pinataJwt = System.getenv("PINATA_JWT")
+                ?: return@delete call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "PINATA_JWT not configured"))
+            try {
+                unpinFromPinata(pinataJwt, hash)
+                call.respond(mapOf("ok" to true))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Unpin failed: ${e.message}"))
+            }
+        }
+
         post("/upload") {
             val pinataJwt = System.getenv("PINATA_JWT")
                 ?: return@post call.respond(
@@ -147,6 +207,45 @@ private fun blake2b256Hex(input: ByteArray): String {
     val out = ByteArray(32)
     digest.doFinal(out, 0)
     return out.joinToString("") { "%02x".format(it) }
+}
+
+private fun uploadImageToPinata(jwt: String, bytes: ByteArray, filename: String, mimeType: String): String {
+    val mediaType = mimeType.toMediaType()
+    val body = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart("file", filename, bytes.toRequestBody(mediaType))
+        .addFormDataPart(
+            "pinataMetadata",
+            null,
+            buildJsonObject { put("name", "drep-image-$filename") }.toString()
+                .toRequestBody("application/json".toMediaType()),
+        )
+        .build()
+
+    val request = Request.Builder()
+        .url("https://api.pinata.cloud/pinning/pinFileToIPFS")
+        .header("Authorization", "Bearer $jwt")
+        .post(body)
+        .build()
+
+    val response = okHttp.newCall(request).execute()
+    val responseBody = response.body?.string() ?: throw Exception("Empty response from Pinata")
+    if (!response.isSuccessful) throw Exception("HTTP ${response.code}: $responseBody")
+    return Json.parseToJsonElement(responseBody).jsonObject["IpfsHash"]?.jsonPrimitive?.content
+        ?: throw Exception("IpfsHash missing from Pinata response")
+}
+
+private fun unpinFromPinata(jwt: String, ipfsHash: String) {
+    val request = Request.Builder()
+        .url("https://api.pinata.cloud/pinning/unpin/$ipfsHash")
+        .header("Authorization", "Bearer $jwt")
+        .delete()
+        .build()
+    val response = okHttp.newCall(request).execute()
+    // 404 means already unpinned — treat as success
+    if (!response.isSuccessful && response.code != 404) {
+        throw Exception("HTTP ${response.code}: ${response.body?.string()}")
+    }
 }
 
 private fun uploadToPinata(jwt: String, drepId: String, metadata: JsonObject): String {

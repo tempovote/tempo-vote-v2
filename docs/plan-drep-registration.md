@@ -85,37 +85,28 @@ Implement `POST /metadata/upload`:
 
 ### Checklist
 
-- [ ] **2.1** Tạo `apps/web/app/dreps/register/page.tsx`
+- [x] **2.1** Tạo `apps/web/app/dreps/register/page.tsx`
   - [ ] Guard: wallet chưa connect → prompt connect
   - [ ] Guard: ví không support CIP-95 → thông báo lỗi
   - [ ] Guard: đã là DRep registered → redirect / thông báo
   - [ ] State machine: `idle | step1 | step2 | step3 | uploading | signing | success | error`
 
-- [ ] **2.2** Tạo `apps/web/components/drep/RegisterDRepForm.tsx`
+- [x] **2.2** Tạo `apps/web/components/drep/RegisterDRepForm.tsx`
   - [ ] Bước 1: givenName, imageUrl, paymentAddress, doNotList toggle
   - [ ] Bước 2: motivations textarea, objectives, qualifications, references builder (add/remove)
   - [ ] Validation với `Cip119BodySchema` (từ `@tempo-vote/types`)
   - [ ] Progress indicator (step 1/2/3)
 
-- [ ] **2.3** Tạo `apps/web/components/drep/RegisterDRepConfirm.tsx`
-  - [ ] Hiển thị preview CIP-119 metadata
-  - [ ] Hiển thị DRep ID (bech32)
-  - [ ] Ước tính phí TX (khoảng 2 ADA deposit + network fee)
-  - [ ] Button "Xác nhận & Đăng ký"
+- [x] **2.3** ConfirmStep inline trong page.tsx (DRep preview, fee breakdown, upload+sign flow)
 
-- [ ] **2.4** Implement registration flow trong page.tsx
-  ```typescript
-  // Step 4 flow:
-  1. POST /api/metadata/upload → { anchorUrl, anchorDataHash }
-  2. useTx("DREP_REGISTER", { drepId, anchorUrl, anchorDataHash })
-  3. Show txHash + link CardanoScan
-  4. refreshDrepStatus() trong useWallet
-  ```
+- [x] **2.4** Registration flow trong page.tsx
+  - Upload metadata → anchorUrl + anchorDataHash
+  - submitTx("DREP_REGISTER") → txHash
+  - Optimistic update: setDRepStatus(isDrepRegistered: true)
 
-- [ ] **2.5** Tạo `apps/web/components/drep/RegisterDRepSuccess.tsx`
-  - [ ] txHash với link explorer (CardanoScan preprod/mainnet)
-  - [ ] Thông báo chờ confirm (~20-60s)
-  - [ ] Button "Xem hồ sơ DRep"
+- [x] **2.5** Tạo `apps/web/components/drep/RegisterDRepSuccess.tsx`
+  - txHash + CardanoScan link (preprod/mainnet auto-detect)
+  - Thông báo chờ confirm
 
 ---
 
@@ -123,9 +114,9 @@ Implement `POST /metadata/upload`:
 
 ### Checklist
 
-- [ ] **3.1** Kết nối button trong `apps/web/app/page.tsx` → `/dreps/register`
-- [ ] **3.2** Kết nối link trong `apps/web/components/wallet/WalletModal.tsx` → `/dreps/register`
-- [ ] **3.3** Cập nhật `useWallet.ts`: sau khi register xong, refresh `isDrepRegistered` + `drepName`
+- [x] **3.1** Kết nối button trong `apps/web/app/page.tsx` → `/dreps/register`
+- [x] **3.2** Link trong `WalletModal.tsx` → `/dreps/register` (đã có sẵn)
+- [x] **3.3** Sau register: `setDRepStatus(isDrepRegistered: true, drepName)` optimistic update
 - [ ] **3.4** Test preprod end-to-end:
   - [ ] Connect Eternl wallet (preprod)
   - [ ] Điền form, upload metadata → kiểm tra IPFS link
