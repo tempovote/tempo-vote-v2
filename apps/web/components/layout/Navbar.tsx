@@ -3,7 +3,9 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { useState } from "react"
+import { useState, useCallback } from "react"
+import { useWalletStore } from "@/store/wallet"
+import WalletModal from "@/components/wallet/WalletModal"
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -12,9 +14,24 @@ const navLinks = [
   { href: "/governance-actions", label: "Governance Actions" },
 ]
 
+function truncate(addr: string, chars = 6) {
+  if (!addr || addr.length <= chars * 2 + 3) return addr
+  return `${addr.slice(0, chars)}...${addr.slice(-4)}`
+}
+
 export default function Navbar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [walletModalOpen, setWalletModalOpen] = useState(false)
+
+  const { isConnected, name, networkId, changeAddress } = useWalletStore()
+
+  const openModal  = useCallback(() => setWalletModalOpen(true),  [])
+  const closeModal = useCallback(() => setWalletModalOpen(false), [])
+
+  const isMainnet = networkId === 1
+  const networkLabel = networkId === null ? "Mainnet" : isMainnet ? "Mainnet" : "Preprod"
+  const networkColor = networkId === null ? "#22c55e" : isMainnet ? "#22c55e" : "#eab308"
 
   return (
     <>
@@ -30,25 +47,16 @@ export default function Navbar() {
       {/* Main navbar */}
       <nav className="sticky top-0 z-50 bg-bg-primary/80 backdrop-blur-xl border-b border-border-default">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 flex items-center justify-between h-16">
+
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0">
-            <Image
-              src="/logo.webp"
-              alt="Tempo"
-              width={140}
-              height={36}
-              className="h-8 w-auto"
-              priority
-            />
+            <Image src="/logo.webp" alt="Tempo" width={140} height={36} className="h-8 w-auto" priority />
           </Link>
 
           {/* Desktop nav links */}
           <div className="hidden md:flex items-center gap-1">
             {navLinks.map((link) => {
-              const isActive =
-                link.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(link.href)
+              const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href)
               return (
                 <Link
                   key={link.href}
@@ -67,16 +75,44 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
-            {/* Network badge */}
+            {/* Network badge — dynamic */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-border-default text-xs font-medium text-text-secondary">
-              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-              Mainnet
+              <span
+                className="w-2 h-2 rounded-full animate-pulse"
+                style={{ backgroundColor: networkColor }}
+              />
+              {networkLabel}
             </div>
 
-            {/* Connect Wallet button */}
-            <button className="btn-primary text-sm px-4 py-2">
-              Connect Wallet
-            </button>
+            {/* Wallet button — 2 states */}
+            {isConnected && changeAddress ? (
+              <button
+                className="wallet-connected-btn"
+                onClick={openModal}
+                title={changeAddress}
+                id="wallet-connected-btn"
+              >
+                {/* Mini avatar */}
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                  style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                >
+                  {name ? name[0]?.toUpperCase() : "W"}
+                </div>
+                <span className="font-mono">{truncate(changeAddress)}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-muted">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+            ) : (
+              <button
+                className="btn-primary text-sm px-4 py-2"
+                onClick={openModal}
+                id="wallet-connect-btn"
+              >
+                Connect Wallet
+              </button>
+            )}
 
             {/* Mobile menu button */}
             <button
@@ -84,16 +120,7 @@ export default function Navbar() {
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 {mobileOpen ? (
                   <>
                     <line x1="18" y1="6" x2="6" y2="18" />
@@ -116,10 +143,7 @@ export default function Navbar() {
           <div className="md:hidden border-t border-border-default bg-bg-secondary/95 backdrop-blur-xl animate-fade-in">
             <div className="px-4 py-3 space-y-1">
               {navLinks.map((link) => {
-                const isActive =
-                  link.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(link.href)
+                const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href)
                 return (
                   <Link
                     key={link.href}
@@ -135,10 +159,19 @@ export default function Navbar() {
                   </Link>
                 )
               })}
+
+              {/* Network badge in mobile */}
+              <div className="flex items-center gap-2 px-3 py-2 text-xs text-text-muted">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: networkColor }} />
+                {networkLabel}
+              </div>
             </div>
           </div>
         )}
       </nav>
+
+      {/* Wallet Modal — rendered at root level via portal-like placement */}
+      <WalletModal isOpen={walletModalOpen} onClose={closeModal} />
     </>
   )
 }
