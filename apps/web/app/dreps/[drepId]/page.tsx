@@ -24,9 +24,10 @@ function DRepAvatar({ drepId, imageUrl, name, size = 64 }: {
   size?: number
 }) {
   const [colors] = useState(() => hashToColors(drepId))
+  const [imgError, setImgError] = useState(false)
   const initial = (name ?? drepId).charAt(0).toUpperCase()
 
-  if (imageUrl) {
+  if (imageUrl && !imgError) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
@@ -36,6 +37,7 @@ function DRepAvatar({ drepId, imageUrl, name, size = 64 }: {
         height={size}
         className="rounded-full object-cover shrink-0"
         style={{ width: size, height: size }}
+        onError={() => setImgError(true)}
       />
     )
   }
@@ -301,61 +303,56 @@ export default function DRepProfilePage({
             </div>
           </div>
 
-          {/* Share */}
-          <button
-            onClick={() => navigator.clipboard.writeText(window.location.href)}
-            className="shrink-0 p-2 rounded-lg border border-border-subtle text-text-muted hover:text-text-primary hover:border-border-default transition-colors"
-            title="Sao chép link"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-          </button>
+          {/* Status chip + Share */}
+          <div className="flex items-center gap-2 shrink-0">
+            {profile.active ? (
+              <span className="badge badge-active">Active</span>
+            ) : (
+              <span className="badge badge-expired">Inactive</span>
+            )}
+            <button
+              onClick={() => navigator.clipboard.writeText(window.location.href)}
+              className="p-2 rounded-lg border border-border-subtle text-text-muted hover:text-text-primary hover:border-border-default transition-colors"
+              title="Sao chép link"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Stats row */}
-        <div className="flex gap-3">
-          <div className="flex-1 bg-bg-secondary rounded-xl p-3 border border-border-subtle space-y-0.5">
-            {/* Show delegated voting power; fallback to stake key balance for new DReps */}
-            {profile.votingPower != null && profile.votingPower > 0 ? (
-              <>
-                <p className="text-xs text-text-muted">Active Voting Power</p>
-                <p className="text-lg font-bold text-text-primary">
-                  {formatAda(profile.votingPower)} ₳
-                </p>
-              </>
-            ) : profile.stakeKeyBalance != null && profile.stakeKeyBalance > 0 ? (
-              <>
-                <p className="text-xs text-text-muted">Stake Balance</p>
-                <p className="text-lg font-bold text-text-primary">
-                  {formatAda(profile.stakeKeyBalance)} ₳
-                </p>
-                <p className="text-[10px] text-text-muted">snapshot hiện tại</p>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-text-muted">Active Voting Power</p>
-                <p className="text-lg font-bold text-text-primary">
-                  {profile.isRegistered ? "0 ₳" : "—"}
-                </p>
-                {profile.isRegistered && (
-                  <p className="text-[10px] text-text-muted">chưa có delegator</p>
-                )}
-              </>
-            )}
-          </div>
-          <div className="flex-1 bg-bg-secondary rounded-xl p-3 border border-border-subtle space-y-0.5">
-            <p className="text-xs text-text-muted">Trạng thái</p>
-            <div className="flex items-center gap-2 pt-0.5">
-              {profile.isRegistered ? (
-                <span className="badge badge-active">Active</span>
-              ) : (
-                <span className="badge badge-expired">Inactive</span>
+        {/* Stats row — voting power only */}
+        <div className="bg-bg-secondary rounded-xl p-3 border border-border-subtle space-y-0.5">
+          {/* Show delegated voting power; fallback to stake key balance for new DReps */}
+          {profile.votingPower != null && profile.votingPower > 0 ? (
+            <>
+              <p className="text-xs text-text-muted">Active Voting Power</p>
+              <p className="text-lg font-bold text-text-primary">
+                {formatAda(profile.votingPower)} ₳
+              </p>
+            </>
+          ) : profile.stakeKeyBalance != null && profile.stakeKeyBalance > 0 ? (
+            <>
+              <p className="text-xs text-text-muted">Stake Balance</p>
+              <p className="text-lg font-bold text-text-primary">
+                {formatAda(profile.stakeKeyBalance)} ₳
+              </p>
+              <p className="text-[10px] text-text-muted">snapshot hiện tại</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-text-muted">Active Voting Power</p>
+              <p className="text-lg font-bold text-text-primary">
+                {profile.isRegistered ? "0 ₳" : "—"}
+              </p>
+              {profile.isRegistered && (
+                <p className="text-[10px] text-text-muted">chưa có delegator</p>
               )}
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* Delegate CTA */}

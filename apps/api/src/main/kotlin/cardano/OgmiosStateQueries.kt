@@ -151,6 +151,11 @@ class OgmiosStateQueries(private val network: Network) {
      * Returns (delegationResult, drepInfoResult?) — drepInfoResult is null if not
      * delegated to a registered DRep.
      */
+    suspend fun getCurrentEpoch(): Int {
+        val result = queryRaw("queryLedgerState/epoch", buildJsonObject {})
+        return result.jsonPrimitive.int
+    }
+
     suspend fun getStakeDelegationWithDRepInfo(stakeAddress: String): Pair<JsonElement, JsonElement?> {
         val stakeDelegation = getStakeDelegation(stakeAddress)
 

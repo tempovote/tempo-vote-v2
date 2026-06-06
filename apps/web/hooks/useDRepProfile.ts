@@ -7,6 +7,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
 export interface DRepFullProfile {
   isRegistered: boolean
+  active: boolean               // false when mandate expired (inactive > 20 epochs without vote)
+  mandateExpiresEpoch: number | null
   id: string
   name: string | null
   anchorUrl: string | null
@@ -44,6 +46,8 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((data: {
         isRegistered: boolean
+        active?: boolean
+        mandateExpiresEpoch?: number | null
         id: string
         name: string | null
         anchorUrl: string | null
@@ -54,6 +58,8 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
 
         const base: DRepFullProfile = {
           isRegistered: data.isRegistered ?? false,
+          active: data.active ?? true,
+          mandateExpiresEpoch: data.mandateExpiresEpoch ?? null,
           id: data.id ?? drepId,
           name: data.name ?? null,
           anchorUrl: data.anchorUrl ?? null,

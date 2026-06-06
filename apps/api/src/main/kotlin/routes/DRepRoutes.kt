@@ -80,8 +80,13 @@ fun Route.drepRoutes() {
                     val votes = obj["votes"]?.jsonArray ?: continue
                     val myVote = votes.firstOrNull { entry ->
                         val issuer = runCatching { entry.jsonObject["issuer"]?.jsonObject }.getOrNull()
-                        issuer?.get("role")?.jsonPrimitive?.contentOrNull == "delegateRepresentative"
-                            && issuer["id"]?.jsonPrimitive?.contentOrNull == credentialHex
+                        if (issuer?.get("role")?.jsonPrimitive?.contentOrNull != "delegateRepresentative") return@firstOrNull false
+                        val issuerId = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return@firstOrNull false
+                        // Ogmios may return bech32 (drep1...) or raw hex — normalise to hex
+                        val normalizedId = if (issuerId.startsWith("drep")) {
+                            runCatching { drepIdToCredentialHex(issuerId) }.getOrElse { issuerId }
+                        } else issuerId
+                        normalizedId == credentialHex
                     }?.jsonObject?.get("vote")?.jsonPrimitive?.contentOrNull ?: continue
 
                     val proposal = obj["proposal"]?.jsonObject ?: continue
@@ -164,8 +169,15 @@ fun Route.drepRoutes() {
                     queryStakeKeyBalance(credentialHex, network)
                 } else null
 
+                // Mandate: epoch until DRep stays active; active = mandate >= currentEpoch
+                val mandateEpoch = fromList["mandateEpoch"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.intOrNull
+                val currentEpoch = runCatching { OgmiosStateQueries(network).getCurrentEpoch() }.getOrNull()
+                val isActive = mandateEpoch == null || currentEpoch == null || mandateEpoch >= currentEpoch
+
                 val response = buildJsonObject {
                     put("isRegistered", fromList["isRegistered"]!!)
+                    put("active", isActive)
+                    put("mandateExpiresEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
                     put("id", drepId)
                     put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
                     put("anchorUrl", fromList["anchorUrl"]!!)
@@ -193,9 +205,13 @@ fun Route.drepRoutes() {
                     .mapNotNull { runCatching { it.jsonObject }.getOrNull() }
                     .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
 
+                val currentEpoch = runCatching { queries.getCurrentEpoch() }.getOrNull()
+
                 val response = if (registeredDrep == null) {
                     buildJsonObject {
                         put("isRegistered", false)
+                        put("active", false)
+                        put("mandateExpiresEpoch", JsonNull)
                         put("id", drepId)
                         put("name", JsonNull)
                         put("anchorUrl", JsonNull)
@@ -210,8 +226,12 @@ fun Route.drepRoutes() {
                     val stakeKeyBalance = if (votingPower == 0L) {
                         queryStakeKeyBalance(credentialHex, network)
                     } else null
+                    val mandateEpoch = registeredDrep["mandate"]?.jsonObject?.get("epoch")?.jsonPrimitive?.intOrNull
+                    val isActive = mandateEpoch == null || currentEpoch == null || mandateEpoch >= currentEpoch
                     buildJsonObject {
                         put("isRegistered", true)
+                        put("active", isActive)
+                        put("mandateExpiresEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
                         put("id", drepId)
                         put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
                         put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
@@ -334,10 +354,13 @@ private fun searchDrepList(network: Network, drepId: String, credentialHex: Stri
     val anchorUrl = match["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
         ?: match["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
 
+    val mandateEpoch = match["mandate"]?.jsonObject?.get("epoch")?.jsonPrimitive?.intOrNull
+
     return buildJsonObject {
         put("isRegistered", true)
         put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
         put("votingPower", extractStakeLovelace(match["stake"])?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("mandateEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
     }
 }
 
