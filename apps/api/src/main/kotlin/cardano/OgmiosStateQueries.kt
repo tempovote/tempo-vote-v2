@@ -41,7 +41,14 @@ fun drepIdToCredentialHex(drepId: String): String {
             bytes.add((acc shr bits) and 0xff)
         }
     }
-    return bytes.joinToString("") { "%02x".format(it) }
+    // CIP-129: DRep IDs may have a 1-byte type header (0x22 = keyHash, 0x23 = script)
+    // followed by the 28-byte credential. Strip the header so the result is always 56 hex chars.
+    val credential = if (bytes.size == 29 && (bytes[0] == 0x22 || bytes[0] == 0x23)) {
+        bytes.drop(1)
+    } else {
+        bytes
+    }
+    return credential.joinToString("") { "%02x".format(it) }
 }
 
 private const val BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"

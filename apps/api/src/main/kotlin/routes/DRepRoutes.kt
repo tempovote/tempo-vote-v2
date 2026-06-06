@@ -383,26 +383,40 @@ private suspend fun queryStakeKeyBalance(credentialHex: String, network: Network
 private val PINATA_GATEWAY = System.getenv("PINATA_GATEWAY") ?: "https://ipfs.io"
 private val IPFS_GATEWAYS_BE = listOf("$PINATA_GATEWAY/ipfs/", "https://ipfs.io/ipfs/", "https://cloudflare-ipfs.com/ipfs/")
 
-/** Resolve ipfs:// scheme to HTTPS gateway for backend HTTP fetches. */
-private fun resolveIpfsUrl(url: String): String =
-    if (url.startsWith("ipfs://")) "${IPFS_GATEWAYS_BE[0]}${url.removePrefix("ipfs://")}" else url
+/** Extract CID from any IPFS URL form (ipfs:// or https://<gateway>/ipfs/<cid>) */
+private fun extractIpfsCid(url: String): String? {
+    if (url.startsWith("ipfs://")) return url.removePrefix("ipfs://").substringBefore("/")
+    val match = Regex("^https?://[^/]+/ipfs/([^/?#]+)").find(url)
+    return match?.groupValues?.get(1)
+}
+
+/** Build candidate URLs for an anchor: try all gateways if it's IPFS, else return as-is. */
+private fun buildCandidateUrls(anchorUrl: String): List<String> {
+    val cid = extractIpfsCid(anchorUrl) ?: return listOf(anchorUrl)
+    return IPFS_GATEWAYS_BE.map { "${it}${cid}" }
+}
 
 /**
  * Fetch DRep metadata from anchor URL and extract the given name.
  * Supports CIP-119 format: { body: { givenName: "..." } }
- * Resolves ipfs:// → HTTPS gateway before fetching.
+ * Tries multiple IPFS gateways with short timeout each.
  */
 private suspend fun fetchDRepName(anchorUrl: String): String? {
-    val url = resolveIpfsUrl(anchorUrl)
-    return try {
-        withTimeout(5_000L) {
-            val response = httpClient.get(url)
-            val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-            json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
-                ?: json["givenName"]?.jsonPrimitive?.contentOrNull
-                ?: json["name"]?.jsonPrimitive?.contentOrNull
+    val candidates = buildCandidateUrls(anchorUrl)
+    for (url in candidates) {
+        try {
+            val result = withTimeout(5_000L) {
+                val response = httpClient.get(url)
+                if (!response.status.isSuccess()) return@withTimeout null
+                val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
+                    ?: json["givenName"]?.jsonPrimitive?.contentOrNull
+                    ?: json["name"]?.jsonPrimitive?.contentOrNull
+            }
+            if (result != null) return result
+        } catch (_: Exception) {
+            continue
         }
-    } catch (_: Exception) {
-        null
     }
+    return null
 }
