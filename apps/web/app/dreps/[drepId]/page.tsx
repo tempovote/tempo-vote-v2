@@ -318,12 +318,33 @@ export default function DRepProfilePage({
         {/* Stats row */}
         <div className="flex gap-3">
           <div className="flex-1 bg-bg-secondary rounded-xl p-3 border border-border-subtle space-y-0.5">
-            <p className="text-xs text-text-muted">Active Voting Power</p>
-            <p className="text-lg font-bold text-text-primary">
-              {profile.votingPower != null
-                ? `${formatAda(profile.votingPower)} ₳`
-                : "—"}
-            </p>
+            {/* Show delegated voting power; fallback to stake key balance for new DReps */}
+            {profile.votingPower != null && profile.votingPower > 0 ? (
+              <>
+                <p className="text-xs text-text-muted">Active Voting Power</p>
+                <p className="text-lg font-bold text-text-primary">
+                  {formatAda(profile.votingPower)} ₳
+                </p>
+              </>
+            ) : profile.stakeKeyBalance != null && profile.stakeKeyBalance > 0 ? (
+              <>
+                <p className="text-xs text-text-muted">Stake Balance</p>
+                <p className="text-lg font-bold text-text-primary">
+                  {formatAda(profile.stakeKeyBalance)} ₳
+                </p>
+                <p className="text-[10px] text-text-muted">snapshot hiện tại</p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-text-muted">Active Voting Power</p>
+                <p className="text-lg font-bold text-text-primary">
+                  {profile.isRegistered ? "0 ₳" : "—"}
+                </p>
+                {profile.isRegistered && (
+                  <p className="text-[10px] text-text-muted">chưa có delegator</p>
+                )}
+              </>
+            )}
           </div>
           <div className="flex-1 bg-bg-secondary rounded-xl p-3 border border-border-subtle space-y-0.5">
             <p className="text-xs text-text-muted">Trạng thái</p>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { resolveAnchorUrls } from "@/lib/governance"
+import { resolveAnchorUrl, resolveAnchorUrls } from "@/lib/governance"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -10,7 +10,8 @@ export interface DRepFullProfile {
   id: string
   name: string | null
   anchorUrl: string | null
-  votingPower: number | null // lovelace
+  votingPower: number | null    // lovelace — delegated stake (epoch snapshot)
+  stakeKeyBalance: number | null // lovelace — own stake key balance (best-effort fallback)
   // From CIP-119 IPFS metadata
   givenName: string | null
   motivations: string | null
@@ -47,6 +48,7 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
         name: string | null
         anchorUrl: string | null
         votingPower: number | null
+        stakeKeyBalance: number | null
       }) => {
         if (cancelled) return
 
@@ -56,6 +58,7 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
           name: data.name ?? null,
           anchorUrl: data.anchorUrl ?? null,
           votingPower: data.votingPower ?? null,
+          stakeKeyBalance: data.stakeKeyBalance ?? null,
           givenName: null,
           motivations: null,
           objectives: null,
@@ -136,10 +139,12 @@ function parseCip119(data: Record<string, unknown>): Cip119Meta | null {
   if (!givenName) return null
 
   const image = body.image as Record<string, unknown> | string | undefined
-  const imageUrl =
+  const rawImageUrl =
     typeof image === "string"
       ? image
       : (image?.contentUrl as string | undefined) ?? null
+  // Resolve ipfs:// or raw IPFS URLs through HTTP gateway
+  const imageUrl = rawImageUrl ? resolveAnchorUrl(rawImageUrl) : null
 
   const references = Array.isArray(body.references)
     ? (body.references as Array<{ "@type": string; label: string; uri: string }>)
