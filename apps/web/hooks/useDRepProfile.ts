@@ -133,23 +133,28 @@ async function fetchCip119(anchorUrl: string): Promise<Cip119Meta | null> {
   return tryFetch(urls)
 }
 
+// Extract string value from plain string or JSON-LD {"@value": "..."} object
+function extractStr(val: unknown): string | null {
+  if (typeof val === "string") return val || null
+  if (val && typeof val === "object" && "@value" in val) {
+    const v = (val as Record<string, unknown>)["@value"]
+    return typeof v === "string" ? v || null : null
+  }
+  return null
+}
+
 function parseCip119(data: Record<string, unknown>): Cip119Meta | null {
   // CIP-119: { body: { givenName, motivations, objectives, qualifications, image, references } }
   const body = (data.body as Record<string, unknown> | undefined) ?? data
 
-  const givenName =
-    (body.givenName as string | undefined) ??
-    (data.name as string | undefined) ??
-    null
-
+  const givenName = extractStr(body.givenName) ?? extractStr(data.name) ?? null
   if (!givenName) return null
 
   const image = body.image as Record<string, unknown> | string | undefined
   const rawImageUrl =
     typeof image === "string"
       ? image
-      : (image?.contentUrl as string | undefined) ?? null
-  // Resolve ipfs:// or raw IPFS URLs through HTTP gateway
+      : extractStr(image?.contentUrl) ?? null
   const imageUrl = rawImageUrl ? resolveAnchorUrl(rawImageUrl) : null
 
   const references = Array.isArray(body.references)
@@ -158,9 +163,9 @@ function parseCip119(data: Record<string, unknown>): Cip119Meta | null {
 
   return {
     givenName,
-    motivations: (body.motivations as string | undefined) ?? null,
-    objectives: (body.objectives as string | undefined) ?? null,
-    qualifications: (body.qualifications as string | undefined) ?? null,
+    motivations: extractStr(body.motivations),
+    objectives: extractStr(body.objectives),
+    qualifications: extractStr(body.qualifications),
     imageUrl,
     references,
   }
