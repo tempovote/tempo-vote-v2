@@ -90,7 +90,7 @@ fun extractLovelace(value: JsonObject): Long {
         ?: 0L
 }
 
-private fun actionTypeLabel(ogmiosType: String): String = when (ogmiosType) {
+internal fun actionTypeLabel(ogmiosType: String): String = when (ogmiosType) {
     "treasuryWithdrawals"      -> "Treasury Withdrawals"
     "protocolParametersUpdate" -> "Protocol Parameter Change"
     "hardForkInitiation"       -> "Hard Fork Initiation"

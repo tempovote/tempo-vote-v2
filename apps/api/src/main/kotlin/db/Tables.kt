@@ -72,6 +72,31 @@ object PollComments : Table("poll_comments") {
     override val primaryKey = PrimaryKey(id)
 }
 
+object DrepVotes : Table("drep_votes") {
+    val id                = long("id").autoIncrement()
+    val network           = varchar("network", 10)
+    val drepCredentialHex = varchar("drep_credential_hex", 56)
+    val txHash            = varchar("tx_hash", 64)
+    val proposalTxHash    = varchar("proposal_tx_hash", 64)
+    val proposalIndex     = integer("proposal_index")
+    val vote              = varchar("vote", 10)
+    val epoch             = integer("epoch")
+    val slot              = long("slot")
+    val actionType        = varchar("action_type", 64).nullable()
+    val anchorUrl         = text("anchor_url").nullable()
+    val expiresEpoch      = integer("expires_epoch").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object IndexerCheckpoint : Table("indexer_checkpoint") {
+    val network   = varchar("network", 10)
+    val slot      = long("slot")
+    val blockHash = varchar("block_hash", 64)
+
+    override val primaryKey = PrimaryKey(network)
+}
+
 object AuthSessions : Table("auth_sessions") {
     val id           = uuid("id").autoGenerate()
     val stakeAddress = varchar("stake_address", 128)

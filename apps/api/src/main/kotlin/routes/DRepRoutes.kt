@@ -9,11 +9,19 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import org.jetbrains.exposed.sql.SortOrder
+import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
+import vote.tempo.cardano.actionTypeLabel
+import vote.tempo.cardano.credentialHexToStakeAddress
+import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
+import vote.tempo.db.DrepVotes
 
 private val httpClient = HttpClient(CIO)
 
@@ -43,6 +51,113 @@ fun Route.drepRoutes() {
             call.respond(result)
         }
 
+        // GET /dreps/{drepId}/votes?network=preprod&page=1&limit=20
+        // Returns paginated list of governance actions voted on by this DRep.
+        get("/{drepId}/votes") {
+            val drepId = call.parameters["drepId"]
+                ?: return@get call.respond(mapOf("error" to "drepId required"))
+            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+            val page = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 100) ?: 20
+
+            val credentialHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid drepId"))
+
+            // Key: "proposalTxHash#proposalIndex" → vote entry (dedup keeps most recent)
+            val merged = mutableMapOf<String, JsonObject>()
+
+            // ── Source 1: Chain-sync indexed votes from DB ────────────────────
+            try {
+                transaction {
+                    DrepVotes.selectAll()
+                        .where {
+                            (DrepVotes.network eq network.name) and
+                            (DrepVotes.drepCredentialHex eq credentialHex)
+                        }
+                        .orderBy(DrepVotes.slot, SortOrder.DESC)
+                        .forEach { row ->
+                            val key = "${row[DrepVotes.proposalTxHash]}#${row[DrepVotes.proposalIndex]}"
+                            merged[key] = buildJsonObject {
+                                put("txHash",      row[DrepVotes.proposalTxHash])
+                                put("index",       row[DrepVotes.proposalIndex])
+                                put("type",        actionTypeLabel(row[DrepVotes.actionType] ?: "unknown"))
+                                put("actionType",  row[DrepVotes.actionType] ?: "unknown")
+                                put("anchorUrl",   row[DrepVotes.anchorUrl]?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("vote",        row[DrepVotes.vote])
+                                put("expiresEpoch", row[DrepVotes.expiresEpoch]?.let { JsonPrimitive(it) } ?: JsonNull)
+                            }
+                        }
+                }
+            } catch (_: Exception) {
+                // DB unavailable — continue with ledger-state source only
+            }
+
+            // ── Source 2: Active proposals from Ogmios ledger state ───────────
+            // Enriches DB entries with action metadata; also covers proposals not
+            // yet indexed (e.g. submitted in the current slot window).
+            try {
+                val raw = CardanoCache.govActions.getIfPresent(network.name) ?: run {
+                    val r = OgmiosStateQueries(network).getGovernanceProposals()
+                    CardanoCache.govActions.put(network.name, r)
+                    r
+                }
+                val array: JsonArray = when (raw) {
+                    is JsonArray  -> raw
+                    is JsonObject -> raw["governanceProposals"]?.jsonArray
+                        ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+                        ?: JsonArray(emptyList())
+                    else -> JsonArray(emptyList())
+                }
+                for (item in array) {
+                    val obj = runCatching { item.jsonObject }.getOrNull() ?: continue
+                    val votes = obj["votes"]?.jsonArray ?: continue
+                    val myVote = votes.firstOrNull { entry ->
+                        val issuer = runCatching { entry.jsonObject["issuer"]?.jsonObject }.getOrNull()
+                        if (issuer?.get("role")?.jsonPrimitive?.contentOrNull != "delegateRepresentative") return@firstOrNull false
+                        val issuerId = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return@firstOrNull false
+                        val normalizedId = if (issuerId.startsWith("drep")) {
+                            runCatching { drepIdToCredentialHex(issuerId) }.getOrElse { issuerId }
+                        } else issuerId
+                        normalizedId == credentialHex
+                    }?.jsonObject?.get("vote")?.jsonPrimitive?.contentOrNull ?: continue
+
+                    val proposal = obj["proposal"]?.jsonObject ?: continue
+                    val proposalTxHash = proposal["transaction"]?.jsonObject?.get("id")
+                        ?.jsonPrimitive?.contentOrNull ?: continue
+                    val index = proposal["index"]?.jsonPrimitive?.int ?: 0
+                    val actionType = obj["action"]?.jsonObject?.get("type")
+                        ?.jsonPrimitive?.contentOrNull ?: "unknown"
+                    val anchorUrl = obj["metadata"]?.jsonObject?.get("url")
+                        ?.jsonPrimitive?.contentOrNull
+                    val expiresEpoch = obj["until"]?.jsonObject?.get("epoch")?.jsonPrimitive?.int
+
+                    val key = "$proposalTxHash#$index"
+                    merged[key] = buildJsonObject {
+                        put("txHash",      proposalTxHash)
+                        put("index",       index)
+                        put("type",        actionTypeLabel(actionType))
+                        put("actionType",  actionType)
+                        put("anchorUrl",   anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                        put("vote",        myVote)
+                        put("expiresEpoch", expiresEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
+                    }
+                }
+            } catch (_: Exception) { }
+
+            val allVotes = merged.values
+                .sortedByDescending { it["expiresEpoch"]?.jsonPrimitive?.intOrNull ?: 0 }
+            val total = allVotes.size
+            val offset = (page - 1) * limit
+            val pageVotes = allVotes.drop(offset).take(limit)
+
+            call.respond(buildJsonObject {
+                put("votes", JsonArray(pageVotes))
+                put("total", total)
+                put("page", page)
+                put("limit", limit)
+            })
+        }
+
         // GET /dreps/{drepId}?network=mainnet
         // Lookup order:
         //   1. drepInfo cache (30-min TTL)
@@ -64,66 +179,30 @@ fun Route.drepRoutes() {
 
             // 2. Search the pre-warmed drepList — zero Ogmios connections, instant response.
             // The BackgroundPoller fills drepList 3 s after startup and refreshes every 5 min.
-            // Searching here eliminates WS contention when step1 and step2 fire in parallel.
             val fromList = searchDrepList(network, drepId, credentialHex)
             if (fromList != null) {
-                val anchorUrl = fromList["anchorUrl"]?.takeIf { it !is JsonNull }
-                    ?.jsonPrimitive?.contentOrNull
-                val drepName = anchorUrl?.let { fetchDRepName(it) }
-
-                val response = buildJsonObject {
-                    put("isRegistered", fromList["isRegistered"]!!)
-                    put("id", drepId)
-                    put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
-                    put("anchorUrl", fromList["anchorUrl"]!!)
-                }
+                val response = buildDRepResponse(drepId, credentialHex, network, fromList)
                 CardanoCache.drepInfo.put(cacheKey, response)
                 call.respond(response)
                 return@get
             }
 
-            // 3. drepList not yet warm — fall back to direct Ogmios query
-            val queries = OgmiosStateQueries(network)
+            // 3. drepList not yet warm — fetch full DRep list from Ogmios, warm the cache,
+            //    then search. Avoids the Ogmios filtered-query format ambiguity (hex vs object).
             try {
-                val raw = queries.getDRepByIdRaw(drepId)
-
-                val drepsArray: JsonArray = when {
-                    raw is JsonArray -> raw
-                    raw is JsonObject && raw["delegateRepresentatives"] is JsonArray ->
-                        raw["delegateRepresentatives"]!!.jsonArray
-                    else -> JsonArray(emptyList())
-                }
-
-                val registeredDrep = drepsArray
-                    .mapNotNull { runCatching { it.jsonObject }.getOrNull() }
-                    .firstOrNull { it["type"]?.jsonPrimitive?.contentOrNull == "registered" }
-
-                val response = if (registeredDrep == null) {
-                    buildJsonObject {
-                        put("isRegistered", false)
-                        put("id", drepId)
-                        put("name", JsonNull)
-                        put("anchorUrl", JsonNull)
-                    }
-                } else {
-                    val anchorUrl = registeredDrep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                        ?: registeredDrep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                    val drepName = anchorUrl?.let { fetchDRepName(it) }
-                    buildJsonObject {
-                        put("isRegistered", true)
-                        put("id", drepId)
-                        put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
-                        put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                    }
-                }
-
-                CardanoCache.drepInfo.put(cacheKey, response)
-                call.respond(response)
+                val allDreps = OgmiosStateQueries(network).getDelegateRepresentatives()
+                CardanoCache.drepList.put(network.name, allDreps)
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
                     put("error", e.message ?: "Ogmios query failed")
                 })
+                return@get
             }
+
+            val fromFresh = searchDrepList(network, drepId, credentialHex)
+            val response = buildDRepResponse(drepId, credentialHex, network, fromFresh)
+            CardanoCache.drepInfo.put(cacheKey, response)
+            call.respond(response)
         }
     }
 }
@@ -191,6 +270,54 @@ fun Route.stakeRoutes() {
 }
 
 /**
+ * Build the full DRep profile JSON response from a searchDrepList result.
+ * Pass null for [listEntry] when the DRep was not found → returns isRegistered=false.
+ */
+private suspend fun buildDRepResponse(
+    drepId: String,
+    credentialHex: String,
+    network: Network,
+    listEntry: JsonObject?,
+): JsonObject {
+    // Always return canonical CIP-105 ID regardless of which format the caller used.
+    val canonicalId = credentialHexToDrepIdCip105(credentialHex) ?: drepId
+
+    if (listEntry == null) {
+        return buildJsonObject {
+            put("isRegistered", false)
+            put("active", false)
+            put("mandateExpiresEpoch", JsonNull)
+            put("id", canonicalId)
+            put("name", JsonNull)
+            put("anchorUrl", JsonNull)
+            put("votingPower", JsonNull)
+            put("stakeKeyBalance", JsonNull)
+        }
+    }
+
+    val anchorUrl = listEntry["anchorUrl"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull
+    val drepName = anchorUrl?.let { fetchDRepName(it) }
+    val votingPower = listEntry["votingPower"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.longOrNull ?: 0L
+    // stakeKeyBalance requires Kupo UTxO query — rewardAccountSummaries only returns deposit/rewards,
+    // not actual wallet balance. Return null until Kupo integration is added.
+    val stakeKeyBalance: Long? = null
+    val mandateEpoch = listEntry["mandateEpoch"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.intOrNull
+    val currentEpoch = runCatching { OgmiosStateQueries(network).getCurrentEpoch() }.getOrNull()
+    val isActive = mandateEpoch == null || currentEpoch == null || mandateEpoch >= currentEpoch
+
+    return buildJsonObject {
+        put("isRegistered", true)
+        put("active", isActive)
+        put("mandateExpiresEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("id", canonicalId)
+        put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("anchorUrl", listEntry["anchorUrl"]!!)
+        put("votingPower", JsonPrimitive(votingPower))
+        put("stakeKeyBalance", stakeKeyBalance?.let { JsonPrimitive(it) } ?: JsonNull)
+    }
+}
+
+/**
  * Search the pre-warmed drepList cache for a specific DRep.
  * Returns a partial JsonObject { isRegistered: true, anchorUrl } on a POSITIVE match only.
  * Returns null when:
@@ -231,27 +358,95 @@ private fun searchDrepList(network: Network, drepId: String, credentialHex: Stri
     val anchorUrl = match["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
         ?: match["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
 
+    val mandateEpoch = match["mandate"]?.jsonObject?.get("epoch")?.jsonPrimitive?.intOrNull
+
     return buildJsonObject {
         put("isRegistered", true)
         put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("votingPower", extractStakeLovelace(match["stake"])?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("mandateEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
     }
+}
+
+/**
+ * Extract lovelace from the DRep `stake` field, which may appear in several Ogmios formats:
+ *   1. Direct long:            "stake": 689202321000
+ *   2. Lovelace object:        "stake": { "lovelace": 689202321000 }
+ *   3. ADA-wrapped object:     "stake": { "ada": { "lovelace": 689202321000 } }
+ * Returns null if the field is absent or cannot be parsed.
+ */
+private fun extractStakeLovelace(stakeElement: JsonElement?): Long? = when {
+    stakeElement == null || stakeElement is JsonNull -> null
+    stakeElement is JsonPrimitive -> stakeElement.longOrNull
+    stakeElement is JsonObject ->
+        stakeElement["ada"]?.jsonObject?.get("lovelace")?.jsonPrimitive?.longOrNull
+            ?: stakeElement["lovelace"]?.jsonPrimitive?.longOrNull
+    else -> null
+}
+
+/**
+ * Best-effort: derive a stake address from the DRep's credential hex and query its
+ * current balance via Ogmios rewardAccountSummaries.
+ * Works when the DRep registered with their own stake key (typical CIP-95 wallets).
+ * Returns null if address derivation or Ogmios query fails.
+ */
+private suspend fun queryStakeKeyBalance(credentialHex: String, network: Network): Long? = runCatching {
+    val stakeAddress = credentialHexToStakeAddress(credentialHex, network) ?: return@runCatching null
+    val queries = OgmiosStateQueries(network)
+    val result = queries.getStakeDelegation(stakeAddress)
+
+    val accountInfo = when {
+        result is JsonArray  -> result.firstOrNull()?.jsonObject
+        result is JsonObject -> result[stakeAddress]?.jsonObject
+            ?: result.values.firstOrNull()?.jsonObject
+        else -> null
+    } ?: return@runCatching null
+
+    // rewardAccountSummaries returns { deposit, rewards, delegate, delegateRepresentative }
+    // The ADA balance of the stake credential is NOT directly in this query.
+    // Instead, look for any balance fields:
+    extractStakeLovelace(accountInfo["deposit"])
+        ?: extractStakeLovelace(accountInfo["rewards"])
+        ?: extractStakeLovelace(accountInfo["stake"])
+}.getOrNull()
+
+private val PINATA_GATEWAY = System.getenv("PINATA_GATEWAY") ?: "https://ipfs.io"
+private val IPFS_GATEWAYS_BE = listOf("$PINATA_GATEWAY/ipfs/", "https://ipfs.io/ipfs/", "https://cloudflare-ipfs.com/ipfs/")
+
+/** Extract CID from any IPFS URL form (ipfs:// or https://<gateway>/ipfs/<cid>) */
+private fun extractIpfsCid(url: String): String? {
+    if (url.startsWith("ipfs://")) return url.removePrefix("ipfs://").substringBefore("/")
+    val match = Regex("^https?://[^/]+/ipfs/([^/?#]+)").find(url)
+    return match?.groupValues?.get(1)
+}
+
+/** Build candidate URLs for an anchor: try all gateways if it's IPFS, else return as-is. */
+private fun buildCandidateUrls(anchorUrl: String): List<String> {
+    val cid = extractIpfsCid(anchorUrl) ?: return listOf(anchorUrl)
+    return IPFS_GATEWAYS_BE.map { "${it}${cid}" }
 }
 
 /**
  * Fetch DRep metadata from anchor URL and extract the given name.
  * Supports CIP-119 format: { body: { givenName: "..." } }
- * Falls back to top-level "givenName" or "name" fields.
+ * Tries multiple IPFS gateways with short timeout each.
  */
 private suspend fun fetchDRepName(anchorUrl: String): String? {
-    return try {
-        withTimeout(5_000L) {
-            val response = httpClient.get(anchorUrl)
-            val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-            json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
-                ?: json["givenName"]?.jsonPrimitive?.contentOrNull
-                ?: json["name"]?.jsonPrimitive?.contentOrNull
+    val candidates = buildCandidateUrls(anchorUrl)
+    for (url in candidates) {
+        try {
+            val result = withTimeout(5_000L) {
+                val response = httpClient.get(url)
+                if (!response.status.isSuccess()) return@withTimeout null
+                val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
+                    ?: json["givenName"]?.jsonPrimitive?.contentOrNull
+                    ?: json["name"]?.jsonPrimitive?.contentOrNull
+            }
+            if (result != null) return result
+        } catch (_: Exception) {
+            continue
         }
-    } catch (_: Exception) {
-        null
     }
+    return null
 }

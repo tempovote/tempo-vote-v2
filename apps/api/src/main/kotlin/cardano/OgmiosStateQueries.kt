@@ -41,8 +41,79 @@ fun drepIdToCredentialHex(drepId: String): String {
             bytes.add((acc shr bits) and 0xff)
         }
     }
-    return bytes.joinToString("") { "%02x".format(it) }
+    // CIP-129: DRep IDs may have a 1-byte type header (0x22 = keyHash, 0x23 = script)
+    // followed by the 28-byte credential. Strip the header so the result is always 56 hex chars.
+    val credential = if (bytes.size == 29 && (bytes[0] == 0x22 || bytes[0] == 0x23)) {
+        bytes.drop(1)
+    } else {
+        bytes
+    }
+    return credential.joinToString("") { "%02x".format(it) }
 }
+
+private const val BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+private val BECH32_GEN = intArrayOf(0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3)
+
+private fun bech32Polymod(values: List<Int>): Int {
+    var chk = 1
+    for (v in values) {
+        val b = chk ushr 25
+        chk = ((chk and 0x1ffffff) shl 5) xor v
+        for (i in 0..4) if ((b ushr i) and 1 != 0) chk = chk xor BECH32_GEN[i]
+    }
+    return chk
+}
+
+private fun bech32CreateChecksum(hrp: String, data: List<Int>): List<Int> {
+    val values = hrp.map { it.code ushr 5 } + listOf(0) + hrp.map { it.code and 31 } + data + listOf(0, 0, 0, 0, 0, 0)
+    val polymod = bech32Polymod(values) xor 1
+    return (0..5).map { (polymod ushr (5 * (5 - it))) and 31 }
+}
+
+private fun bytesToBech32Words(bytes: ByteArray): List<Int> {
+    val words = mutableListOf<Int>()
+    var acc = 0; var bits = 0
+    for (b in bytes) {
+        acc = (acc shl 8) or (b.toInt() and 0xFF); bits += 8
+        while (bits >= 5) { bits -= 5; words.add((acc ushr bits) and 0x1F) }
+    }
+    if (bits > 0) words.add((acc shl (5 - bits)) and 0x1F)
+    return words
+}
+
+private fun bech32Encode(hrp: String, words: List<Int>): String {
+    val combined = words + bech32CreateChecksum(hrp, words)
+    return hrp + "1" + combined.joinToString("") { BECH32_ALPHABET[it].toString() }
+}
+
+/**
+ * Construct a bech32 stake address from a 28-byte credential hex.
+ * Assumes the DRep credential is the same as the wallet's stake key credential —
+ * valid for typical CIP-30/CIP-95 wallet registrations.
+ * Returns null if the credential hex is invalid.
+ */
+fun credentialHexToStakeAddress(credentialHex: String, network: Network): String? {
+    return runCatching {
+        val credBytes = credentialHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        check(credBytes.size == 28) { "Expected 28 credential bytes, got ${credBytes.size}" }
+        val header = if (network == Network.MAINNET) 0xE1.toByte() else 0xE0.toByte()
+        val payload = byteArrayOf(header) + credBytes
+        val hrp = if (network == Network.MAINNET) "stake" else "stake_test"
+        bech32Encode(hrp, bytesToBech32Words(payload))
+    }.getOrNull()
+}
+
+/**
+ * Convert a 28-byte credential hex to a CIP-105 bech32 DRep ID (drep1...).
+ * This is the canonical display format — no type-header byte, just the raw credential.
+ * Returns null if the hex is malformed.
+ */
+fun credentialHexToDrepIdCip105(credentialHex: String): String? =
+    runCatching {
+        val credBytes = credentialHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        check(credBytes.size == 28) { "Expected 28 credential bytes, got ${credBytes.size}" }
+        bech32Encode("drep", bytesToBech32Words(credBytes))
+    }.getOrNull()
 
 private const val HTTP_TIMEOUT_MS = 20_000L
 
@@ -99,6 +170,11 @@ class OgmiosStateQueries(private val network: Network) {
      * Returns (delegationResult, drepInfoResult?) — drepInfoResult is null if not
      * delegated to a registered DRep.
      */
+    suspend fun getCurrentEpoch(): Int {
+        val result = queryRaw("queryLedgerState/epoch", buildJsonObject {})
+        return result.jsonPrimitive.int
+    }
+
     suspend fun getStakeDelegationWithDRepInfo(stakeAddress: String): Pair<JsonElement, JsonElement?> {
         val stakeDelegation = getStakeDelegation(stakeAddress)
 
