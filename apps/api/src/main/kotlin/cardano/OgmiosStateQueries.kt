@@ -103,6 +103,18 @@ fun credentialHexToStakeAddress(credentialHex: String, network: Network): String
     }.getOrNull()
 }
 
+/**
+ * Convert a 28-byte credential hex to a CIP-105 bech32 DRep ID (drep1...).
+ * This is the canonical display format — no type-header byte, just the raw credential.
+ * Returns null if the hex is malformed.
+ */
+fun credentialHexToDrepIdCip105(credentialHex: String): String? =
+    runCatching {
+        val credBytes = credentialHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        check(credBytes.size == 28) { "Expected 28 credential bytes, got ${credBytes.size}" }
+        bech32Encode("drep", bytesToBech32Words(credBytes))
+    }.getOrNull()
+
 private const val HTTP_TIMEOUT_MS = 20_000L
 
 class OgmiosStateQueries(private val network: Network) {

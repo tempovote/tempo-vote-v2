@@ -1,6 +1,7 @@
 "use client"
 
-import { use, useState } from "react"
+import { use, useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
@@ -223,11 +224,21 @@ export default function DRepProfilePage({
 }) {
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
+  const router = useRouter()
 
   const { profile, isLoading, isLoadingMeta, error } = useDRepProfile(drepId, network)
   const [votePage, setVotePage] = useState(1)
+  // Always use the canonical CIP-105 id from the API response for vote lookups
+  const canonicalId = profile?.id ?? drepId
   const { votes, total, limit, isLoading: isLoadingVotes, error: voteError } =
-    useDRepVotingHistory(drepId, network, votePage)
+    useDRepVotingHistory(canonicalId, network, votePage)
+
+  // Redirect to canonical CIP-105 URL if user landed on a CIP-129 URL
+  useEffect(() => {
+    if (profile?.id && profile.id !== drepId) {
+      router.replace(`/dreps/${profile.id}${network !== "mainnet" ? `?network=${network}` : ""}`)
+    }
+  }, [profile?.id, drepId, network, router])
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (isLoading) {

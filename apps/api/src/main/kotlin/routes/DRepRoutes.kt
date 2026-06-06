@@ -14,6 +14,7 @@ import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.actionTypeLabel
 import vote.tempo.cardano.credentialHexToStakeAddress
+import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
 
@@ -254,12 +255,15 @@ private suspend fun buildDRepResponse(
     network: Network,
     listEntry: JsonObject?,
 ): JsonObject {
+    // Always return canonical CIP-105 ID regardless of which format the caller used.
+    val canonicalId = credentialHexToDrepIdCip105(credentialHex) ?: drepId
+
     if (listEntry == null) {
         return buildJsonObject {
             put("isRegistered", false)
             put("active", false)
             put("mandateExpiresEpoch", JsonNull)
-            put("id", drepId)
+            put("id", canonicalId)
             put("name", JsonNull)
             put("anchorUrl", JsonNull)
             put("votingPower", JsonNull)
@@ -279,7 +283,7 @@ private suspend fun buildDRepResponse(
         put("isRegistered", true)
         put("active", isActive)
         put("mandateExpiresEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
-        put("id", drepId)
+        put("id", canonicalId)
         put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
         put("anchorUrl", listEntry["anchorUrl"]!!)
         put("votingPower", JsonPrimitive(votingPower))
