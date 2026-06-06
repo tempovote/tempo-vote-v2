@@ -9,6 +9,10 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import org.jetbrains.exposed.sql.SortOrder
+import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
@@ -17,6 +21,7 @@ import vote.tempo.cardano.credentialHexToStakeAddress
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
+import vote.tempo.db.DrepVotes
 
 private val httpClient = HttpClient(CIO)
 
@@ -58,14 +63,44 @@ fun Route.drepRoutes() {
             val credentialHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull()
                 ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid drepId"))
 
+            // Key: "proposalTxHash#proposalIndex" → vote entry (dedup keeps most recent)
+            val merged = mutableMapOf<String, JsonObject>()
+
+            // ── Source 1: Chain-sync indexed votes from DB ────────────────────
             try {
-                // Use shared govActions cache (same cache as GovernanceRoutes)
+                transaction {
+                    DrepVotes.selectAll()
+                        .where {
+                            (DrepVotes.network eq network.name) and
+                            (DrepVotes.drepCredentialHex eq credentialHex)
+                        }
+                        .orderBy(DrepVotes.slot, SortOrder.DESC)
+                        .forEach { row ->
+                            val key = "${row[DrepVotes.proposalTxHash]}#${row[DrepVotes.proposalIndex]}"
+                            merged[key] = buildJsonObject {
+                                put("txHash",      row[DrepVotes.proposalTxHash])
+                                put("index",       row[DrepVotes.proposalIndex])
+                                put("type",        actionTypeLabel(row[DrepVotes.actionType] ?: "unknown"))
+                                put("actionType",  row[DrepVotes.actionType] ?: "unknown")
+                                put("anchorUrl",   row[DrepVotes.anchorUrl]?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("vote",        row[DrepVotes.vote])
+                                put("expiresEpoch", row[DrepVotes.expiresEpoch]?.let { JsonPrimitive(it) } ?: JsonNull)
+                            }
+                        }
+                }
+            } catch (_: Exception) {
+                // DB unavailable — continue with ledger-state source only
+            }
+
+            // ── Source 2: Active proposals from Ogmios ledger state ───────────
+            // Enriches DB entries with action metadata; also covers proposals not
+            // yet indexed (e.g. submitted in the current slot window).
+            try {
                 val raw = CardanoCache.govActions.getIfPresent(network.name) ?: run {
                     val r = OgmiosStateQueries(network).getGovernanceProposals()
                     CardanoCache.govActions.put(network.name, r)
                     r
                 }
-
                 val array: JsonArray = when (raw) {
                     is JsonArray  -> raw
                     is JsonObject -> raw["governanceProposals"]?.jsonArray
@@ -73,9 +108,6 @@ fun Route.drepRoutes() {
                         ?: JsonArray(emptyList())
                     else -> JsonArray(emptyList())
                 }
-
-                // Collect all GAs where this DRep has voted
-                val drepVotes = mutableListOf<JsonObject>()
                 for (item in array) {
                     val obj = runCatching { item.jsonObject }.getOrNull() ?: continue
                     val votes = obj["votes"]?.jsonArray ?: continue
@@ -83,7 +115,6 @@ fun Route.drepRoutes() {
                         val issuer = runCatching { entry.jsonObject["issuer"]?.jsonObject }.getOrNull()
                         if (issuer?.get("role")?.jsonPrimitive?.contentOrNull != "delegateRepresentative") return@firstOrNull false
                         val issuerId = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return@firstOrNull false
-                        // Ogmios may return bech32 (drep1...) or raw hex — normalise to hex
                         val normalizedId = if (issuerId.startsWith("drep")) {
                             runCatching { drepIdToCredentialHex(issuerId) }.getOrElse { issuerId }
                         } else issuerId
@@ -91,47 +122,40 @@ fun Route.drepRoutes() {
                     }?.jsonObject?.get("vote")?.jsonPrimitive?.contentOrNull ?: continue
 
                     val proposal = obj["proposal"]?.jsonObject ?: continue
-                    val txHash = proposal["transaction"]?.jsonObject?.get("id")
+                    val proposalTxHash = proposal["transaction"]?.jsonObject?.get("id")
                         ?.jsonPrimitive?.contentOrNull ?: continue
                     val index = proposal["index"]?.jsonPrimitive?.int ?: 0
                     val actionType = obj["action"]?.jsonObject?.get("type")
                         ?.jsonPrimitive?.contentOrNull ?: "unknown"
                     val anchorUrl = obj["metadata"]?.jsonObject?.get("url")
                         ?.jsonPrimitive?.contentOrNull
-                    val expiresEpoch = obj["until"]?.jsonObject?.get("epoch")
-                        ?.jsonPrimitive?.int ?: 0
+                    val expiresEpoch = obj["until"]?.jsonObject?.get("epoch")?.jsonPrimitive?.int
 
-                    drepVotes.add(buildJsonObject {
-                        put("txHash", txHash)
-                        put("index", index)
-                        put("type", actionTypeLabel(actionType))
-                        put("actionType", actionType)
-                        put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                        put("vote", myVote)
-                        put("expiresEpoch", expiresEpoch)
-                    })
+                    val key = "$proposalTxHash#$index"
+                    merged[key] = buildJsonObject {
+                        put("txHash",      proposalTxHash)
+                        put("index",       index)
+                        put("type",        actionTypeLabel(actionType))
+                        put("actionType",  actionType)
+                        put("anchorUrl",   anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                        put("vote",        myVote)
+                        put("expiresEpoch", expiresEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
+                    }
                 }
+            } catch (_: Exception) { }
 
-                val total = drepVotes.size
-                val offset = (page - 1) * limit
-                val pageVotes = drepVotes.drop(offset).take(limit)
+            val allVotes = merged.values
+                .sortedByDescending { it["expiresEpoch"]?.jsonPrimitive?.intOrNull ?: 0 }
+            val total = allVotes.size
+            val offset = (page - 1) * limit
+            val pageVotes = allVotes.drop(offset).take(limit)
 
-                call.respond(buildJsonObject {
-                    put("votes", JsonArray(pageVotes))
-                    put("total", total)
-                    put("page", page)
-                    put("limit", limit)
-                })
-            } catch (e: Exception) {
-                // Return empty votes when Ogmios is unavailable — prefer graceful degradation
-                call.respond(buildJsonObject {
-                    put("votes", JsonArray(emptyList()))
-                    put("total", 0)
-                    put("page", page)
-                    put("limit", limit)
-                    put("error", e.message ?: "Ogmios unavailable")
-                })
-            }
+            call.respond(buildJsonObject {
+                put("votes", JsonArray(pageVotes))
+                put("total", total)
+                put("page", page)
+                put("limit", limit)
+            })
         }
 
         // GET /dreps/{drepId}?network=mainnet
