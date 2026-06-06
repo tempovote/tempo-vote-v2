@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { usePollDetail, usePollComments } from "@/hooks/useCommunity"
+import { authHeader, getJwt } from "@/lib/api"
 import type { PollOptionWithCount, PollComment } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -171,8 +172,8 @@ function VotingSection({
     try {
       const res = await fetch(`${API_URL}/communities/polls/${pollId}/vote`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ optionId, stakeAddress }),
+        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
+        body: JSON.stringify({ optionId }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -276,8 +277,8 @@ export default function PollDetailPage({
     try {
       const res = await fetch(`${API_URL}/communities/polls/${pollId}/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stakeAddress, content: content.trim() }),
+        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
+        body: JSON.stringify({ content: content.trim() }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))

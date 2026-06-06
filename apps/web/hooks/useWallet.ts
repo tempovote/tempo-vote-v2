@@ -13,7 +13,9 @@ import {
   hasCip95,
   isWalletEnabled,
   hexAddressToBech32,
+  signData,
 } from "@tempo/wallet-bridge"
+import type { WalletApi } from "@tempo/wallet-bridge"
 
 const STORAGE_KEY = "tempo:last_wallet"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -41,6 +43,53 @@ async function fetchWalletBalance(
 
 let _fetchController: AbortController | null = null
 let _balanceController: AbortController | null = null
+let _authController: AbortController | null = null
+
+async function fetchWalletAuth(
+  api: WalletApi,
+  rewardAddressHex: string,
+  rewardAddressBech32: string,
+  network: string,
+  drepId: string | null,
+  setJwt: (token: string | null) => void,
+  signal: AbortSignal
+): Promise<void> {
+  try {
+    // Step 1: Get challenge nonce
+    const challengeRes = await fetch(
+      `${API_URL}/auth/challenge?stakeAddress=${encodeURIComponent(rewardAddressBech32)}&network=${network}`,
+      { signal }
+    )
+    if (!challengeRes.ok || signal.aborted) return
+    const { nonce } = await challengeRes.json()
+    if (!nonce || signal.aborted) return
+
+    // Step 2: Sign nonce with wallet stake key
+    // nonce is a 64-char hex string (32 raw bytes); pass as-is to signData (CIP-30 expects hex payload)
+    const dataSignature = await signData(api, rewardAddressHex, nonce)
+    if (signal.aborted) return
+
+    // Step 3: Verify on backend → receive JWT
+    const verifyRes = await fetch(`${API_URL}/auth/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stakeAddress: rewardAddressBech32,
+        network,
+        nonce,
+        signature: dataSignature.signature,
+        key: dataSignature.key,
+        drepId: drepId ?? undefined,
+      }),
+      signal,
+    })
+    if (!verifyRes.ok || signal.aborted) return
+    const { jwt } = await verifyRes.json()
+    if (jwt && !signal.aborted) setJwt(jwt)
+  } catch {
+    // auth is optional — silently ignore (user might reject signing)
+  }
+}
 
 /**
  * Fetch DRep registration + delegation status from the backend (Ogmios).
@@ -163,9 +212,10 @@ export function useWallet() {
     const changeAddressHex = await getChangeAddress(api)
     const rewardAddresses  = await getRewardAddresses(api)
 
-    const changeAddress = hexAddressToBech32(changeAddressHex, networkId)
-    const rewardAddress = rewardAddresses[0]
-      ? hexAddressToBech32(rewardAddresses[0], networkId)
+    const rewardAddressHex  = rewardAddresses[0] ?? null
+    const changeAddress     = hexAddressToBech32(changeAddressHex, networkId)
+    const rewardAddress     = rewardAddressHex
+      ? hexAddressToBech32(rewardAddressHex, networkId)
       : null
 
     const drepKey     = await getDRepKey(api).catch(() => null)
@@ -185,16 +235,22 @@ export function useWallet() {
     try { localStorage.setItem(STORAGE_KEY, walletName) } catch { /* SSR safe */ }
 
     const network = networkId === 1 ? "mainnet" : "preprod"
+    const drepId  = drepKey?.dRepIDCip105 ?? null
 
-    // Fire-and-forget: wallet balance via Kupo (works for all wallets, not just CIP-95).
+    // Fire-and-forget: wallet balance via Kupo
     _balanceController?.abort()
     _balanceController = new AbortController()
     fetchWalletBalance(changeAddress, network, store.setWalletBalance, _balanceController.signal)
 
+    // Fire-and-forget: wallet auth (challenge → sign → JWT) — requires stake address
+    if (rewardAddressHex && rewardAddress) {
+      _authController?.abort()
+      _authController = new AbortController()
+      fetchWalletAuth(api, rewardAddressHex, rewardAddress, network, drepId, store.setJwt, _authController.signal)
+    }
+
     // Fire-and-forget: DRep / delegation status via Ogmios (CIP-95 only).
     if (cip95Active) {
-      const drepId = drepKey?.dRepIDCip105 || null
-
       _fetchController?.abort()
       _fetchController = new AbortController()
 
@@ -239,6 +295,8 @@ export function useWallet() {
     _fetchController = null
     _balanceController?.abort()
     _balanceController = null
+    _authController?.abort()
+    _authController = null
     store.reset()
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [store])

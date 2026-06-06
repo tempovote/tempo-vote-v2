@@ -23,6 +23,7 @@ fun Application.module() {
     configureCors()
     configureStatusPages()
     configureDatabase()
+    configureSecurity()
     configureRouting()
     startBackgroundPoller()
     startVoteIndexers()

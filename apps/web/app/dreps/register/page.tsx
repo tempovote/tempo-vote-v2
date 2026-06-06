@@ -6,6 +6,7 @@ import { useTx } from "@/hooks/useTx"
 import { useWalletStore } from "@/store/wallet"
 import RegisterDRepForm, { type DRepFormData } from "@/components/drep/RegisterDRepForm"
 import RegisterDRepSuccess from "@/components/drep/RegisterDRepSuccess"
+import { authHeader, getJwt } from "@/lib/api"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -361,7 +362,7 @@ export default function RegisterDRepPage() {
 
         const uploadRes = await fetch(`${API_URL}/metadata/upload`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
           body: JSON.stringify({
             drepId,
             givenName: formData.givenName,
@@ -401,7 +402,7 @@ export default function RegisterDRepPage() {
           const communityTxHash = await submitTx("ACTIVATE_COMMUNITY", {})
           await fetch(`${API_URL}/communities/${drepId}/activate`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
             body: JSON.stringify({
               network: networkId === 1 ? "mainnet" : "preprod",
               txHash: communityTxHash,
@@ -509,7 +510,7 @@ export default function RegisterDRepPage() {
                   </button>
                   <button className="btn-outline flex-1" onClick={() => {
                     if (formData.imageUrl.startsWith("ipfs://")) {
-                      fetch(`${API_URL}/metadata/unpin/${formData.imageUrl.slice(7)}`, { method: "DELETE" }).catch(() => {})
+                      fetch(`${API_URL}/metadata/unpin/${formData.imageUrl.slice(7)}`, { method: "DELETE", headers: authHeader(getJwt()) }).catch(() => {})
                     }
                     setFormData(EMPTY_FORM)
                     setWizardStep("step1")

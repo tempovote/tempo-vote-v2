@@ -1,6 +1,8 @@
 package vote.tempo.routes
 
 import io.ktor.http.*
+import io.ktor.server.auth.*
+import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -107,14 +109,12 @@ data class CreatePollRequest(
 
 @Serializable
 data class AddCommentRequest(
-    val stakeAddress: String,
     val content: String,
 )
 
 @Serializable
 data class CastVoteRequest(
     val optionId: String,
-    val stakeAddress: String,
 )
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -161,39 +161,47 @@ fun Route.communityRoutes() {
             }
         }
 
-        // POST /communities/{drepId}/activate
+        // POST /communities/{drepId}/activate  [requires JWT, drepId must match JWT claim]
         // Body: { network, txHash }
-        post("/{drepId}/activate") {
-            val drepId = call.parameters["drepId"]
-                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "drepId required"))
-            val req = call.receive<ActivateCommunityRequest>()
+        authenticate("jwt") {
+            post("/{drepId}/activate") {
+                val principal = call.principal<JWTPrincipal>()!!
+                val jwtDrepId = principal.payload.getClaim("drepId")?.asString()
+                val drepId = call.parameters["drepId"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "drepId required"))
 
-            val now = Clock.System.now().toLocalDateTime(TimeZone.UTC)
+                if (jwtDrepId == null || jwtDrepId != drepId) {
+                    return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not authorized for this DRep"))
+                }
 
-            val communityId = transaction {
-                val existing = Communities.selectAll()
-                    .where { (Communities.drepId eq drepId) and (Communities.network eq req.network) }
-                    .singleOrNull()
+                val req = call.receive<ActivateCommunityRequest>()
+                val now = Clock.System.now().toLocalDateTime(TimeZone.UTC)
 
-                if (existing != null) {
-                    if (!existing[Communities.isActive]) {
-                        Communities.update({ (Communities.drepId eq drepId) and (Communities.network eq req.network) }) {
+                val communityId = transaction {
+                    val existing = Communities.selectAll()
+                        .where { (Communities.drepId eq drepId) and (Communities.network eq req.network) }
+                        .singleOrNull()
+
+                    if (existing != null) {
+                        if (!existing[Communities.isActive]) {
+                            Communities.update({ (Communities.drepId eq drepId) and (Communities.network eq req.network) }) {
+                                it[isActive] = true
+                                it[activatedAt] = now
+                            }
+                        }
+                        existing[Communities.id].toString()
+                    } else {
+                        Communities.insert {
+                            it[Communities.drepId] = drepId
+                            it[Communities.network] = req.network
                             it[isActive] = true
                             it[activatedAt] = now
-                        }
+                        }[Communities.id].toString()
                     }
-                    existing[Communities.id].toString()
-                } else {
-                    Communities.insert {
-                        it[Communities.drepId] = drepId
-                        it[Communities.network] = req.network
-                        it[isActive] = true
-                        it[activatedAt] = now
-                    }[Communities.id].toString()
                 }
-            }
 
-            call.respond(mapOf("id" to communityId, "isActive" to true))
+                call.respond(mapOf("id" to communityId, "isActive" to true))
+            }
         }
 
         // GET /communities/{drepId}/polls?network=mainnet&page=1
@@ -257,63 +265,72 @@ fun Route.communityRoutes() {
             call.respond(PollsPageResponse(items = items, total = total, page = page, limit = limit))
         }
 
-        // POST /communities/{drepId}/polls — create a new internal poll (auto-creates BASIC options)
-        post("/{drepId}/polls") {
-            val drepId = call.parameters["drepId"]
-                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "drepId required"))
-            val req = call.receive<CreatePollRequest>()
+        // POST /communities/{drepId}/polls  [requires JWT, drepId must match JWT claim]
+        authenticate("jwt") {
+            post("/{drepId}/polls") {
+                val principal = call.principal<JWTPrincipal>()!!
+                val jwtDrepId = principal.payload.getClaim("drepId")?.asString()
+                val drepId = call.parameters["drepId"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "drepId required"))
 
-            if (req.title.isBlank()) {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "title required"))
-            }
-
-            val communityRow = transaction {
-                Communities.selectAll()
-                    .where { (Communities.drepId eq drepId) and (Communities.network eq req.network) }
-                    .singleOrNull()
-            }
-
-            if (communityRow == null || !communityRow[Communities.isActive]) {
-                return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Community not active"))
-            }
-
-            val communityId = communityRow[Communities.id]
-
-            val startsAt = runCatching { Instant.parse(req.startsAt).toLocalDateTime(TimeZone.UTC) }.getOrElse {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid startsAt"))
-            }
-            val endsAt = runCatching { Instant.parse(req.endsAt).toLocalDateTime(TimeZone.UTC) }.getOrElse {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid endsAt"))
-            }
-
-            if (endsAt <= startsAt) {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "endsAt must be after startsAt"))
-            }
-
-            val pollId = transaction {
-                val id = InternalPolls.insert {
-                    it[InternalPolls.communityId] = communityId
-                    it[InternalPolls.title] = req.title.trim()
-                    it[InternalPolls.abstract] = req.abstract?.trim()
-                    it[InternalPolls.votingType] = "BASIC"
-                    it[InternalPolls.startEpoch] = 0
-                    it[InternalPolls.startsAt] = startsAt
-                    it[InternalPolls.endsAt] = endsAt
-                }[InternalPolls.id]
-
-                // Auto-create Yes / No / Abstain options for BASIC polls
-                BASIC_OPTIONS.forEachIndexed { idx, text ->
-                    PollOptions.insert {
-                        it[PollOptions.pollId] = id
-                        it[PollOptions.text] = text
-                        it[PollOptions.order] = idx
-                    }
+                if (jwtDrepId == null || jwtDrepId != drepId) {
+                    return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not authorized for this DRep"))
                 }
 
-                id.toString()
-            }
+                val req = call.receive<CreatePollRequest>()
 
-            call.respond(HttpStatusCode.Created, mapOf("id" to pollId))
+                if (req.title.isBlank()) {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "title required"))
+                }
+
+                val communityRow = transaction {
+                    Communities.selectAll()
+                        .where { (Communities.drepId eq drepId) and (Communities.network eq req.network) }
+                        .singleOrNull()
+                }
+
+                if (communityRow == null || !communityRow[Communities.isActive]) {
+                    return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Community not active"))
+                }
+
+                val communityId = communityRow[Communities.id]
+
+                val startsAt = runCatching { Instant.parse(req.startsAt).toLocalDateTime(TimeZone.UTC) }.getOrElse {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid startsAt"))
+                }
+                val endsAt = runCatching { Instant.parse(req.endsAt).toLocalDateTime(TimeZone.UTC) }.getOrElse {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid endsAt"))
+                }
+
+                if (endsAt <= startsAt) {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "endsAt must be after startsAt"))
+                }
+
+                val pollId = transaction {
+                    val id = InternalPolls.insert {
+                        it[InternalPolls.communityId] = communityId
+                        it[InternalPolls.title] = req.title.trim()
+                        it[InternalPolls.abstract] = req.abstract?.trim()
+                        it[InternalPolls.votingType] = "BASIC"
+                        it[InternalPolls.startEpoch] = 0
+                        it[InternalPolls.startsAt] = startsAt
+                        it[InternalPolls.endsAt] = endsAt
+                    }[InternalPolls.id]
+
+                    // Auto-create Yes / No / Abstain options for BASIC polls
+                    BASIC_OPTIONS.forEachIndexed { idx, text ->
+                        PollOptions.insert {
+                            it[PollOptions.pollId] = id
+                            it[PollOptions.text] = text
+                            it[PollOptions.order] = idx
+                        }
+                    }
+
+                    id.toString()
+                }
+
+                call.respond(HttpStatusCode.Created, mapOf("id" to pollId))
+            }
         }
 
         // GET /communities/polls/{pollId}?stakeAddress=stake1...
@@ -388,59 +405,58 @@ fun Route.communityRoutes() {
             }
         }
 
-        // POST /communities/polls/{pollId}/vote
-        // Body: { optionId, stakeAddress }
-        post("/polls/{pollId}/vote") {
-            val pollIdStr = call.parameters["pollId"]
-                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "pollId required"))
-            val pollId = runCatching { UUID.fromString(pollIdStr) }.getOrElse {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid pollId"))
-            }
-            val req = call.receive<CastVoteRequest>()
-            val optionId = runCatching { UUID.fromString(req.optionId) }.getOrElse {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid optionId"))
-            }
+        // POST /communities/polls/{pollId}/vote  [requires JWT — stakeAddress comes from token]
+        // Body: { optionId }
+        authenticate("jwt") {
+            post("/polls/{pollId}/vote") {
+                val principal    = call.principal<JWTPrincipal>()!!
+                val stakeAddress = principal.payload.subject
 
-            if (req.stakeAddress.isBlank()) {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "stakeAddress required"))
-            }
-
-            val now = Clock.System.now().toLocalDateTime(TimeZone.UTC)
-
-            val error: String? = transaction {
-                val poll = InternalPolls.selectAll().where { InternalPolls.id eq pollId }.singleOrNull()
-                    ?: return@transaction "Poll not found"
-
-                val status = computeStatus(poll[InternalPolls.startsAt], poll[InternalPolls.endsAt], now)
-                if (status != "active") return@transaction "Poll is not active"
-
-                // Verify option belongs to this poll
-                val optionExists = PollOptions.selectAll()
-                    .where { (PollOptions.id eq optionId) and (PollOptions.pollId eq pollId) }
-                    .count() > 0
-                if (!optionExists) return@transaction "Option does not belong to this poll"
-
-                // Check duplicate vote (unique index on pollId + stakeAddress)
-                val alreadyVoted = PollVotes.selectAll()
-                    .where { (PollVotes.pollId eq pollId) and (PollVotes.stakeAddress eq req.stakeAddress) }
-                    .count() > 0
-                if (alreadyVoted) return@transaction "Already voted"
-
-                PollVotes.insert {
-                    it[PollVotes.pollId] = pollId
-                    it[PollVotes.optionId] = optionId
-                    it[PollVotes.stakeAddress] = req.stakeAddress
-                    it[PollVotes.votingPower] = 0L   // TODO: query Kupo for actual voting power
+                val pollIdStr = call.parameters["pollId"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "pollId required"))
+                val pollId = runCatching { UUID.fromString(pollIdStr) }.getOrElse {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid pollId"))
+                }
+                val req = call.receive<CastVoteRequest>()
+                val optionId = runCatching { UUID.fromString(req.optionId) }.getOrElse {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid optionId"))
                 }
 
-                null
-            }
+                val now = Clock.System.now().toLocalDateTime(TimeZone.UTC)
 
-            when (error) {
-                null              -> call.respond(HttpStatusCode.Created, mapOf("ok" to true))
-                "Poll not found"  -> call.respond(HttpStatusCode.NotFound, mapOf("error" to error))
-                "Already voted"   -> call.respond(HttpStatusCode.Conflict, mapOf("error" to error))
-                else              -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to error))
+                val error: String? = transaction {
+                    val poll = InternalPolls.selectAll().where { InternalPolls.id eq pollId }.singleOrNull()
+                        ?: return@transaction "Poll not found"
+
+                    val status = computeStatus(poll[InternalPolls.startsAt], poll[InternalPolls.endsAt], now)
+                    if (status != "active") return@transaction "Poll is not active"
+
+                    val optionExists = PollOptions.selectAll()
+                        .where { (PollOptions.id eq optionId) and (PollOptions.pollId eq pollId) }
+                        .count() > 0
+                    if (!optionExists) return@transaction "Option does not belong to this poll"
+
+                    val alreadyVoted = PollVotes.selectAll()
+                        .where { (PollVotes.pollId eq pollId) and (PollVotes.stakeAddress eq stakeAddress) }
+                        .count() > 0
+                    if (alreadyVoted) return@transaction "Already voted"
+
+                    PollVotes.insert {
+                        it[PollVotes.pollId]       = pollId
+                        it[PollVotes.optionId]     = optionId
+                        it[PollVotes.stakeAddress] = stakeAddress
+                        it[PollVotes.votingPower]  = 0L
+                    }
+
+                    null
+                }
+
+                when (error) {
+                    null             -> call.respond(HttpStatusCode.Created, mapOf("ok" to true))
+                    "Poll not found" -> call.respond(HttpStatusCode.NotFound, mapOf("error" to error))
+                    "Already voted"  -> call.respond(HttpStatusCode.Conflict, mapOf("error" to error))
+                    else             -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to error))
+                }
             }
         }
 
@@ -469,35 +485,41 @@ fun Route.communityRoutes() {
             call.respond(CommentsPageResponse(items = comments, total = comments.size))
         }
 
-        // POST /communities/polls/{pollId}/comments
-        post("/polls/{pollId}/comments") {
-            val pollIdStr = call.parameters["pollId"]
-                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "pollId required"))
-            val pollId = runCatching { UUID.fromString(pollIdStr) }.getOrElse {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid pollId"))
-            }
-            val req = call.receive<AddCommentRequest>()
+        // POST /communities/polls/{pollId}/comments  [requires JWT — stakeAddress comes from token]
+        // Body: { content }
+        authenticate("jwt") {
+            post("/polls/{pollId}/comments") {
+                val principal    = call.principal<JWTPrincipal>()!!
+                val stakeAddress = principal.payload.subject
 
-            if (req.content.isBlank()) {
-                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Content cannot be empty"))
-            }
+                val pollIdStr = call.parameters["pollId"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "pollId required"))
+                val pollId = runCatching { UUID.fromString(pollIdStr) }.getOrElse {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid pollId"))
+                }
+                val req = call.receive<AddCommentRequest>()
 
-            val pollExists = transaction {
-                InternalPolls.selectAll().where { InternalPolls.id eq pollId }.count() > 0
-            }
-            if (!pollExists) {
-                return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Poll not found"))
-            }
+                if (req.content.isBlank()) {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Content cannot be empty"))
+                }
 
-            val commentId = transaction {
-                PollComments.insert {
-                    it[PollComments.pollId] = pollId
-                    it[PollComments.stakeAddress] = req.stakeAddress
-                    it[PollComments.content] = req.content.trim()
-                }[PollComments.id].toString()
-            }
+                val pollExists = transaction {
+                    InternalPolls.selectAll().where { InternalPolls.id eq pollId }.count() > 0
+                }
+                if (!pollExists) {
+                    return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Poll not found"))
+                }
 
-            call.respond(HttpStatusCode.Created, mapOf("id" to commentId))
+                val commentId = transaction {
+                    PollComments.insert {
+                        it[PollComments.pollId]       = pollId
+                        it[PollComments.stakeAddress] = stakeAddress
+                        it[PollComments.content]      = req.content.trim()
+                    }[PollComments.id].toString()
+                }
+
+                call.respond(HttpStatusCode.Created, mapOf("id" to commentId))
+            }
         }
     }
 }

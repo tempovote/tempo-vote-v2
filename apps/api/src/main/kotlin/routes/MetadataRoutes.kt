@@ -1,6 +1,7 @@
 package vote.tempo.routes
 
 import io.ktor.http.*
+import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -50,11 +51,8 @@ data class MetadataReference(
 
 fun Route.metadataRoutes() {
     route("/metadata") {
-        // POST /metadata/upload
-        // Build CIP-119 JSON-LD, calculate blake2b-256 hash, upload to Pinata IPFS.
-        // Returns { anchorUrl, anchorDataHash } for use in DREP_REGISTER TX.
-        // POST /metadata/upload-image
-        // Accept base64-encoded image, upload to Pinata IPFS, return { imageUrl }.
+        authenticate("jwt") {
+        // POST /metadata/upload-image  [requires JWT]
         post("/upload-image") {
             val pinataJwt = System.getenv("PINATA_JWT")
                 ?: return@post call.respond(
@@ -92,6 +90,7 @@ fun Route.metadataRoutes() {
             call.respond(mapOf("imageUrl" to "ipfs://$ipfsHash"))
         }
 
+        // DELETE /metadata/unpin/{hash}  [requires JWT]
         delete("/unpin/{hash}") {
             val hash = call.parameters["hash"]
                 ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Missing hash"))
@@ -105,6 +104,7 @@ fun Route.metadataRoutes() {
             }
         }
 
+        // POST /metadata/upload  [requires JWT]
         post("/upload") {
             val pinataJwt = System.getenv("PINATA_JWT")
                 ?: return@post call.respond(
@@ -149,6 +149,7 @@ fun Route.metadataRoutes() {
                 )
             )
         }
+        } // authenticate("jwt")
     }
 }
 

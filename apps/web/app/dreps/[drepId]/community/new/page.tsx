@@ -4,6 +4,7 @@ import { use, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
+import { authHeader, getJwt } from "@/lib/api"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -51,7 +52,7 @@ export default function CreatePollPage({
     try {
       const res = await fetch(`${API_URL}/communities/${drepId}/polls`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
         body: JSON.stringify({
           network,
           title: title.trim(),

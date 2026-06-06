@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
+import { authHeader, getJwt } from "@/lib/api"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -36,7 +37,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
 
     // Unpin previous IPFS upload if being replaced
     if (data.imageUrl.startsWith("ipfs://")) {
-      fetch(`${API_URL}/metadata/unpin/${data.imageUrl.slice(7)}`, { method: "DELETE" }).catch(() => {})
+      fetch(`${API_URL}/metadata/unpin/${data.imageUrl.slice(7)}`, { method: "DELETE", headers: authHeader(getJwt()) }).catch(() => {})
     }
 
     const localUrl = URL.createObjectURL(file)
@@ -54,7 +55,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
 
       const res = await fetch(`${API_URL}/metadata/upload-image`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
         body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
       })
 
@@ -143,7 +144,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
               onChange={e => {
                 const newUrl = e.target.value
                 if (data.imageUrl.startsWith("ipfs://") && !newUrl.startsWith("ipfs://")) {
-                  fetch(`${API_URL}/metadata/unpin/${data.imageUrl.slice(7)}`, { method: "DELETE" }).catch(() => {})
+                  fetch(`${API_URL}/metadata/unpin/${data.imageUrl.slice(7)}`, { method: "DELETE", headers: authHeader(getJwt()) }).catch(() => {})
                 }
                 set({ imageUrl: newUrl, imagePreviewUrl: "" })
                 setImagePreview(null)

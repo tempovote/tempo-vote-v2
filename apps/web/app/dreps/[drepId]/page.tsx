@@ -11,6 +11,7 @@ import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { resolveAnchorUrls } from "@/lib/governance"
+import { authHeader, getJwt } from "@/lib/api"
 import type { DRepVote, InternalPoll, PollStatus } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -559,7 +560,7 @@ export default function DRepProfilePage({
       const txHash = await submitTx("ACTIVATE_COMMUNITY", {})
       await fetch(`${API_URL}/communities/${canonicalId}/activate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
         body: JSON.stringify({ network, txHash }),
       })
       refetchCommunity()
