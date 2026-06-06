@@ -182,7 +182,7 @@ fun Route.drepRoutes() {
             val fromList = searchDrepList(network, drepId, credentialHex)
             if (fromList != null) {
                 val response = buildDRepResponse(drepId, credentialHex, network, fromList)
-                CardanoCache.drepInfo.put(cacheKey, response)
+                if (nameResolved(response, fromList)) CardanoCache.drepInfo.put(cacheKey, response)
                 call.respond(response)
                 return@get
             }
@@ -201,7 +201,7 @@ fun Route.drepRoutes() {
 
             val fromFresh = searchDrepList(network, drepId, credentialHex)
             val response = buildDRepResponse(drepId, credentialHex, network, fromFresh)
-            CardanoCache.drepInfo.put(cacheKey, response)
+            if (nameResolved(response, fromFresh)) CardanoCache.drepInfo.put(cacheKey, response)
             call.respond(response)
         }
     }
@@ -267,6 +267,20 @@ fun Route.stakeRoutes() {
             }
         }
     }
+}
+
+/**
+ * Returns true when it's safe to cache a /dreps/{id} response.
+ * We skip caching when the DRep has an anchor URL but name is still null — that
+ * means the IPFS/metadata fetch failed transiently. The next request will retry.
+ */
+private fun nameResolved(response: JsonObject, listEntry: JsonObject?): Boolean {
+    if (listEntry == null) return true  // "not found" is a stable negative result
+    val hasAnchor = listEntry["anchorUrl"]?.takeIf { it !is JsonNull }
+        ?.jsonPrimitive?.contentOrNull != null
+    val hasName = response["name"]?.takeIf { it !is JsonNull }
+        ?.jsonPrimitive?.contentOrNull != null
+    return !hasAnchor || hasName
 }
 
 /**
@@ -411,7 +425,7 @@ private suspend fun queryStakeKeyBalance(credentialHex: String, network: Network
 }.getOrNull()
 
 private val PINATA_GATEWAY = System.getenv("PINATA_GATEWAY") ?: "https://ipfs.io"
-private val IPFS_GATEWAYS_BE = listOf("$PINATA_GATEWAY/ipfs/", "https://ipfs.io/ipfs/", "https://cloudflare-ipfs.com/ipfs/")
+private val IPFS_GATEWAYS_BE = listOf("$PINATA_GATEWAY/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/")
 
 /** Extract CID from any IPFS URL form (ipfs:// or https://<gateway>/ipfs/<cid>) */
 private fun extractIpfsCid(url: String): String? {
@@ -420,10 +434,16 @@ private fun extractIpfsCid(url: String): String? {
     return match?.groupValues?.get(1)
 }
 
-/** Build candidate URLs for an anchor: try all gateways if it's IPFS, else return as-is. */
+/** Build candidate URLs for an anchor: try all gateways if it's IPFS, else return as-is.
+ *
+ * If the anchor is an HTTPS URL (e.g. a private QuickNode or Pinata gateway), try it first —
+ * it's the most reliable source. Then fall back to well-known public gateways.
+ * If the anchor is an ipfs:// URI, try public gateways only.
+ */
 private fun buildCandidateUrls(anchorUrl: String): List<String> {
     val cid = extractIpfsCid(anchorUrl) ?: return listOf(anchorUrl)
-    return IPFS_GATEWAYS_BE.map { "${it}${cid}" }
+    val origIfHttps = if (!anchorUrl.startsWith("ipfs://")) listOf(anchorUrl) else emptyList()
+    return (origIfHttps + IPFS_GATEWAYS_BE.map { "${it}${cid}" }).distinct()
 }
 
 /**

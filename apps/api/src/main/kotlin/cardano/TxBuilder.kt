@@ -1,6 +1,7 @@
 package vote.tempo.cardano
 
 import com.bloxbean.cardano.client.address.Credential
+import com.bloxbean.cardano.client.api.model.Amount
 import com.bloxbean.cardano.client.common.model.Networks
 import com.bloxbean.cardano.client.governance.LegacyDRepId
 import com.bloxbean.cardano.client.quicktx.QuickTxBuilder
@@ -165,7 +166,7 @@ class TxBuilder(private val network: Network) {
         lovelace: Long,
     ): String {
         val tx = Tx()
-            .payToAddress(toAddress, BigInteger.valueOf(lovelace))
+            .payToAddress(toAddress, Amount.lovelace(BigInteger.valueOf(lovelace)))
             .from(changeAddress)
         return buildUnsigned(tx, changeAddress)
     }

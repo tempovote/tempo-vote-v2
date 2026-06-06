@@ -1,6 +1,6 @@
 # Current Status
 
-*Cập nhật lần cuối: 2026-06-06*
+*Cập nhật lần cuối: 2026-06-06 (session 2)*
 
 ---
 
@@ -15,11 +15,11 @@ Core infra, wallet (CIP-30/95), DRep registration wizard, DRep profile page, gov
 ### High Priority
 - [ ] **Active Voting Power (Kupo)**: `stakeKeyBalance` trả `null`. Cần query Kupo UTxOs cho stake address của DRep. Ogmios `rewardAccountSummaries` chỉ trả `deposit` (2 ADA) + `rewards`, không phải wallet balance.
 - [ ] **Auth enforcement**: `/auth/challenge` + `/auth/verify` đã implement JWT nhưng chưa enforce trên bất kỳ endpoint nào. Community/poll creation không cần auth.
-- [ ] **DRep Registration guards**: wallet chưa connect, ví không support CIP-95, đã là DRep — cả 3 case chưa có UI guard. End-to-end test preprod chưa xong.
+- [ ] **DRep Registration e2e test**: Guards ✅ (chưa connect / không CIP-95 / đã là DRep đều có UI). End-to-end test thủ công trên preprod (Eternl + Pinata JWT thật) chưa xong.
 - [x] **Poll voting UI**: Đã implement — `GET /communities/polls/{pollId}`, `POST /communities/polls/{pollId}/vote`, FE voting UI với result bars.
 
 ### Medium Priority
-- [ ] **Delegation TX UI**: `buildDelegation()` sẵn sàng ở BE, FE chỉ có button chưa nối flow.
+- [x] **Delegation TX UI**: DelegateModal ✅ — build/sign/submit flow + ConnectWalletCta. PR #19 merged.
 - [ ] **DRep Update / Retire UI**: TX types sẵn sàng ở BE, FE chưa có.
 - [ ] **DRep list pagination**: hiện load toàn bộ từ Ogmios, paginate client-side.
 - [ ] **Pinata gateway hardcode**: `resolveAnchorUrls()` hardcode URL thay vì dùng `NEXT_PUBLIC_PINATA_GATEWAY`.
