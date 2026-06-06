@@ -36,11 +36,13 @@ export function getActionTypeLabel(actionType: string): string {
   return map[actionType] ?? actionType
 }
 
-const IPFS_GATEWAYS = [
-  "https://ipfs.io/ipfs/",
-  "https://cloudflare-ipfs.com/ipfs/",
-  "https://dweb.link/ipfs/",
-]
+function buildIpfsGateways(): string[] {
+  const pinata = process.env.NEXT_PUBLIC_PINATA_GATEWAY
+  const base = ["https://ipfs.io/ipfs/", "https://cloudflare-ipfs.com/ipfs/", "https://dweb.link/ipfs/"]
+  return pinata ? [`${pinata}/ipfs/`, ...base] : base
+}
+
+const IPFS_GATEWAYS = buildIpfsGateways()
 
 // ipfs:// → list of candidate HTTPS URLs (for fallback fetching)
 export function resolveAnchorUrls(url: string | null): string[] {
