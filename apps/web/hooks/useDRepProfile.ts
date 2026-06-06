@@ -154,7 +154,11 @@ function parseCip119(data: Record<string, unknown>): Cip119Meta | null {
   const rawImageUrl =
     typeof image === "string"
       ? image
-      : extractStr(image?.contentUrl) ?? null
+      : extractStr((image as Record<string, unknown>)?.contentUrl) ??
+        extractStr((image as Record<string, unknown>)?.url) ??
+        (typeof (image as Record<string, unknown>)?.["@id"] === "string"
+          ? ((image as Record<string, unknown>)["@id"] as string) || null
+          : null)
   const imageUrl = rawImageUrl ? resolveAnchorUrl(rawImageUrl) : null
 
   const references = Array.isArray(body.references)

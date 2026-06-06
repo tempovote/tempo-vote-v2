@@ -298,7 +298,9 @@ private suspend fun buildDRepResponse(
     val anchorUrl = listEntry["anchorUrl"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull
     val drepName = anchorUrl?.let { fetchDRepName(it) }
     val votingPower = listEntry["votingPower"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.longOrNull ?: 0L
-    val stakeKeyBalance = if (votingPower == 0L) queryStakeKeyBalance(credentialHex, network) else null
+    // stakeKeyBalance requires Kupo UTxO query — rewardAccountSummaries only returns deposit/rewards,
+    // not actual wallet balance. Return null until Kupo integration is added.
+    val stakeKeyBalance: Long? = null
     val mandateEpoch = listEntry["mandateEpoch"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.intOrNull
     val currentEpoch = runCatching { OgmiosStateQueries(network).getCurrentEpoch() }.getOrNull()
     val isActive = mandateEpoch == null || currentEpoch == null || mandateEpoch >= currentEpoch

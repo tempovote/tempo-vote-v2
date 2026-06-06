@@ -6,10 +6,11 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { useDRepVotingHistory } from "@/hooks/useDRepVotingHistory"
-import { useCommunity } from "@/hooks/useCommunity"
+import { useCommunity, useCommunityPolls } from "@/hooks/useCommunity"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
-import type { DRepVote } from "@tempo/types"
+import { resolveAnchorUrls } from "@/lib/governance"
+import type { DRepVote, InternalPoll, PollStatus } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -97,6 +98,37 @@ function VoteBadge({ vote }: { vote: DRepVote["vote"] }) {
 // ─── Voting history row ───────────────────────────────────────────────────────
 
 function VoteHistoryRow({ entry }: { entry: DRepVote }) {
+  const [title, setTitle] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!entry.anchorUrl) return
+    const urls = resolveAnchorUrls(entry.anchorUrl)
+    if (urls.length === 0) return
+    let cancelled = false
+
+    const tryFetch = async (remaining: string[]): Promise<void> => {
+      if (cancelled || remaining.length === 0) return
+      const [url, ...rest] = remaining as [string, ...string[]]
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 4000)
+        const r = await fetch(url, { signal: controller.signal })
+        clearTimeout(timer)
+        if (!r.ok) return tryFetch(rest)
+        const data = await r.json() as Record<string, unknown>
+        const body = ((data.body ?? data) as Record<string, unknown>)
+        const t = typeof body.title === "string" ? body.title : null
+        if (t && !cancelled) { setTitle(t); return }
+        return tryFetch(rest)
+      } catch {
+        return tryFetch(rest)
+      }
+    }
+
+    tryFetch(urls)
+    return () => { cancelled = true }
+  }, [entry.anchorUrl])
+
   return (
     <Link
       href={`/governance-actions/${entry.txHash}/${entry.index}`}
@@ -106,7 +138,7 @@ function VoteHistoryRow({ entry }: { entry: DRepVote }) {
         {entry.type}
       </span>
       <span className="flex-1 text-sm text-text-primary group-hover:text-accent-light transition-colors truncate min-w-0">
-        {entry.txHash.slice(0, 10)}…{entry.txHash.slice(-6)}#{entry.index}
+        {title ?? `${entry.txHash.slice(0, 10)}…${entry.txHash.slice(-6)}#${entry.index}`}
       </span>
       <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
         Epoch {entry.expiresEpoch}
@@ -202,87 +234,122 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// ─── Community card ───────────────────────────────────────────────────────────
+// ─── Poll status badge ────────────────────────────────────────────────────────
 
-function DRepCommunityCard({
+function PollStatusBadge({ status }: { status: PollStatus }) {
+  const cfg = {
+    active:  { cls: "bg-success/15 text-success border-success/30",   label: "Active" },
+    pending: { cls: "bg-warning/15 text-warning border-warning/30",   label: "Sắp diễn ra" },
+    closed:  { cls: "bg-bg-elevated text-text-muted border-border-subtle", label: "Đã đóng" },
+  }[status]
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
+// ─── Community Modal ──────────────────────────────────────────────────────────
+
+function CommunityModal({
   drepId,
   network,
-  isOwner,
+  onClose,
 }: {
   drepId: string
   network: string
-  isOwner: boolean
+  onClose: () => void
 }) {
-  const { isActive, isLoading, refetch } = useCommunity(drepId, network)
-  const { submitTx } = useTx()
-  const [activating, setActivating] = useState(false)
-  const [activateError, setActivateError] = useState<string | null>(null)
+  const { polls, total, isLoading } = useCommunityPolls(drepId, network, 1)
+  const networkParam = network !== "mainnet" ? `?network=${network}` : ""
 
-  async function handleActivate() {
-    setActivating(true)
-    setActivateError(null)
-    try {
-      const txHash = await submitTx("ACTIVATE_COMMUNITY", {})
-      await fetch(`${API_URL}/communities/${drepId}/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network, txHash }),
-      })
-      refetch()
-    } catch (err: unknown) {
-      setActivateError(err instanceof Error ? err.message : "Kích hoạt thất bại")
-    } finally {
-      setActivating(false)
-    }
-  }
+  useEffect(() => {
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = "" }
+  }, [])
 
-  if (isLoading) {
-    return (
-      <div className="card-accent animate-pulse">
-        <div className="h-4 w-32 bg-accent/20 rounded" />
-        <div className="h-3 w-48 bg-accent/10 rounded mt-2" />
-      </div>
-    )
-  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
-  if (isActive) {
-    return (
-      <Link href={`/dreps/${drepId}/community${network !== "mainnet" ? `?network=${network}` : ""}`} className="card-accent flex items-center justify-between gap-4 no-underline hover:opacity-90 transition-opacity">
-        <div>
-          <h3 className="text-sm font-semibold text-accent-light">DRep Community</h3>
-          <p className="text-xs text-text-muted mt-0.5">Polls, thảo luận và đề xuất Governance Action</p>
+      {/* Panel */}
+      <div className="relative bg-bg-card rounded-2xl w-full max-w-md max-h-[75vh] flex flex-col shadow-2xl border border-border-subtle">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle shrink-0">
+          <h2 className="text-sm font-bold">DRep Community</h2>
+          <button
+            onClick={onClose}
+            className="p-1 text-text-muted hover:text-text-primary transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-light shrink-0">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </Link>
-    )
-  }
 
-  if (isOwner) {
-    return (
-      <div className="card-accent space-y-3">
-        <div>
-          <h3 className="text-sm font-semibold text-accent-light">DRep Community</h3>
-          <p className="text-xs text-text-muted mt-0.5">
-            Tạo không gian để cộng đồng thảo luận và đề xuất Governance Actions.
-          </p>
+        {/* Poll list */}
+        <div className="overflow-y-auto flex-1">
+          {isLoading && (
+            <div className="divide-y divide-border-subtle">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="px-5 py-4 space-y-2 animate-pulse">
+                  <div className="h-3 w-20 bg-bg-elevated rounded-full" />
+                  <div className="h-4 bg-bg-elevated rounded w-4/5" />
+                  <div className="h-3 bg-bg-elevated rounded w-1/3" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isLoading && polls.length === 0 && (
+            <div className="px-5 py-12 text-center space-y-2">
+              <p className="text-3xl">📋</p>
+              <p className="text-sm text-text-muted">Chưa có poll nào</p>
+            </div>
+          )}
+
+          {!isLoading && polls.map((poll: InternalPoll) => (
+            <Link
+              key={poll.id}
+              href={`/dreps/${drepId}/community/${poll.id}${networkParam}`}
+              onClick={onClose}
+              className="flex items-start gap-3 px-5 py-4 border-b border-border-subtle hover:bg-white/5 transition-colors last:border-0"
+            >
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <PollStatusBadge status={poll.status} />
+                <p className="text-sm font-medium text-text-primary leading-snug line-clamp-2">
+                  {poll.title}
+                </p>
+                <p className="text-xs text-text-muted">
+                  {poll.commentCount} bình luận · kết thúc {new Date(poll.endsAt).toLocaleDateString("vi-VN")}
+                </p>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-muted shrink-0 mt-1">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </Link>
+          ))}
         </div>
-        {activateError && (
-          <p className="text-xs text-danger">{activateError}</p>
-        )}
-        <button
-          onClick={handleActivate}
-          disabled={activating}
-          className="btn-primary text-sm w-full"
-        >
-          {activating ? "Đang kích hoạt..." : "Kích hoạt Community · 2 ADA"}
-        </button>
-      </div>
-    )
-  }
 
-  return null
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-border-subtle shrink-0">
+          <Link
+            href={`/dreps/${drepId}/community${networkParam}`}
+            onClick={onClose}
+            className="block text-center text-sm text-accent-light hover:underline"
+          >
+            Xem tất cả{total > 0 ? ` (${total} polls)` : ""}
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
@@ -296,13 +363,19 @@ export default function DRepProfilePage({
   const network = useWalletStore((s) => s.selectedNetwork)
   const router = useRouter()
   const { drepKey } = useWallet()
+  const { submitTx } = useTx()
 
   const { profile, isLoading, isLoadingMeta, error } = useDRepProfile(drepId, network)
   const [votePage, setVotePage] = useState(1)
-  // Always use the canonical CIP-105 id from the API response for vote lookups
   const canonicalId = profile?.id ?? drepId
   const { votes, total, limit, isLoading: isLoadingVotes, error: voteError } =
     useDRepVotingHistory(canonicalId, network, votePage)
+
+  // Community state
+  const { isActive, isLoading: communityLoading, refetch: refetchCommunity } = useCommunity(drepId, network)
+  const [activating, setActivating] = useState(false)
+  const [activateError, setActivateError] = useState<string | null>(null)
+  const [communityModalOpen, setCommunityModalOpen] = useState(false)
 
   // Redirect to canonical CIP-105 URL if user landed on a CIP-129 URL
   useEffect(() => {
@@ -310,6 +383,24 @@ export default function DRepProfilePage({
       router.replace(`/dreps/${profile.id}${network !== "mainnet" ? `?network=${network}` : ""}`)
     }
   }, [profile?.id, drepId, network, router])
+
+  async function handleActivateCommunity() {
+    setActivating(true)
+    setActivateError(null)
+    try {
+      const txHash = await submitTx("ACTIVATE_COMMUNITY", {})
+      await fetch(`${API_URL}/communities/${canonicalId}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network, txHash }),
+      })
+      refetchCommunity()
+    } catch (err: unknown) {
+      setActivateError(err instanceof Error ? err.message : "Kích hoạt thất bại")
+    } finally {
+      setActivating(false)
+    }
+  }
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (isLoading) {
@@ -352,6 +443,13 @@ export default function DRepProfilePage({
   const displayName = profile.givenName ?? profile.name ?? shortDrepId(profile.id)
   const hasAbout = profile.objectives || profile.motivations || profile.qualifications || isLoadingMeta
   const isOwner = !!drepKey?.dRepIDCip105 && drepKey.dRepIDCip105 === profile.id
+  const networkParam = network !== "mainnet" ? `?network=${network}` : ""
+
+  // Determine CTA button layout
+  // isOwner: hide delegate, show community button (full width)
+  // !isOwner + active community: [Delegate] [Your Community] side by side
+  // !isOwner + no community: [Delegate] full width
+  const showDelegateBtn = !isOwner
 
   return (
     <div className="page-container space-y-6 animate-fade-in">
@@ -407,23 +505,14 @@ export default function DRepProfilePage({
           </div>
         </div>
 
-        {/* Stats row — voting power only */}
+        {/* Stats row */}
         <div className="bg-bg-secondary rounded-xl p-3 border border-border-subtle space-y-0.5">
-          {/* Show delegated voting power; fallback to stake key balance for new DReps */}
           {profile.votingPower != null && profile.votingPower > 0 ? (
             <>
               <p className="text-xs text-text-muted">Active Voting Power</p>
               <p className="text-lg font-bold text-text-primary">
                 {formatAda(profile.votingPower)} ₳
               </p>
-            </>
-          ) : profile.stakeKeyBalance != null && profile.stakeKeyBalance > 0 ? (
-            <>
-              <p className="text-xs text-text-muted">Stake Balance</p>
-              <p className="text-lg font-bold text-text-primary">
-                {formatAda(profile.stakeKeyBalance)} ₳
-              </p>
-              <p className="text-[10px] text-text-muted">snapshot hiện tại</p>
             </>
           ) : (
             <>
@@ -438,14 +527,47 @@ export default function DRepProfilePage({
           )}
         </div>
 
-        {/* Delegate CTA */}
-        <button className="btn-primary w-full text-sm">
-          Delegate Voting Power
-        </button>
-      </div>
+        {/* CTA buttons */}
+        {activateError && (
+          <p className="text-xs text-danger">{activateError}</p>
+        )}
+        <div className="flex gap-3">
+          {showDelegateBtn && (
+            <button className="btn-primary flex-1 text-sm">
+              Delegate Voting Power
+            </button>
+          )}
 
-      {/* ── Community ─────────────────────────────────────────────────────── */}
-      <DRepCommunityCard drepId={profile.id} network={network} isOwner={isOwner} />
+          {communityLoading ? (
+            <div className="h-10 flex-1 bg-bg-elevated rounded-xl animate-pulse" />
+          ) : isActive ? (
+            <button
+              onClick={() => setCommunityModalOpen(true)}
+              className={`${isOwner ? "btn-primary" : "btn-outline"} flex-1 text-sm`}
+            >
+              Your DRep Community
+            </button>
+          ) : isOwner ? (
+            <button
+              onClick={handleActivateCommunity}
+              disabled={activating}
+              className="btn-primary flex-1 text-sm"
+            >
+              {activating ? "Đang kích hoạt..." : "Kích hoạt Community · 2 ADA"}
+            </button>
+          ) : null}
+        </div>
+
+        {/* Community link when active (for non-owners — full page link) */}
+        {!communityLoading && isActive && !isOwner && (
+          <Link
+            href={`/dreps/${profile.id}/community${networkParam}`}
+            className="text-xs text-text-muted hover:text-accent-light transition-colors text-center block"
+          >
+            Xem trang Community →
+          </Link>
+        )}
+      </div>
 
       {/* ── About (CIP-119 metadata) ──────────────────────────────────────── */}
       {hasAbout && (
@@ -535,6 +657,15 @@ export default function DRepProfilePage({
           </>
         )}
       </div>
+
+      {/* ── Community Modal ───────────────────────────────────────────────── */}
+      {communityModalOpen && (
+        <CommunityModal
+          drepId={profile.id}
+          network={network}
+          onClose={() => setCommunityModalOpen(false)}
+        />
+      )}
 
     </div>
   )
