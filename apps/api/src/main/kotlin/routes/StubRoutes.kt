@@ -9,22 +9,11 @@ fun Route.healthRoutes() {
     }
 }
 
-// Stubs — to be implemented in Week 2-3
-
 fun Route.pollRoutes() {
     route("/polls") {
         get    { call.respond(mapOf("TODO" to "List internal polls")) }
         post   { call.respond(mapOf("TODO" to "Create poll")) }
         get    ("/{pollId}") { call.respond(mapOf("TODO" to "Poll detail")) }
         post   ("/{pollId}/vote") { call.respond(mapOf("TODO" to "Vote on poll")) }
-        post   ("/{pollId}/comments") { call.respond(mapOf("TODO" to "Add comment")) }
     }
 }
-
-fun Route.communityRoutes() {
-    route("/communities") {
-        get    ("/{drepId}") { call.respond(mapOf("TODO" to "Get community")) }
-        post   ("/{drepId}/activate") { call.respond(mapOf("TODO" to "Activate community")) }
-    }
-}
-

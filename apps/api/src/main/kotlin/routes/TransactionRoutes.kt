@@ -102,6 +102,15 @@ fun Route.transactionRoutes() {
                         delegationType = req.delegationType ?: "drep",
                         targetDrepId = req.targetDrepId,
                     )
+                    "ACTIVATE_COMMUNITY" -> {
+                        val platformFeeAddress = System.getenv("PLATFORM_FEE_ADDRESS")
+                            ?: error("PLATFORM_FEE_ADDRESS env var not configured")
+                        builder.buildPayment(
+                            changeAddress = req.changeAddress,
+                            toAddress = platformFeeAddress,
+                            lovelace = 2_000_000L,
+                        )
+                    }
                     else -> error("Unknown txType: ${req.txType}")
                 }
             }.fold(

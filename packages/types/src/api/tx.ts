@@ -9,6 +9,7 @@ export const TxTypeSchema = z.enum([
   "DREP_RETIRE",
   "VOTE",
   "DELEGATE",
+  "ACTIVATE_COMMUNITY",
 ])
 export type TxType = z.infer<typeof TxTypeSchema>
 

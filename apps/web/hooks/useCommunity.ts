@@ -1,0 +1,108 @@
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import type { Community, InternalPoll, PollsPage, PollComment, CommentsPage } from "@tempo/types"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
+
+// ─── Community status ─────────────────────────────────────────────────────────
+
+export function useCommunity(drepId: string, network: string) {
+  const [community, setCommunity] = useState<Community | null>(null)
+  const [isActive, setIsActive] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+    fetch(`${API_URL}/communities/${drepId}?network=${network}`)
+      .then((r) => r.json())
+      .then((data: unknown) => {
+        if (cancelled) return
+        const d = data as Record<string, unknown>
+        if (d.isActive === true) {
+          setCommunity(d as unknown as Community)
+          setIsActive(true)
+        } else {
+          setCommunity(null)
+          setIsActive(false)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError("Không thể tải community")
+      })
+      .finally(() => { if (!cancelled) setIsLoading(false) })
+    return () => { cancelled = true }
+  }, [drepId, network])
+
+  useEffect(() => {
+    const cancel = load()
+    return cancel
+  }, [load])
+
+  return { community, isActive, isLoading, error, refetch: load }
+}
+
+// ─── Community polls (paginated) ──────────────────────────────────────────────
+
+export function useCommunityPolls(drepId: string, network: string, page: number) {
+  const [polls, setPolls] = useState<InternalPoll[]>([])
+  const [total, setTotal] = useState(0)
+  const [limit, setLimit] = useState(10)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!drepId) return
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+    fetch(`${API_URL}/communities/${drepId}/polls?network=${network}&page=${page}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((data: PollsPage) => {
+        if (cancelled) return
+        setPolls(data.items)
+        setTotal(data.total)
+        setLimit(data.limit)
+      })
+      .catch(() => { if (!cancelled) setError("Không thể tải polls") })
+      .finally(() => { if (!cancelled) setIsLoading(false) })
+    return () => { cancelled = true }
+  }, [drepId, network, page])
+
+  return { polls, total, limit, isLoading, error }
+}
+
+// ─── Poll comments ────────────────────────────────────────────────────────────
+
+export function usePollComments(pollId: string) {
+  const [comments, setComments] = useState<PollComment[]>([])
+  const [total, setTotal] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!pollId) return
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+    fetch(`${API_URL}/communities/polls/${pollId}/comments`)
+      .then((r) => r.json())
+      .then((data: CommentsPage) => {
+        if (cancelled) return
+        setComments(data.items)
+        setTotal(data.total)
+      })
+      .catch(() => { if (!cancelled) setError("Không thể tải comments") })
+      .finally(() => { if (!cancelled) setIsLoading(false) })
+    return () => { cancelled = true }
+  }, [pollId, tick])
+
+  return { comments, total, isLoading, error, refetch: () => setTick((t) => t + 1) }
+}

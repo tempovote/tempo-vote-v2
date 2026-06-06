@@ -6,7 +6,12 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { useDRepVotingHistory } from "@/hooks/useDRepVotingHistory"
+import { useCommunity } from "@/hooks/useCommunity"
+import { useWallet } from "@/hooks/useWallet"
+import { useTx } from "@/hooks/useTx"
 import type { DRepVote } from "@tempo/types"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
 // ─── Avatar ──────────────────────────────────────────────────────────────────
 
@@ -197,22 +202,87 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// ─── Community mockup ─────────────────────────────────────────────────────────
+// ─── Community card ───────────────────────────────────────────────────────────
 
-function DRepCommunityCard() {
-  return (
-    <div className="card-accent space-y-2">
-      <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-accent-light">DRep Community</h3>
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent/20 text-accent-light border border-accent/30">
-          Coming Soon
-        </span>
+function DRepCommunityCard({
+  drepId,
+  network,
+  isOwner,
+}: {
+  drepId: string
+  network: string
+  isOwner: boolean
+}) {
+  const { isActive, isLoading, refetch } = useCommunity(drepId, network)
+  const { submitTx } = useTx()
+  const [activating, setActivating] = useState(false)
+  const [activateError, setActivateError] = useState<string | null>(null)
+
+  async function handleActivate() {
+    setActivating(true)
+    setActivateError(null)
+    try {
+      const txHash = await submitTx("ACTIVATE_COMMUNITY", {})
+      await fetch(`${API_URL}/communities/${drepId}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network, txHash }),
+      })
+      refetch()
+    } catch (err: unknown) {
+      setActivateError(err instanceof Error ? err.message : "Kích hoạt thất bại")
+    } finally {
+      setActivating(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="card-accent animate-pulse">
+        <div className="h-4 w-32 bg-accent/20 rounded" />
+        <div className="h-3 w-48 bg-accent/10 rounded mt-2" />
       </div>
-      <p className="text-xs text-text-muted">
-        Thảo luận, đặt câu hỏi và tương tác với DRep này trong cộng đồng Tempo.
-      </p>
-    </div>
-  )
+    )
+  }
+
+  if (isActive) {
+    return (
+      <Link href={`/dreps/${drepId}/community${network !== "mainnet" ? `?network=${network}` : ""}`} className="card-accent flex items-center justify-between gap-4 no-underline hover:opacity-90 transition-opacity">
+        <div>
+          <h3 className="text-sm font-semibold text-accent-light">DRep Community</h3>
+          <p className="text-xs text-text-muted mt-0.5">Polls, thảo luận và đề xuất Governance Action</p>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-light shrink-0">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </Link>
+    )
+  }
+
+  if (isOwner) {
+    return (
+      <div className="card-accent space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-accent-light">DRep Community</h3>
+          <p className="text-xs text-text-muted mt-0.5">
+            Tạo không gian để cộng đồng thảo luận và đề xuất Governance Actions.
+          </p>
+        </div>
+        {activateError && (
+          <p className="text-xs text-danger">{activateError}</p>
+        )}
+        <button
+          onClick={handleActivate}
+          disabled={activating}
+          className="btn-primary text-sm w-full"
+        >
+          {activating ? "Đang kích hoạt..." : "Kích hoạt Community · 2 ADA"}
+        </button>
+      </div>
+    )
+  }
+
+  return null
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
@@ -225,6 +295,7 @@ export default function DRepProfilePage({
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
   const router = useRouter()
+  const { drepKey } = useWallet()
 
   const { profile, isLoading, isLoadingMeta, error } = useDRepProfile(drepId, network)
   const [votePage, setVotePage] = useState(1)
@@ -280,6 +351,7 @@ export default function DRepProfilePage({
 
   const displayName = profile.givenName ?? profile.name ?? shortDrepId(profile.id)
   const hasAbout = profile.objectives || profile.motivations || profile.qualifications || isLoadingMeta
+  const isOwner = !!drepKey?.dRepIDCip105 && drepKey.dRepIDCip105 === profile.id
 
   return (
     <div className="page-container space-y-6 animate-fade-in">
@@ -372,8 +444,8 @@ export default function DRepProfilePage({
         </button>
       </div>
 
-      {/* ── Community mockup ─────────────────────────────────────────────── */}
-      <DRepCommunityCard />
+      {/* ── Community ─────────────────────────────────────────────────────── */}
+      <DRepCommunityCard drepId={profile.id} network={network} isOwner={isOwner} />
 
       {/* ── About (CIP-119 metadata) ──────────────────────────────────────── */}
       {hasAbout && (

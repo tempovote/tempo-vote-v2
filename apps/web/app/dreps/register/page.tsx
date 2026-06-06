@@ -80,6 +80,8 @@ function ConfirmStep({
   onBack,
   isLoading,
   statusLabel,
+  enableCommunity,
+  onToggleCommunity,
 }: {
   data: DRepFormData
   drepId: string | null
@@ -87,6 +89,8 @@ function ConfirmStep({
   onBack: () => void
   isLoading: boolean
   statusLabel: string | null
+  enableCommunity: boolean
+  onToggleCommunity: () => void
 }) {
   const profileSections = [
     data.motivations && { label: "Động lực", text: data.motivations },
@@ -168,11 +172,57 @@ function ConfirmStep({
             <span className="text-text-muted">Metadata upload (Pinata)</span>
             <span className="text-text-primary font-medium">miễn phí</span>
           </div>
+          {enableCommunity && (
+            <div className="flex justify-between items-center">
+              <span className="text-text-muted">DRep Community (phí nền tảng)</span>
+              <span className="text-accent font-medium">2 ADA</span>
+            </div>
+          )}
         </div>
         <p className="text-text-muted text-xs border-t border-border-subtle pt-2">
           Số tiền chính xác sẽ hiển thị trong ví khi ký.
         </p>
       </div>
+
+      {/* DRep Community toggle */}
+      <button
+        type="button"
+        onClick={onToggleCommunity}
+        disabled={isLoading}
+        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-colors ${
+          enableCommunity
+            ? "border-accent/50 bg-accent/5"
+            : "border-border-subtle bg-bg-elevated hover:border-border-default"
+        }`}
+      >
+        <div className="flex items-center gap-3 text-left">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+            enableCommunity ? "bg-accent/20" : "bg-bg-elevated border border-border-default"
+          }`}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={enableCommunity ? "text-accent" : "text-text-muted"}>
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div>
+            <p className={`text-sm font-medium ${enableCommunity ? "text-accent-light" : "text-text-secondary"}`}>
+              Kích hoạt DRep Community
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Tạo không gian thảo luận và đề xuất cho cộng đồng của bạn (2 ADA)
+            </p>
+          </div>
+        </div>
+        <div className={`w-10 h-6 rounded-full relative transition-colors shrink-0 ${
+          enableCommunity ? "bg-accent" : "bg-bg-elevated border border-border-default"
+        }`}>
+          <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+            enableCommunity ? "translate-x-4" : "translate-x-0.5"
+          }`} />
+        </div>
+      </button>
 
       {/* Status while loading */}
       {statusLabel && (
@@ -234,6 +284,7 @@ export default function RegisterDRepPage() {
 
   const drepId = drepKey?.dRepIDCip105 ?? null
   const isSubmitting = wizardStep === "uploading" || wizardStep === "signing"
+  const [communityEnabled, setCommunityEnabled] = useState(false)
 
   // ── Guards ──────────────────────────────────────────────────────────────
   if (!isConnected) {
@@ -343,6 +394,25 @@ export default function RegisterDRepPage() {
       // Update wallet store optimistically
       setDRepStatus({ isDrepRegistered: true, drepName: formData.givenName, delegatedDrep: null })
 
+      // Optional: activate DRep Community (2 ADA fee)
+      if (communityEnabled) {
+        setStatusLabel("Kích hoạt DRep Community (2 ADA)...")
+        try {
+          const communityTxHash = await submitTx("ACTIVATE_COMMUNITY", {})
+          await fetch(`${API_URL}/communities/${drepId}/activate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              network: networkId === 1 ? "mainnet" : "preprod",
+              txHash: communityTxHash,
+            }),
+          })
+        } catch {
+          // Community activation is optional — don't block success
+          console.warn("[DRep Register] Community activation failed (non-blocking)")
+        }
+      }
+
       setTxHash(hash)
       setStatusLabel(null)
       setWizardStep("success")
@@ -404,6 +474,8 @@ export default function RegisterDRepPage() {
               onBack={() => setWizardStep("step2")}
               isLoading={isSubmitting}
               statusLabel={statusLabel}
+              enableCommunity={communityEnabled}
+              onToggleCommunity={() => setCommunityEnabled((v) => !v)}
             />
           )}
 

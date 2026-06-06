@@ -157,6 +157,20 @@ class TxBuilder(private val network: Network) {
     }
 
     /**
+     * Build a simple ADA payment transaction (e.g. platform fee).
+     */
+    fun buildPayment(
+        changeAddress: String,
+        toAddress: String,
+        lovelace: Long,
+    ): String {
+        val tx = Tx()
+            .payToAddress(toAddress, BigInteger.valueOf(lovelace))
+            .from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
      * Complete the transaction WITHOUT signing — returns unsigned CBOR hex.
      * The frontend is responsible for signing via wallet.signTx().
      */
