@@ -1,3 +1,4 @@
+import { bech32 } from "bech32"
 import type { VoteCounts } from "@tempo/types"
 
 export function lovelaceToAda(lovelace: number): string {
@@ -35,13 +36,46 @@ export function getActionTypeLabel(actionType: string): string {
   return map[actionType] ?? actionType
 }
 
-// ipfs:// → https://ipfs.io/ipfs/... for browser display
-export function resolveAnchorUrl(url: string | null): string | null {
-  if (!url) return null
+const IPFS_GATEWAYS = [
+  "https://ipfs.io/ipfs/",
+  "https://cloudflare-ipfs.com/ipfs/",
+  "https://dweb.link/ipfs/",
+]
+
+// ipfs:// → list of candidate HTTPS URLs (for fallback fetching)
+export function resolveAnchorUrls(url: string | null): string[] {
+  if (!url) return []
   if (url.startsWith("ipfs://")) {
-    return `https://ipfs.io/ipfs/${url.slice(7)}`
+    const cid = url.slice(7)
+    return IPFS_GATEWAYS.map((gw) => `${gw}${cid}`)
   }
-  return url
+  return [url]
+}
+
+// ipfs:// → first gateway URL (for display links)
+export function resolveAnchorUrl(url: string | null): string | null {
+  const urls = resolveAnchorUrls(url)
+  return urls[0] ?? null
+}
+
+// CIP-129: governance action ID → bech32 (gov_action1...)
+// Payload: txHash bytes (32) + index as 4-byte big-endian
+export function govActionIdToBech32(txHash: string, index: number): string {
+  try {
+    const hashBytes = new Uint8Array(32)
+    for (let i = 0; i < 32; i++) {
+      hashBytes[i] = parseInt(txHash.slice(i * 2, i * 2 + 2), 16)
+    }
+    const indexBytes = new Uint8Array(4)
+    new DataView(indexBytes.buffer).setUint32(0, index, false) // big-endian
+    const payload = new Uint8Array(36)
+    payload.set(hashBytes, 0)
+    payload.set(indexBytes, 32)
+    const words = bech32.toWords(payload)
+    return bech32.encode("gov_action", words, 200)
+  } catch {
+    return ""
+  }
 }
 
 // Static Conway-era vote thresholds (fraction, e.g. 0.67 = 67%)

@@ -4,14 +4,17 @@ import { useState } from "react"
 import { useWalletStore } from "@/store/wallet"
 import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
+import { govActionIdToBech32 } from "@/lib/governance"
 
 const FILTER_CHIPS = [
-  { label: "Tất cả",          value: "" },
-  { label: "Treasury",        value: "treasuryWithdrawals" },
-  { label: "Protocol Params", value: "protocolParametersUpdate" },
-  { label: "Hard Fork",       value: "hardForkInitiation" },
-  { label: "Info",            value: "infoAction" },
-  { label: "No Confidence",   value: "noConfidence" },
+  { label: "Tất cả",           value: "" },
+  { label: "Treasury",         value: "treasuryWithdrawals" },
+  { label: "Protocol Params",  value: "protocolParametersUpdate" },
+  { label: "Hard Fork",        value: "hardForkInitiation" },
+  { label: "Info",             value: "infoAction" },
+  { label: "No Confidence",    value: "noConfidence" },
+  { label: "Update Committee", value: "updateCommittee" },
+  { label: "New Constitution", value: "newConstitution" },
 ]
 
 export default function GovernanceActionsPage() {
@@ -25,11 +28,13 @@ export default function GovernanceActionsPage() {
     activeFilter || undefined,
   )
 
-  const visible = [...(search.trim()
-    ? actions.filter(
-        (a) =>
-          a.txHash.toLowerCase().includes(search.toLowerCase()) ||
-          a.type.toLowerCase().includes(search.toLowerCase()),
+  const q = search.trim().toLowerCase()
+  const visible = [...(q
+    ? actions.filter((a) =>
+        a.txHash.toLowerCase().includes(q) ||
+        a.type.toLowerCase().includes(q) ||
+        a.actionType.toLowerCase().includes(q) ||
+        govActionIdToBech32(a.txHash, a.index).toLowerCase().includes(q)
       )
     : actions
   )].sort((a, b) => b.expiresEpoch - a.expiresEpoch)
@@ -59,7 +64,7 @@ export default function GovernanceActionsPage() {
           </svg>
           <input
             type="text"
-            placeholder="Tìm theo loại hoặc txHash…"
+            placeholder="Tìm theo tên, txHash hoặc gov_action1…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input pl-10 w-full"
@@ -67,13 +72,16 @@ export default function GovernanceActionsPage() {
         </div>
       </div>
 
-      {/* Filter chips */}
-      <div className="flex flex-wrap gap-2 animate-fade-in">
+      {/* Filter chips — single scrollable row */}
+      <div
+        className="flex gap-2 overflow-x-auto animate-fade-in"
+        style={{ scrollbarWidth: "none" }}
+      >
         {FILTER_CHIPS.map((chip) => (
           <button
             key={chip.value}
             onClick={() => setActiveFilter(chip.value)}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap shrink-0 ${
               activeFilter === chip.value
                 ? "bg-accent text-white border-accent"
                 : "bg-bg-card text-text-secondary border-border-subtle hover:text-text-primary hover:border-border-default"

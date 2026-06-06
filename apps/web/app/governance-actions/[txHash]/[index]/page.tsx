@@ -5,6 +5,8 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useTx } from "@/hooks/useTx"
 import { useMyVote, type MyVote } from "@/hooks/useMyVote"
+import { useAnchorTitle } from "@/hooks/useAnchorTitle"
+import { ActionIdChip } from "@/components/governance/ActionIdChip"
 import { GovernanceActionSchema, type GovernanceAction, type VoteCounts } from "@tempo/types"
 import {
   computeVotePercent,
@@ -17,32 +19,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 type VoteStep = "idle" | "confirm" | "signing" | "success" | "error"
 type VoteChoice = "YES" | "NO" | "ABSTAIN"
 
-// ── Anchor title fetch ────────────────────────────────────────────────────────
-function useAnchorTitle(anchorUrl: string | null) {
-  const [title, setTitle] = useState<string | null>(null)
-  useEffect(() => {
-    const url = resolveAnchorUrl(anchorUrl)
-    if (!url) return
-    let cancelled = false
-    fetch(url)
-      .then((r) => r.json())
-      .then((data: unknown) => {
-        if (cancelled || !data || typeof data !== "object") return
-        const d = data as Record<string, unknown>
-        const body = d.body as Record<string, unknown> | undefined
-        const t = (body?.title ?? d.title) as string | undefined
-        setTitle(t ?? null)
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [anchorUrl])
-  return title
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function shortHash(hash: string) {
-  return `${hash.slice(0, 10)}…${hash.slice(-10)}`
-}
 
 function cardanoscanUrl(txHash: string, network: string) {
   const base = network === "mainnet"
@@ -55,22 +32,44 @@ function cardanoscanUrl(txHash: string, network: string) {
 function VoteBar({ label, votes, threshold }: { label: string; votes: VoteCounts; threshold?: number }) {
   const { yesPercent, noPercent, abstainPercent } = computeVotePercent(votes)
   const total = votes.yes + votes.no + votes.abstain
+  const showLabelInBar = yesPercent > 20
+  const tooltipText = !showLabelInBar
+    ? `Yes: ${yesPercent}% · No: ${noPercent}% · Abstain: ${abstainPercent}%`
+    : undefined
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-text-secondary">{label}</span>
-        {threshold && (
-          <span className="text-xs text-text-muted flex items-center gap-1">
-            <svg width="10" height="10" viewBox="0 0 10 10" className="text-warning">
-              <polygon points="5,0 10,10 0,10" fill="currentColor" />
-            </svg>
+        {threshold !== undefined && (
+          <span className="text-xs text-text-secondary font-semibold">
             Ngưỡng {threshold}%
           </span>
         )}
       </div>
-      <div className="vote-bar h-3">
-        <div className="vote-bar-yes" style={{ width: `${yesPercent}%` }} />
-        <div className="vote-bar-no" style={{ width: `${noPercent}%` }} />
+      <div className="relative">
+        <div className="vote-bar" title={tooltipText}>
+          <div className="vote-bar-yes" style={{ width: `${yesPercent}%` }}>
+            {showLabelInBar && (
+              <span className="text-white text-[10px] font-bold px-2 leading-none drop-shadow-sm select-none">
+                {yesPercent}%
+              </span>
+            )}
+          </div>
+          <div className="vote-bar-no" style={{ width: `${noPercent}%` }} />
+        </div>
+        {threshold !== undefined && (
+          <div
+            className="absolute z-10 w-[2px] rounded-full"
+            style={{
+              left:       `${threshold}%`,
+              top:        "-2px",
+              bottom:     "-2px",
+              background: "white",
+              boxShadow:  "0 0 0 1px rgba(0,0,0,0.3)",
+            }}
+          />
+        )}
       </div>
       <div className="flex justify-between text-xs text-text-muted">
         <span className="text-success font-medium">{votes.yes} Yes ({yesPercent}%)</span>
@@ -179,7 +178,9 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
         <div className="bg-bg-secondary rounded-xl p-4 space-y-3 text-sm">
           <div className="flex justify-between">
             <span className="text-text-muted">Governance Action</span>
-            <span className="font-mono text-xs">{shortHash(action.txHash)}</span>
+            <span className="font-mono text-xs text-text-secondary">
+              {action.txHash.slice(0, 10)}…{action.txHash.slice(-6)}#{action.index}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-text-muted">Loại</span>
@@ -396,9 +397,7 @@ export default function GovernanceActionDetailPage({
                 </span>
               </div>
               <h1 className="text-xl font-bold leading-snug">{heading}</h1>
-              <p className="text-xs text-text-muted font-mono">
-                {action.txHash}#{action.index}
-              </p>
+              <ActionIdChip txHash={action.txHash} index={action.index} size="md" />
             </div>
 
             {/* Meta grid */}

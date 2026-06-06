@@ -148,7 +148,7 @@ export default function Navbar() {
               </button>
             ) : (
               <button
-                className="btn-primary text-sm px-4 py-2"
+                className="btn-primary text-sm px-4 py-1.5"
                 onClick={openModal}
                 id="wallet-connect-btn"
               >

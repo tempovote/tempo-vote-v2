@@ -346,8 +346,8 @@ body {
 
 /* Voting bar */
 .vote-bar {
-  height: 8px;
-  border-radius: 4px;
+  height: 14px;
+  border-radius: 6px;
   overflow: hidden;
   background-color: var(--color-bg-elevated);
   display: flex;
@@ -356,6 +356,10 @@ body {
 .vote-bar-yes {
   background-color: var(--color-success);
   transition: width 0.6s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .vote-bar-no {
