@@ -1,3 +1,4 @@
+import Link from "next/link"
 import type { DRep } from "@/lib/mock-data"
 
 interface Props {
@@ -28,7 +29,12 @@ export default function DRepList({ title, dreps }: Props) {
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm truncate">{drep.name}</span>
+                  <Link
+                    href={`/dreps/${encodeURIComponent(drep.id)}`}
+                    className="font-semibold text-sm truncate hover:text-accent-light transition-colors"
+                  >
+                    {drep.name}
+                  </Link>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-text-muted">
                   <span>

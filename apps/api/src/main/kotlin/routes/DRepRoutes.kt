@@ -12,6 +12,7 @@ import kotlinx.serialization.json.*
 import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
+import vote.tempo.cardano.actionTypeLabel
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
 
@@ -41,6 +42,78 @@ fun Route.drepRoutes() {
             val result = queries.getDelegateRepresentatives()
             CardanoCache.drepList.put(network.name, result)
             call.respond(result)
+        }
+
+        // GET /dreps/{drepId}/votes?network=preprod&page=1&limit=20
+        // Returns paginated list of governance actions voted on by this DRep.
+        get("/{drepId}/votes") {
+            val drepId = call.parameters["drepId"]
+                ?: return@get call.respond(mapOf("error" to "drepId required"))
+            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+            val page = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 100) ?: 20
+
+            val credentialHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid drepId"))
+
+            // Use shared govActions cache (same cache as GovernanceRoutes)
+            val raw = CardanoCache.govActions.getIfPresent(network.name) ?: run {
+                val r = OgmiosStateQueries(network).getGovernanceProposals()
+                CardanoCache.govActions.put(network.name, r)
+                r
+            }
+
+            val array: JsonArray = when (raw) {
+                is JsonArray  -> raw
+                is JsonObject -> raw["governanceProposals"]?.jsonArray
+                    ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+                    ?: JsonArray(emptyList())
+                else -> JsonArray(emptyList())
+            }
+
+            // Collect all GAs where this DRep has voted
+            val drepVotes = mutableListOf<JsonObject>()
+            for (item in array) {
+                val obj = runCatching { item.jsonObject }.getOrNull() ?: continue
+                val votes = obj["votes"]?.jsonArray ?: continue
+                val myVote = votes.firstOrNull { entry ->
+                    val issuer = runCatching { entry.jsonObject["issuer"]?.jsonObject }.getOrNull()
+                    issuer?.get("role")?.jsonPrimitive?.contentOrNull == "delegateRepresentative"
+                        && issuer["id"]?.jsonPrimitive?.contentOrNull == credentialHex
+                }?.jsonObject?.get("vote")?.jsonPrimitive?.contentOrNull ?: continue
+
+                val proposal = obj["proposal"]?.jsonObject ?: continue
+                val txHash = proposal["transaction"]?.jsonObject?.get("id")
+                    ?.jsonPrimitive?.contentOrNull ?: continue
+                val index = proposal["index"]?.jsonPrimitive?.int ?: 0
+                val actionType = obj["action"]?.jsonObject?.get("type")
+                    ?.jsonPrimitive?.contentOrNull ?: "unknown"
+                val anchorUrl = obj["metadata"]?.jsonObject?.get("url")
+                    ?.jsonPrimitive?.contentOrNull
+                val expiresEpoch = obj["until"]?.jsonObject?.get("epoch")
+                    ?.jsonPrimitive?.int ?: 0
+
+                drepVotes.add(buildJsonObject {
+                    put("txHash", txHash)
+                    put("index", index)
+                    put("type", actionTypeLabel(actionType))
+                    put("actionType", actionType)
+                    put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                    put("vote", myVote)
+                    put("expiresEpoch", expiresEpoch)
+                })
+            }
+
+            val total = drepVotes.size
+            val offset = (page - 1) * limit
+            val pageVotes = drepVotes.drop(offset).take(limit)
+
+            call.respond(buildJsonObject {
+                put("votes", JsonArray(pageVotes))
+                put("total", total)
+                put("page", page)
+                put("limit", limit)
+            })
         }
 
         // GET /dreps/{drepId}?network=mainnet
@@ -76,6 +149,7 @@ fun Route.drepRoutes() {
                     put("id", drepId)
                     put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
                     put("anchorUrl", fromList["anchorUrl"]!!)
+                    put("votingPower", fromList["votingPower"] ?: JsonNull)
                 }
                 CardanoCache.drepInfo.put(cacheKey, response)
                 call.respond(response)
@@ -104,16 +178,21 @@ fun Route.drepRoutes() {
                         put("id", drepId)
                         put("name", JsonNull)
                         put("anchorUrl", JsonNull)
+                        put("votingPower", JsonNull)
                     }
                 } else {
                     val anchorUrl = registeredDrep["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
                         ?: registeredDrep["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
                     val drepName = anchorUrl?.let { fetchDRepName(it) }
+                    val stake = registeredDrep["stake"]?.jsonObject
+                    val lovelace = stake?.get("ada")?.jsonObject?.get("lovelace")?.jsonPrimitive?.longOrNull
+                        ?: stake?.get("lovelace")?.jsonPrimitive?.longOrNull
                     buildJsonObject {
                         put("isRegistered", true)
                         put("id", drepId)
                         put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
                         put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                        put("votingPower", lovelace?.let { JsonPrimitive(it) } ?: JsonNull)
                     }
                 }
 
@@ -231,9 +310,14 @@ private fun searchDrepList(network: Network, drepId: String, credentialHex: Stri
     val anchorUrl = match["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
         ?: match["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
 
+    val stake = match["stake"]?.jsonObject
+    val lovelace = stake?.get("ada")?.jsonObject?.get("lovelace")?.jsonPrimitive?.longOrNull
+        ?: stake?.get("lovelace")?.jsonPrimitive?.longOrNull
+
     return buildJsonObject {
         put("isRegistered", true)
         put("anchorUrl", anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("votingPower", lovelace?.let { JsonPrimitive(it) } ?: JsonNull)
     }
 }
 
