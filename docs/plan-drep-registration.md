@@ -86,16 +86,16 @@ Implement `POST /metadata/upload`:
 ### Checklist
 
 - [x] **2.1** Tạo `apps/web/app/dreps/register/page.tsx`
-  - [ ] Guard: wallet chưa connect → prompt connect
-  - [ ] Guard: ví không support CIP-95 → thông báo lỗi
-  - [ ] Guard: đã là DRep registered → redirect / thông báo
-  - [ ] State machine: `idle | step1 | step2 | step3 | uploading | signing | success | error`
+  - [x] Guard: wallet chưa connect → prompt connect
+  - [x] Guard: ví không support CIP-95 → thông báo lỗi
+  - [x] Guard: đã là DRep registered → redirect / thông báo
+  - [x] State machine: `step1 | step2 | confirm | uploading | signing | success | error`
 
 - [x] **2.2** Tạo `apps/web/components/drep/RegisterDRepForm.tsx`
-  - [ ] Bước 1: givenName, imageUrl, paymentAddress, doNotList toggle
-  - [ ] Bước 2: motivations textarea, objectives, qualifications, references builder (add/remove)
-  - [ ] Validation với `Cip119BodySchema` (từ `@tempo-vote/types`)
-  - [ ] Progress indicator (step 1/2/3)
+  - [x] Bước 1: givenName, imageUrl (URL + file upload → IPFS), paymentAddress, doNotList toggle
+  - [x] Bước 2: motivations textarea, objectives, qualifications, references builder (add/remove)
+  - [x] Validation: `canProceedStep1 = givenName.trim().length > 0`
+  - [x] Progress indicator StepIndicator (4 bước: Thông tin / Hồ sơ / Xác nhận / Hoàn tất)
 
 - [x] **2.3** ConfirmStep inline trong page.tsx (DRep preview, fee breakdown, upload+sign flow)
 
@@ -117,7 +117,7 @@ Implement `POST /metadata/upload`:
 - [x] **3.1** Kết nối button trong `apps/web/app/page.tsx` → `/dreps/register`
 - [x] **3.2** Link trong `WalletModal.tsx` → `/dreps/register` (đã có sẵn)
 - [x] **3.3** Sau register: `setDRepStatus(isDrepRegistered: true, drepName)` optimistic update
-- [ ] **3.4** Test preprod end-to-end:
+- [ ] **3.4** Test preprod end-to-end (Phase 1+2 đã hoàn thành, cần test thực tế):
   - [ ] Connect Eternl wallet (preprod)
   - [ ] Điền form, upload metadata → kiểm tra IPFS link
   - [ ] Sign TX → kiểm tra txHash trên CardanoScan
