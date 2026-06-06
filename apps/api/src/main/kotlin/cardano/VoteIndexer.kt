@@ -14,121 +14,154 @@ import vote.tempo.db.IndexerCheckpoint
 
 private val logger = KotlinLogging.logger("VoteIndexer")
 
-// Conway era start points — chain-sync must begin at or before these slots.
-// Both networks: we intersect at the slot just before Conway so we catch
-// every governance vote from the very first Conway block.
-private val CONWAY_STARTS = mapOf(
-    "mainnet" to (133_660_800L to "genesis"),  // epoch 507
-    "preprod" to (68_774_400L  to "genesis"),  // epoch 163
+// Conway era start slots — skip all blocks before these (no governance votes exist yet)
+private val CONWAY_SLOTS = mapOf(
+    "mainnet" to 133_660_800L,   // epoch 507
+    "preprod" to  68_774_400L,   // epoch 163
 )
+
+// Slots per epoch for rough epoch estimation from slot number
+private val SLOTS_PER_EPOCH = mapOf("mainnet" to 432_000L, "preprod" to 86_400L)
+
+// How many nextBlock requests to pipeline ahead (reduces round-trip overhead)
+private const val PIPELINE_SIZE = 200
 
 private val wsClient = HttpClient(CIO) {
     install(WebSockets)
 }
 
 /**
- * Start the chain-sync indexer for a given network.
- * Resumes from the last checkpoint; on first run uses the Conway era start slot.
+ * Start the chain-sync vote indexer for [network].
  *
- * The indexer streams blocks from Ogmios WebSocket, extracts votingProcedures,
- * and upserts them into [DrepVotes].  It saves a checkpoint every 1000 blocks
- * so restarts are cheap.
+ * This Ogmios deployment does not support `findIntersect`, so we always start
+ * from the genesis block and advance forward.  Pre-Conway blocks are skipped
+ * without any DB I/O.  Conway blocks are scanned for `votingProcedures` and
+ * any DRep votes are upserted into [DrepVotes].
+ *
+ * On restart the checkpoint slot is loaded from DB so we avoid re-inserting
+ * already-indexed votes (the UPSERT is idempotent, but the DB round-trips add
+ * latency).  Even with a checkpoint, we must still stream all blocks from
+ * genesis — the checkpoint only suppresses duplicate DB writes.
  */
 suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
     val wsUrl = ogmiosUrl
         .replace("https://", "wss://")
         .replace("http://",  "ws://")
 
+    val conwayStartSlot = CONWAY_SLOTS[network] ?: 0L
+    val slotsPerEpoch   = SLOTS_PER_EPOCH[network] ?: 432_000L
+
     while (true) {
         try {
-            logger.info { "VoteIndexer [$network] connecting to $wsUrl" }
+            val checkpoint = loadCheckpoint(network)
+            logger.info { "VoteIndexer [$network] connecting (checkpoint slot=${checkpoint?.first ?: "none"})" }
+
             wsClient.webSocket(wsUrl) {
-                // 1. Find the right intersection
-                val checkpoint = loadCheckpoint(network)
-                val intersectPoint = buildIntersectPoint(checkpoint, network)
-                sendText(intersectPoint)
-                val intersectReply = receiveText()
-                val intersectOk = parseJson(intersectReply)
-                    ?.get("result")?.jsonObject?.containsKey("intersection") == true
-                if (!intersectOk) {
-                    logger.warn { "VoteIndexer [$network] findIntersect failed: $intersectReply" }
-                    return@webSocket
+                // Prime the pipeline with PIPELINE_SIZE requests upfront
+                var inFlight = 0L
+                repeat(PIPELINE_SIZE) {
+                    sendNextBlock(inFlight++)
                 }
-                logger.info { "VoteIndexer [$network] intersection established, syncing…" }
 
-                // 2. Pump blocks
-                val conwayStartSlot = CONWAY_STARTS[network]?.first ?: 0L
                 var lastCheckpointMs = System.currentTimeMillis()
-                var requestId = 1L
-                var processedBlocks = 0L
+                var blocksProcessed  = 0L
+                var votesInserted    = 0L
 
-                while (true) {
-                    sendText(buildNextBlock(requestId++))
-                    val raw = receiveText()
-                    val msg = parseJson(raw) ?: continue
-                    val result = msg["result"]?.jsonObject ?: continue
+                for (frame in incoming) {
+                    if (frame !is Frame.Text) continue
+                    val msg = parseJson(frame.readText()) ?: run {
+                        sendNextBlock(inFlight++)  // keep pipeline filled
+                        continue
+                    }
+
+                    val result = msg["result"]?.jsonObject
+                    if (result == null) {
+                        sendNextBlock(inFlight++)
+                        continue
+                    }
+
                     val direction = result["direction"]?.jsonPrimitive?.contentOrNull
-                    if (direction == "backward") continue   // rollback — just resume forward
+                    if (direction == "backward") {
+                        // Ogmios reset to genesis — normal on first connection
+                        sendNextBlock(inFlight++)
+                        continue
+                    }
 
-                    val block = result["block"]?.jsonObject ?: continue
-                    val slot = block["slot"]?.jsonPrimitive?.longOrNull ?: continue
-                    val blockHash = block["id"]?.jsonPrimitive?.contentOrNull ?: continue
+                    val block = result["block"]?.jsonObject ?: run {
+                        sendNextBlock(inFlight++)
+                        continue
+                    }
 
-                    processedBlocks++
+                    val slot      = block["slot"]?.jsonPrimitive?.longOrNull ?: 0L
+                    val blockHash = block["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                    blocksProcessed++
 
-                    // Skip pre-Conway blocks — no governance votes exist before Conway era
+                    // ── Conway era: parse for governance votes ──────────────
                     if (slot >= conwayStartSlot) {
-                        val txs = block["transactions"]?.jsonArray ?: JsonArray(emptyList())
-                        for (tx in txs) {
-                            val txObj = tx.jsonObject
-                            val txHash = txObj["id"]?.jsonPrimitive?.contentOrNull ?: continue
-                            val votingProcs = txObj["votes"]?.jsonArray ?: continue
-                            for (vp in votingProcs) {
-                                indexVote(network, slot, txHash, vp.jsonObject)
+                        val checkpointSlot = checkpoint?.first ?: 0L
+
+                        // If we already indexed past this slot, skip the DB write
+                        // (UPSERT would be idempotent but expensive during catchup)
+                        if (slot > checkpointSlot) {
+                            val txs = block["transactions"]?.jsonArray ?: JsonArray(emptyList())
+                            for (tx in txs) {
+                                val txObj = runCatching { tx.jsonObject }.getOrNull() ?: continue
+                                val txHash = txObj["id"]?.jsonPrimitive?.contentOrNull ?: continue
+                                val votes  = txObj["votes"]?.jsonArray ?: continue
+                                for (vp in votes) {
+                                    if (indexVote(network, slot, slotsPerEpoch, txHash, vp.jsonObject)) {
+                                        votesInserted++
+                                    }
+                                }
                             }
+                        }
+
+                        // Checkpoint every 60 s once we're in Conway territory
+                        val now = System.currentTimeMillis()
+                        if (now - lastCheckpointMs >= 60_000 && blockHash.isNotEmpty()) {
+                            saveCheckpoint(network, slot, blockHash)
+                            lastCheckpointMs = now
+                            logger.info { "VoteIndexer [$network] slot=$slot blocks=$blocksProcessed votes=$votesInserted" }
                         }
                     }
 
-                    // Checkpoint every 60s (not per-block count — avoids DB pressure during catchup)
-                    val now = System.currentTimeMillis()
-                    if (now - lastCheckpointMs >= 60_000) {
-                        saveCheckpoint(network, slot, blockHash)
-                        lastCheckpointMs = now
-                        logger.debug { "VoteIndexer [$network] at slot $slot (${processedBlocks} blocks processed)" }
-                    }
+                    sendNextBlock(inFlight++)
                 }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            logger.warn { "VoteIndexer [$network] disconnected (${e.message}), retrying in 30s" }
+            logger.warn { "VoteIndexer [$network] error: ${e.message} — retrying in 30s" }
             delay(30_000)
         }
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── DB helpers ───────────────────────────────────────────────────────────────
 
-private fun indexVote(network: String, slot: Long, txHash: String, vp: JsonObject) {
-    val voter = vp["voter"]?.jsonObject ?: return
-    val role = voter["role"]?.jsonPrimitive?.contentOrNull ?: return
-    if (role != "delegateRepresentative") return
+private fun indexVote(
+    network: String,
+    slot: Long,
+    slotsPerEpoch: Long,
+    txHash: String,
+    vp: JsonObject,
+): Boolean {
+    val voter = vp["voter"]?.jsonObject ?: return false
+    if (voter["role"]?.jsonPrimitive?.contentOrNull != "delegateRepresentative") return false
 
-    val voterId = voter["id"]?.jsonPrimitive?.contentOrNull ?: return
+    val voterId = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
     val credentialHex = runCatching { drepIdToCredentialHex(voterId) }.getOrElse { voterId }
-    if (credentialHex.length != 56) return  // not a valid 28-byte credential
+    if (credentialHex.length != 56) return false
 
-    val actionId = vp["actionId"]?.jsonObject ?: return
+    val actionId = vp["actionId"]?.jsonObject ?: return false
     val proposalTxHash = actionId["transaction"]?.jsonObject?.get("id")
-        ?.jsonPrimitive?.contentOrNull ?: return
+        ?.jsonPrimitive?.contentOrNull ?: return false
     val proposalIndex = actionId["index"]?.jsonPrimitive?.intOrNull ?: 0
-    val vote = vp["vote"]?.jsonPrimitive?.contentOrNull ?: return
+    val vote = vp["vote"]?.jsonPrimitive?.contentOrNull ?: return false
 
-    // epoch ≈ slot / slotsPerEpoch (432000 mainnet, 86400 preprod)
-    val slotsPerEpoch = if (network == "mainnet") 432_000L else 86_400L
     val epoch = (slot / slotsPerEpoch).toInt()
 
-    try {
+    return try {
         transaction {
             DrepVotes.upsert(
                 keys = arrayOf(
@@ -148,23 +181,22 @@ private fun indexVote(network: String, slot: Long, txHash: String, vp: JsonObjec
                 it[DrepVotes.slot]              = slot
             }
         }
-    } catch (_: Exception) {}
+        true
+    } catch (_: Exception) { false }
 }
 
 private fun loadCheckpoint(network: String): Pair<Long, String>? =
-    try {
+    runCatching {
         transaction {
             IndexerCheckpoint.selectAll()
                 .where { IndexerCheckpoint.network eq network }
                 .singleOrNull()
-                ?.let {
-                    it[IndexerCheckpoint.slot] to it[IndexerCheckpoint.blockHash]
-                }
+                ?.let { it[IndexerCheckpoint.slot] to it[IndexerCheckpoint.blockHash] }
         }
-    } catch (_: Exception) { null }
+    }.getOrNull()
 
 private fun saveCheckpoint(network: String, slot: Long, blockHash: String) {
-    try {
+    runCatching {
         transaction {
             IndexerCheckpoint.upsert(IndexerCheckpoint.network) {
                 it[IndexerCheckpoint.network]   = network
@@ -172,46 +204,15 @@ private fun saveCheckpoint(network: String, slot: Long, blockHash: String) {
                 it[IndexerCheckpoint.blockHash] = blockHash
             }
         }
-    } catch (_: Exception) {}
-}
-
-private fun buildIntersectPoint(checkpoint: Pair<Long, String>?, network: String): String {
-    // If we have a real checkpoint (slot + hash), resume from there.
-    // Otherwise start from "origin" — Ogmios 6.x accepts the string "origin" as a special
-    // point meaning the genesis block. Pre-Conway blocks have no votes so skipping them
-    // is free (just slot/hash reads, no DB writes).
-    val points: JsonArray = if (checkpoint != null) {
-        JsonArray(listOf(buildJsonObject {
-            put("slot", checkpoint.first)
-            put("id",   checkpoint.second)
-        }))
-    } else {
-        JsonArray(listOf(JsonPrimitive("origin")))
     }
-    return buildJsonObject {
-        put("jsonrpc", "2.0")
-        put("method",  "findIntersect")
-        put("params",  buildJsonObject { put("points", points) })
-        put("id",      "intersect")
-    }.toString()
 }
 
-private fun buildNextBlock(id: Long) = buildJsonObject {
-    put("jsonrpc", "2.0")
-    put("method",  "nextBlock")
-    put("params",  buildJsonObject {})
-    put("id",      id)
-}.toString()
+// ── WebSocket helpers ────────────────────────────────────────────────────────
 
-private suspend fun DefaultClientWebSocketSession.sendText(text: String) =
-    send(Frame.Text(text))
+private var reqId = 0L
 
-private suspend fun DefaultClientWebSocketSession.receiveText(): String {
-    for (frame in incoming) {
-        if (frame is Frame.Text) return frame.readText()
-    }
-    return ""
-}
+private suspend fun DefaultClientWebSocketSession.sendNextBlock(id: Long) =
+    send(Frame.Text("""{"jsonrpc":"2.0","method":"nextBlock","params":{},"id":$id}"""))
 
 private fun parseJson(text: String): JsonObject? =
     runCatching { Json.parseToJsonElement(text).jsonObject }.getOrNull()
