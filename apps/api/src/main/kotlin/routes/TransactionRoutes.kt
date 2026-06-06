@@ -103,8 +103,9 @@ fun Route.transactionRoutes() {
                         targetDrepId = req.targetDrepId,
                     )
                     "ACTIVATE_COMMUNITY" -> {
-                        val platformFeeAddress = System.getenv("PLATFORM_FEE_ADDRESS")
-                            ?: error("PLATFORM_FEE_ADDRESS env var not configured")
+                        val envKey = if (req.network == "mainnet") "PLATFORM_FEE_ADDRESS_MAINNET" else "PLATFORM_FEE_ADDRESS_PREPROD"
+                        val platformFeeAddress = System.getenv(envKey)
+                            ?: error("$envKey env var not configured")
                         builder.buildPayment(
                             changeAddress = req.changeAddress,
                             toAddress = platformFeeAddress,
