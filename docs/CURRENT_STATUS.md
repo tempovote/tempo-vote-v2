@@ -16,7 +16,7 @@ Core infra, wallet (CIP-30/95), DRep registration wizard, DRep profile page, gov
 - [ ] **Active Voting Power (Kupo)**: `stakeKeyBalance` trả `null`. Cần query Kupo UTxOs cho stake address của DRep. Ogmios `rewardAccountSummaries` chỉ trả `deposit` (2 ADA) + `rewards`, không phải wallet balance.
 - [ ] **Auth enforcement**: `/auth/challenge` + `/auth/verify` đã implement JWT nhưng chưa enforce trên bất kỳ endpoint nào. Community/poll creation không cần auth.
 - [ ] **DRep Registration guards**: wallet chưa connect, ví không support CIP-95, đã là DRep — cả 3 case chưa có UI guard. End-to-end test preprod chưa xong.
-- [ ] **Poll voting UI**: Schema DB sẵn sàng (`poll_votes`, `poll_options`) nhưng FE chưa có vote UI cho Internal Polls.
+- [x] **Poll voting UI**: Đã implement — `GET /communities/polls/{pollId}`, `POST /communities/polls/{pollId}/vote`, FE voting UI với result bars.
 
 ### Medium Priority
 - [ ] **Delegation TX UI**: `buildDelegation()` sẵn sàng ở BE, FE chỉ có button chưa nối flow.
@@ -38,7 +38,7 @@ Core infra, wallet (CIP-30/95), DRep registration wizard, DRep profile page, gov
 | Hardcode Pinata gateway | `hooks/useDRepProfile.ts`, `lib/governance.ts` | Low |
 | `StubRoutes.kt` tên misleading (chứa auth routes) | `routes/StubRoutes.kt` | Low |
 | Mock data còn trong `DRepList.tsx`, `dapp-ranking/page.tsx` | Multiple | Medium |
-| `PollOptions` không populate khi tạo poll | `CommunityRoutes.kt` | Medium |
+| `votingPower` trong `PollVotes` hardcode `0L` — cần Kupo query | `CommunityRoutes.kt` | Medium |
 | Poll voting không verify stake address ownership | `CommunityRoutes.kt` | High |
 | Community activate không verify TX on-chain | `CommunityRoutes.kt` | High |
 
