@@ -1,73 +1,35 @@
 # ADR-001: AI Context System for Claude Code
 
-**Status:** Accepted
+**Status:** Accepted (revised 2026-06-06)
 **Date:** 2026-06-06
 
 ## Context
 
-tempo-vote-v2 là polyglot monorepo (Next.js + Kotlin/Ktor) với nhiều layers phức tạp: wallet bridge, on-chain data via Ogmios, off-chain DB, IPFS integration. Mỗi session Claude Code mới bắt đầu không có context từ session trước — AI cần khám phá lại codebase từ đầu, dẫn đến lãng phí context window và thời gian.
-
-## Problem
-
-1. **Context loss**: Mỗi session mới, Claude phải đọc nhiều files để hiểu kiến trúc và trạng thái dự án
-2. **Inconsistent onboarding**: Không có quy trình rõ ràng về việc AI nên bắt đầu từ đâu
-3. **Stale knowledge**: Không có cơ chế cập nhật trạng thái dự án theo thời gian
-4. **Wasteful exploration**: AI có xu hướng scan toàn bộ codebase khi không chắc, dẫn đến context window overflow
+tempo-vote-v2 là polyglot monorepo (Next.js + Kotlin/Ktor) với nhiều layers phức tạp: wallet bridge, Ogmios chain-sync, IPFS, PostgreSQL. Mỗi AI session mới bắt đầu không có context từ session trước.
 
 ## Decision
 
-Tạo hệ thống Markdown context files trong `docs/` làm lớp onboarding chính cho Claude Code, với:
-- `CLAUDE_START_HERE.md` — quy trình khởi động bắt buộc
-- `AI_CONTEXT.md` — tổng quan dự án (đọc trước tiên)
-- `CURRENT_STATUS.md` — trạng thái hiện tại (cập nhật theo thời gian)
-- `CURRENT_TASK.md` — task đang làm (cập nhật mỗi khi chuyển task)
-- `REPOSITORY_MAP.md` — bản đồ file → task mapping
-- `ARCHITECTURE.md` — kiến trúc hệ thống với data flows
-- `API_CONTRACTS.md` — spec API đầy đủ
-- `ADR/` — lịch sử quyết định kiến trúc
-- `SESSION_SUMMARY_TEMPLATE.md` — template ghi lại session
+Duy trì **5 files** trong `docs/` làm AI onboarding layer:
+
+| File | Đọc khi nào | Cập nhật khi nào |
+|------|-------------|-----------------|
+| `AGENT_CONTEXT.md` | Mỗi session | Thay đổi stack/arch/routes |
+| `CURRENT_TASK.md` | Mỗi session | Đổi task |
+| `CURRENT_STATUS.md` | Khi plan feature | Hoàn thành feature / phát hiện debt |
+| `architecture.md` | Khi thay đổi data flow | Thay đổi kiến trúc |
+| `API_CONTRACTS.md` | Khi sửa endpoints | Thêm/sửa endpoint |
 
 ## Reasoning
 
-**Tại sao Markdown files?**
-- Claude Code đọc file text trực tiếp — không cần tool đặc biệt
-- Nằm trong git repository — version controlled cùng code
-- Dễ cập nhật bởi cả human và AI
-- Không phụ thuộc vào external service
+Markdown trong repo: version-controlled, đọc trực tiếp bằng Read tool, không cần external service.
+Tách `CURRENT_TASK.md` riêng vì thay đổi nhiều nhất (mỗi task). Tách `CURRENT_STATUS.md` vì dài và chỉ cần đọc khi planning.
 
-**Tại sao không dùng CLAUDE.md duy nhất?**
-- CLAUDE.md đã có (project conventions + git workflow) — không muốn bloat nó với architecture docs
-- Tách biệt concern: conventions vs context vs current state
-- CURRENT_TASK.md và CURRENT_STATUS.md cần cập nhật thường xuyên, tách ra dễ quản lý hơn
-
-**Tại sao không dùng comment trong code?**
-- Comments giải thích WHAT/HOW của code cụ thể
-- AI Context giải thích WHY của toàn bộ system design
-- Hai mục đích khác nhau
-
-**Alternatives considered:**
-- External wiki (Notion/Confluence): không nằm trong repo, dễ stale, cần browser access
-- Inline CLAUDE.md expansion: file sẽ quá dài, khó scan
-- No system: status quo — AI scan toàn bộ codebase mỗi session
+**Không dùng:**
+- External wiki: không trong repo, dễ stale
+- Single CLAUDE.md: sẽ quá dài và mix conventions với architecture
 
 ## Consequences
 
-**Tích cực:**
-- Session mới bắt đầu trong < 5 phút thay vì 15-20 phút
-- Nhất quán hơn: AI luôn biết bắt đầu từ đâu
-- Living documentation: docs cập nhật cùng code
-- Giảm context window waste
-
-**Tiêu cực:**
-- Cần maintain thêm files — CURRENT_TASK.md và CURRENT_STATUS.md phải được cập nhật
-- Nguy cơ docs stale nếu không có discipline cập nhật
-- Thêm cognitive load khi bắt đầu session
-
-## Maintenance Rules
-
-- `CURRENT_TASK.md`: cập nhật khi bắt đầu task mới hoặc kết thúc task
-- `CURRENT_STATUS.md`: cập nhật khi hoàn thành feature hoặc phát hiện technical debt mới
-- `ARCHITECTURE.md`: cập nhật khi có thay đổi kiến trúc lớn (thêm service, thay đổi data flow)
-- `API_CONTRACTS.md`: cập nhật khi thêm/sửa endpoint
-- `REPOSITORY_MAP.md`: cập nhật khi thêm file/directory quan trọng
-- ADR mới: tạo khi có quyết định kiến trúc lớn
+- Session start: đọc 2 files (~1000 tokens) thay vì 4 files (~4000 tokens)
+- Cần discipline cập nhật `CURRENT_TASK.md` khi đổi task và `CURRENT_STATUS.md` khi ship feature
+- ADR mới: chỉ tạo khi có quyết định kiến trúc thật sự quan trọng (không cần ADR cho mọi decision nhỏ)
