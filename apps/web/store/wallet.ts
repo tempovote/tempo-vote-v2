@@ -26,10 +26,11 @@ interface WalletState {
   error: string | null
   // User-selected data network (independent of connected wallet's networkId)
   selectedNetwork: "mainnet" | "preprod"
+  walletModalOpen: boolean
 }
 
 interface WalletActions {
-  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError" | "selectedNetwork">) => void
+  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError" | "selectedNetwork" | "walletModalOpen">) => void
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void
   setDRepStatusLoading: (v: boolean) => void
   setDRepStatusError: (kind: "network" | "server") => void
@@ -39,6 +40,8 @@ interface WalletActions {
   reset: () => void
   setSelectedNetwork: (network: "mainnet" | "preprod") => void
   initNetwork: () => void
+  openWalletModal: () => void
+  closeWalletModal: () => void
 }
 
 const NETWORK_STORAGE_KEY = "tempo:network"
@@ -60,6 +63,7 @@ const initialState: WalletState = {
   isConnecting: false,
   error: null,
   selectedNetwork: "mainnet",
+  walletModalOpen: false,
 }
 
 export const useWalletStore = create<WalletState & WalletActions>((set) => ({
@@ -93,4 +97,6 @@ export const useWalletStore = create<WalletState & WalletActions>((set) => ({
       set({ selectedNetwork: stored })
     }
   },
+  openWalletModal:  () => set({ walletModalOpen: true }),
+  closeWalletModal: () => set({ walletModalOpen: false }),
 }))

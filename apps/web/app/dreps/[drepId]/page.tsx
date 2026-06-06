@@ -9,6 +9,7 @@ import { useDRepVotingHistory } from "@/hooks/useDRepVotingHistory"
 import { useCommunity, useCommunityPolls } from "@/hooks/useCommunity"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
+import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { resolveAnchorUrls } from "@/lib/governance"
 import type { DRepVote, InternalPoll, PollStatus } from "@tempo/types"
 
@@ -337,9 +338,7 @@ function DelegateModal({
 
           {/* Not connected */}
           {!isConnected && (
-            <div className="notice-warning rounded-xl p-4 text-sm text-center">
-              Vui lòng kết nối ví để ủy quyền
-            </div>
+            <ConnectWalletCta variant="inline" message="Kết nối ví để ủy quyền" />
           )}
 
           {/* Already delegated */}
@@ -391,6 +390,8 @@ function DelegateModal({
               <button onClick={() => setTxStatus("idle")} className="btn-outline flex-1 text-sm">Thử lại</button>
               <button onClick={onClose} className="btn-outline flex-1 text-sm">Đóng</button>
             </>
+          ) : !isConnected ? (
+            <button onClick={onClose} className="btn-outline flex-1 text-sm">Đóng</button>
           ) : (
             <>
               <button
@@ -402,10 +403,10 @@ function DelegateModal({
               </button>
               <button
                 onClick={() => { void handleDelegate() }}
-                disabled={!isConnected || !isReady || txStatus === "loading" || alreadyDelegated}
+                disabled={!isReady || txStatus === "loading" || alreadyDelegated}
                 className="btn-primary flex-1 text-sm disabled:opacity-50"
               >
-                {alreadyDelegated ? "Đã ủy quyền" : "Xác nhận ủy quyền"}
+                {alreadyDelegated ? "Đã ủy quyền" : "Ủy quyền"}
               </button>
             </>
           )}
