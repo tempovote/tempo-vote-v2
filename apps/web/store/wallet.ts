@@ -24,16 +24,18 @@ interface WalletState {
   isConnected: boolean
   isConnecting: boolean
   error: string | null
+  walletBalance: { lovelace: number; ada: number; utxoCount: number } | null
   // User-selected data network (independent of connected wallet's networkId)
   selectedNetwork: "mainnet" | "preprod"
   walletModalOpen: boolean
 }
 
 interface WalletActions {
-  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError" | "selectedNetwork" | "walletModalOpen">) => void
+  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError" | "walletBalance" | "selectedNetwork" | "walletModalOpen">) => void
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void
   setDRepStatusLoading: (v: boolean) => void
   setDRepStatusError: (kind: "network" | "server") => void
+  setWalletBalance: (b: { lovelace: number; ada: number; utxoCount: number } | null) => void
   setConnecting: (v: boolean) => void
   setError: (msg: string) => void
   clearError: () => void
@@ -62,6 +64,7 @@ const initialState: WalletState = {
   isConnected: false,
   isConnecting: false,
   error: null,
+  walletBalance: null,
   selectedNetwork: "mainnet",
   walletModalOpen: false,
 }
@@ -79,6 +82,7 @@ export const useWalletStore = create<WalletState & WalletActions>((set) => ({
     set({ isDrepRegistered, drepName, delegatedDrep, drepStatusLoading: false, drepStatusError: null }),
   setDRepStatusLoading: (v) => set({ drepStatusLoading: v }),
   setDRepStatusError: (kind) => set({ drepStatusError: kind, drepStatusLoading: false }),
+  setWalletBalance: (b) => set({ walletBalance: b }),
   setConnecting: (v) => set({ isConnecting: v }),
   setError: (msg) => set({ error: msg, isConnecting: false }),
   clearError: () => set({ error: null }),
