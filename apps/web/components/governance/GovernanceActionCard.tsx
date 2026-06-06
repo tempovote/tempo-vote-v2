@@ -4,6 +4,9 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import type { GovernanceAction, VoteCounts } from "@tempo/types"
 import { computeVotePercent, resolveAnchorUrl, VOTE_THRESHOLDS } from "@/lib/governance"
+import { useWalletStore } from "@/store/wallet"
+import { useMyVote } from "@/hooks/useMyVote"
+import type { MyVote } from "@/hooks/useMyVote"
 
 function useAnchorTitle(anchorUrl: string | null): string | null {
   const [title, setTitle] = useState<string | null>(null)
@@ -39,8 +42,26 @@ interface Props {
   compact?: boolean
 }
 
+function MyVoteBadge({ vote }: { vote: MyVote }) {
+  if (!vote) return null
+  const cfg = {
+    YES:     { cls: "bg-success/15 text-success border-success/30",  label: "✓ YES" },
+    NO:      { cls: "bg-danger/15 text-danger border-danger/30",     label: "✓ NO" },
+    ABSTAIN: { cls: "bg-bg-elevated text-text-secondary border-border-default", label: "✓ ABSTAIN" },
+  }[vote]
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
 export default function GovernanceActionCard({ action, compact = false }: Props) {
   const anchorTitle = useAnchorTitle(action.anchorUrl)
+
+  const { isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
+  const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
+  const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
   const drepPct = computeVotePercent(action.drepVotes)
   const ccPct = computeVotePercent(action.ccVotes)
@@ -55,14 +76,17 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
     <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block">
       <div className="card-static space-y-4 animate-fade-in hover:border-border-default transition-colors cursor-pointer">
         {/* Header */}
-        <div className="min-w-0">
-          <h3 className={`font-semibold leading-snug ${compact ? "text-sm" : "text-base"}`}>
-            {heading}
-          </h3>
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className={`font-semibold leading-snug ${compact ? "text-sm" : "text-base"}`}>
+              {heading}
+            </h3>
+            <MyVoteBadge vote={myVote} />
+          </div>
           {anchorTitle && (
-            <p className="text-xs text-text-muted mt-0.5">{action.type}</p>
+            <p className="text-xs text-text-muted">{action.type}</p>
           )}
-          <p className="text-xs text-text-muted font-mono mt-0.5">
+          <p className="text-xs text-text-muted font-mono">
             {shortHash(action.txHash)}#{action.index}
           </p>
         </div>

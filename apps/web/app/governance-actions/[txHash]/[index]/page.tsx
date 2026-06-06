@@ -4,6 +4,7 @@ import { useState, useEffect, use } from "react"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useTx } from "@/hooks/useTx"
+import { useMyVote, type MyVote } from "@/hooks/useMyVote"
 import { GovernanceActionSchema, type GovernanceAction, type VoteCounts } from "@tempo/types"
 import {
   computeVotePercent,
@@ -83,8 +84,11 @@ function VoteBar({ label, votes, threshold }: { label: string; votes: VoteCounts
 
 // ── Vote section ──────────────────────────────────────────────────────────────
 function VoteSection({ action, network }: { action: GovernanceAction; network: string }) {
-  const { isConnected, isDrepRegistered, drepKey } = useWalletStore()
+  const { isConnected, isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
   const { submitTx, isReady } = useTx()
+
+  const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
+  const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
   const [step, setStep] = useState<VoteStep>("idle")
   const [choice, setChoice] = useState<VoteChoice | null>(null)
@@ -249,30 +253,63 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
   }
 
   // Idle state — choose YES / NO / ABSTAIN
-  const CHOICES: { value: VoteChoice; label: string; cls: string }[] = [
-    { value: "YES",     label: "YES",     cls: "border-success/50 text-success hover:bg-success/10 active:bg-success/20" },
-    { value: "NO",      label: "NO",      cls: "border-danger/50 text-danger hover:bg-danger/10 active:bg-danger/20" },
-    { value: "ABSTAIN", label: "ABSTAIN", cls: "border-border-default text-text-secondary hover:bg-white/5" },
+  const CHOICES: { value: VoteChoice; label: string; cls: string; activeCls: string }[] = [
+    { value: "YES",     label: "YES",     cls: "border-success/50 text-success hover:bg-success/10",           activeCls: "border-success bg-success/20 text-success" },
+    { value: "NO",      label: "NO",      cls: "border-danger/50 text-danger hover:bg-danger/10",              activeCls: "border-danger bg-danger/20 text-danger" },
+    { value: "ABSTAIN", label: "ABSTAIN", cls: "border-border-default text-text-secondary hover:bg-white/5",   activeCls: "border-border-default bg-bg-elevated text-text-primary" },
   ]
 
   return (
     <div className="card-static space-y-4">
-      <h3 className="font-semibold text-base">Bỏ phiếu của bạn</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-base">
+          {myVote ? "Phiếu của bạn" : "Bỏ phiếu của bạn"}
+        </h3>
+        {myVote && (
+          <MyVoteBadge vote={myVote} />
+        )}
+      </div>
+
+      {myVote && (
+        <p className="text-xs text-text-muted">
+          Bạn có thể đổi phiếu bằng cách chọn lựa chọn khác bên dưới.
+        </p>
+      )}
+
       <div className="grid grid-cols-3 gap-3">
-        {CHOICES.map(({ value, label, cls }) => (
-          <button
-            key={value}
-            onClick={() => { setChoice(value); setStep("confirm") }}
-            className={`py-3 rounded-xl border-2 font-bold text-sm transition-colors ${cls}`}
-          >
-            {label}
-          </button>
-        ))}
+        {CHOICES.map(({ value, label, cls, activeCls }) => {
+          const isCurrentVote = myVote === value
+          return (
+            <button
+              key={value}
+              onClick={() => { setChoice(value); setStep("confirm") }}
+              className={`py-3 rounded-xl border-2 font-bold text-sm transition-colors ${
+                isCurrentVote ? activeCls : cls
+              }`}
+            >
+              {isCurrentVote ? `✓ ${label}` : label}
+            </button>
+          )
+        })}
       </div>
       <p className="text-xs text-text-muted text-center">
         Ví sẽ yêu cầu ký giao dịch sau khi bạn xác nhận.
       </p>
     </div>
+  )
+}
+
+function MyVoteBadge({ vote }: { vote: MyVote }) {
+  if (!vote) return null
+  const cfg = {
+    YES:     { cls: "bg-success/15 text-success border-success/30",  label: "✓ YES" },
+    NO:      { cls: "bg-danger/15 text-danger border-danger/30",     label: "✓ NO" },
+    ABSTAIN: { cls: "bg-bg-elevated text-text-secondary border-border-default", label: "✓ ABSTAIN" },
+  }[vote]
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
   )
 }
 

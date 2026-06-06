@@ -7,6 +7,7 @@ import kotlinx.serialization.json.*
 import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.GovernanceActionDto
 import vote.tempo.cardano.OgmiosStateQueries
+import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.mapOgmiosProposal
 import vote.tempo.cardano.networkFromString
 
@@ -28,6 +29,53 @@ fun Route.governanceRoutes() {
             } else proposals
 
             call.respond(filtered)
+        }
+
+        /**
+         * GET /governance-actions/{txHash}/{index}/my-vote?drepId=drep1...&network=preprod
+         * Returns { "voted": "yes"|"no"|"abstain"|null } for the given DRep.
+         */
+        get("/{txHash}/{index}/my-vote") {
+            val txHash = call.parameters["txHash"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "txHash required"))
+            val index = call.parameters["index"]?.toIntOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "index must be an integer"))
+            val drepId = call.request.queryParameters["drepId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "drepId required"))
+            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+
+            val credentialHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid drepId"))
+
+            // Get raw proposals (cache-first)
+            val raw = CardanoCache.govActions.getIfPresent(network.name) ?: run {
+                val r = OgmiosStateQueries(network).getGovernanceProposals()
+                CardanoCache.govActions.put(network.name, r)
+                r
+            }
+
+            val array: JsonArray = when (raw) {
+                is JsonArray  -> raw
+                is JsonObject -> raw["governanceProposals"]?.jsonArray
+                    ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+                    ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Proposals not found"))
+                else -> return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Proposals not found"))
+            }
+
+            val proposalItem = array.firstOrNull { item ->
+                val prop = item.jsonObject["proposal"]?.jsonObject
+                prop?.get("transaction")?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull == txHash
+                    && prop["index"]?.jsonPrimitive?.int == index
+            } ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Governance action not found"))
+
+            val votes = proposalItem.jsonObject["votes"]?.jsonArray ?: JsonArray(emptyList())
+            val myVote = votes.firstOrNull { entry ->
+                val issuer = entry.jsonObject["issuer"]?.jsonObject
+                issuer?.get("role")?.jsonPrimitive?.contentOrNull == "delegateRepresentative"
+                    && issuer["id"]?.jsonPrimitive?.contentOrNull == credentialHex
+            }?.jsonObject?.get("vote")?.jsonPrimitive?.contentOrNull
+
+            call.respond(mapOf("voted" to myVote))
         }
 
         /**
