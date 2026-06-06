@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useWalletStore } from "@/store/wallet"
 import WalletModal from "@/components/wallet/WalletModal"
 
@@ -24,14 +24,17 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [walletModalOpen, setWalletModalOpen] = useState(false)
 
-  const { isConnected, name, networkId, changeAddress } = useWalletStore()
+  const { isConnected, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork } =
+    useWalletStore()
+
+  // When wallet is connected, network is locked to wallet's network
+  const networkLocked = isConnected
 
   const openModal  = useCallback(() => setWalletModalOpen(true),  [])
   const closeModal = useCallback(() => setWalletModalOpen(false), [])
 
-  const isMainnet = networkId === 1
-  const networkLabel = networkId === null ? "Mainnet" : isMainnet ? "Mainnet" : "Preprod"
-  const networkColor = networkId === null ? "#22c55e" : isMainnet ? "#22c55e" : "#eab308"
+  // Restore persisted network preference on first render
+  useEffect(() => { initNetwork() }, [initNetwork])
 
   return (
     <>
@@ -75,13 +78,52 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
-            {/* Network badge — dynamic */}
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-border-default text-xs font-medium text-text-secondary">
-              <span
-                className="w-2 h-2 rounded-full animate-pulse"
-                style={{ backgroundColor: networkColor }}
-              />
-              {networkLabel}
+            {/* Network selector */}
+            <div
+              className="hidden sm:flex items-center gap-0.5 p-1 rounded-lg bg-bg-card border border-border-default"
+              title={networkLocked ? "Mạng được khóa theo ví đang kết nối" : undefined}
+            >
+              <button
+                onClick={() => !networkLocked && setSelectedNetwork("mainnet")}
+                disabled={networkLocked}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  selectedNetwork === "mainnet"
+                    ? "bg-success/15 text-success"
+                    : networkLocked
+                    ? "text-text-muted opacity-40"
+                    : "text-text-muted hover:text-text-secondary"
+                } ${networkLocked ? "cursor-default" : "cursor-pointer"}`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${selectedNetwork === "mainnet" ? "animate-pulse" : ""}`}
+                  style={{ backgroundColor: "#22c55e" }}
+                />
+                Mainnet
+              </button>
+              <button
+                onClick={() => !networkLocked && setSelectedNetwork("preprod")}
+                disabled={networkLocked}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  selectedNetwork === "preprod"
+                    ? "bg-warning/15 text-warning"
+                    : networkLocked
+                    ? "text-text-muted opacity-40"
+                    : "text-text-muted hover:text-text-secondary"
+                } ${networkLocked ? "cursor-default" : "cursor-pointer"}`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${selectedNetwork === "preprod" ? "animate-pulse" : ""}`}
+                  style={{ backgroundColor: "#eab308" }}
+                />
+                Preprod
+              </button>
+              {networkLocked && (
+                <span className="px-1.5 text-text-muted opacity-50">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 1C9.24 1 7 3.24 7 6v2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6c0-2.76-2.24-5-5-5zm0 2c1.66 0 3 1.34 3 3v2H9V6c0-1.66 1.34-3 3-3zm0 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>
+                  </svg>
+                </span>
+              )}
             </div>
 
             {/* Wallet button — 2 states */}
@@ -106,7 +148,7 @@ export default function Navbar() {
               </button>
             ) : (
               <button
-                className="btn-primary text-sm px-4 py-2"
+                className="btn-primary text-sm px-4 py-1.5"
                 onClick={openModal}
                 id="wallet-connect-btn"
               >
@@ -160,10 +202,40 @@ export default function Navbar() {
                 )
               })}
 
-              {/* Network badge in mobile */}
-              <div className="flex items-center gap-2 px-3 py-2 text-xs text-text-muted">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: networkColor }} />
-                {networkLabel}
+              {/* Network selector in mobile */}
+              <div className="flex items-center gap-2 px-3 py-2">
+                <button
+                  onClick={() => !networkLocked && setSelectedNetwork("mainnet")}
+                  disabled={networkLocked}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    selectedNetwork === "mainnet"
+                      ? "border-success/40 text-success bg-success/10"
+                      : "border-border-subtle text-text-muted"
+                  } ${networkLocked && selectedNetwork !== "mainnet" ? "opacity-40" : ""}`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
+                  Mainnet
+                </button>
+                <button
+                  onClick={() => !networkLocked && setSelectedNetwork("preprod")}
+                  disabled={networkLocked}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    selectedNetwork === "preprod"
+                      ? "border-warning/40 text-warning bg-warning/10"
+                      : "border-border-subtle text-text-muted"
+                  } ${networkLocked && selectedNetwork !== "preprod" ? "opacity-40" : ""}`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#eab308]" />
+                  Preprod
+                </button>
+                {networkLocked && (
+                  <span className="text-xs text-text-muted opacity-50 flex items-center gap-1">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 1C9.24 1 7 3.24 7 6v2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6c0-2.76-2.24-5-5-5zm0 2c1.66 0 3 1.34 3 3v2H9V6c0-1.66 1.34-3 3-3zm0 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>
+                    </svg>
+                    Khóa theo ví
+                  </span>
+                )}
               </div>
             </div>
           </div>

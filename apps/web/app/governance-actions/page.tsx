@@ -1,7 +1,44 @@
+"use client"
+
+import { useState } from "react"
+import { useWalletStore } from "@/store/wallet"
 import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
-import { mockGovernanceActions } from "@/lib/mock-data"
+import { useGovernanceActions } from "@/hooks/useGovernanceActions"
+import { govActionIdToBech32 } from "@/lib/governance"
+
+const FILTER_CHIPS = [
+  { label: "Tất cả",           value: "" },
+  { label: "Treasury",         value: "treasuryWithdrawals" },
+  { label: "Protocol Params",  value: "protocolParametersUpdate" },
+  { label: "Hard Fork",        value: "hardForkInitiation" },
+  { label: "Info",             value: "infoAction" },
+  { label: "No Confidence",    value: "noConfidence" },
+  { label: "Update Committee", value: "updateCommittee" },
+  { label: "New Constitution", value: "newConstitution" },
+]
 
 export default function GovernanceActionsPage() {
+  const network = useWalletStore((s) => s.selectedNetwork)
+
+  const [activeFilter, setActiveFilter] = useState("")
+  const [search, setSearch] = useState("")
+
+  const { actions, isLoading, error } = useGovernanceActions(
+    network,
+    activeFilter || undefined,
+  )
+
+  const q = search.trim().toLowerCase()
+  const visible = [...(q
+    ? actions.filter((a) =>
+        a.txHash.toLowerCase().includes(q) ||
+        a.type.toLowerCase().includes(q) ||
+        a.actionType.toLowerCase().includes(q) ||
+        govActionIdToBech32(a.txHash, a.index).toLowerCase().includes(q)
+      )
+    : actions
+  )].sort((a, b) => b.expiresEpoch - a.expiresEpoch)
+
   return (
     <div className="page-container space-y-6">
       {/* Header */}
@@ -27,38 +64,92 @@ export default function GovernanceActionsPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search by name or ID"
-            className="input pl-10"
+            placeholder="Tìm theo tên, txHash hoặc gov_action1…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input pl-10 w-full"
           />
         </div>
-        <button className="btn-primary px-6">Search</button>
-        <button className="btn-outline px-3" title="Filters">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46" />
-          </svg>
-        </button>
+      </div>
+
+      {/* Filter chips — single scrollable row */}
+      <div
+        className="flex gap-2 overflow-x-auto animate-fade-in"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {FILTER_CHIPS.map((chip) => (
+          <button
+            key={chip.value}
+            onClick={() => setActiveFilter(chip.value)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap shrink-0 ${
+              activeFilter === chip.value
+                ? "bg-accent text-white border-accent"
+                : "bg-bg-card text-text-secondary border-border-subtle hover:text-text-primary hover:border-border-default"
+            }`}
+          >
+            {chip.label}
+          </button>
+        ))}
       </div>
 
       {/* Propose action CTA */}
       <div className="card-accent space-y-3 animate-slide-up">
         <h3 className="text-base font-bold text-accent-light">
-          Propose a Governance Action
+          Đề xuất Governance Action
         </h3>
         <div className="flex items-start justify-between gap-4">
           <p className="text-sm text-text-secondary">
-            Poll your DRep community first to refine your proposal and build support.
-            With backing, you&apos;re ready to submit it as a Governance Action.
+            Tạo poll trong cộng đồng DRep trước để lấy ý kiến và xây dựng sự ủng hộ.
+            Khi đã có đủ sự đồng thuận, bạn có thể gửi lên chain như một Governance Action.
           </p>
-          <button className="btn-primary shrink-0 text-sm">Create Poll</button>
+          <button className="btn-primary shrink-0 text-sm">Tạo Poll</button>
         </div>
       </div>
 
+      {/* Loading skeleton */}
+      {isLoading && (
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="card-static animate-pulse h-52 rounded-xl bg-bg-card" />
+          ))}
+        </div>
+      )}
+
+      {/* Error state */}
+      {!isLoading && error && (
+        <div className="notice-warning rounded-xl p-4 space-y-1">
+          <p className="font-medium">Không thể tải danh sách governance actions</p>
+          <p className="text-xs text-text-muted">{error}</p>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && !error && visible.length === 0 && (
+        <div className="text-center py-16 text-text-muted space-y-2">
+          <p className="text-4xl">📭</p>
+          <p className="font-medium">Không có governance actions phù hợp</p>
+          {(activeFilter || search) && (
+            <button
+              className="text-sm text-accent-light underline"
+              onClick={() => { setActiveFilter(""); setSearch("") }}
+            >
+              Xoá bộ lọc
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Governance action list */}
-      <div className="space-y-4">
-        {mockGovernanceActions.map((action) => (
-          <GovernanceActionCard key={action.id} action={action} />
-        ))}
-      </div>
+      {!isLoading && !error && visible.length > 0 && (
+        <div className="space-y-4">
+          {visible.map((action) => (
+            <GovernanceActionCard
+              key={`${action.txHash}-${action.index}`}
+              action={action}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

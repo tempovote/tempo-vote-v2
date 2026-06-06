@@ -57,7 +57,7 @@ private suspend fun pollNetwork(network: Network) {
         val dreps = q.getDelegateRepresentatives()
         CardanoCache.drepList.put(network.name, dreps)
 
-        val gas = q.getGovernanceActions()
+        val gas = q.getGovernanceProposals()
         CardanoCache.govActions.put(network.name, gas)
 
         logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions" }

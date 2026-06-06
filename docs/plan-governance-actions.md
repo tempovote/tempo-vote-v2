@@ -94,7 +94,7 @@ Thay `GovernanceRoutes.kt` trả raw JSON bằng typed DTOs sau khi map từ Ogm
 
 ### Checklist
 
-- [ ] **1.1** Tạo `GovernanceActionDto.kt` trong `apps/api/src/main/kotlin/cardano/`
+- [x] **1.1** Tạo `GovernanceActionDto.kt` trong `apps/api/src/main/kotlin/cardano/`
   ```kotlin
   @Serializable
   data class GovernanceActionDto(
@@ -132,7 +132,7 @@ Thay `GovernanceRoutes.kt` trả raw JSON bằng typed DTOs sau khi map từ Ogm
   )
   ```
 
-- [ ] **1.2** Tạo hàm `mapOgmiosGovAction(json: JsonObject): GovernanceActionDto?` trong cùng file
+- [x] **1.2** Tạo hàm `mapOgmiosGovAction(json: JsonObject): GovernanceActionDto?` trong cùng file
   - Parse `proposal.transaction.id` → `txHash`, `proposal.index` → `index`
   - Parse `action.type` → map sang display string
   - Parse `metadata.url` → `anchorUrl`, `metadata.hash` → `anchorHash`
@@ -140,12 +140,12 @@ Thay `GovernanceRoutes.kt` trả raw JSON bằng typed DTOs sau khi map từ Ogm
   - Parse `votes.dRepVotes`, `spoVotes`, `committeeVotes`
   - Lovelace: Ogmios trả `{ "ada": { "lovelace": N } }` hoặc `{ "lovelace": N }` — handle cả 2
 
-- [ ] **1.3** Cập nhật `GovernanceRoutes.kt`:
+- [x] **1.3** Cập nhật `GovernanceRoutes.kt`:
   - `GET /governance-actions` → map raw Ogmios array → `List<GovernanceActionDto>`, trả JSON array
   - Thêm query param `?type=` để filter theo action type (optional)
   - `GET /governance-actions/{txHash}/{index}` → filter list để trả single item (404 nếu không tìm thấy)
 
-- [ ] **1.4** Thêm `GovernanceActionDto` vào `CardanoCache` type hoặc giữ raw cache + map khi serve
+- [x] **1.4** Thêm `GovernanceActionDto` vào `CardanoCache` type hoặc giữ raw cache + map khi serve
 
 ---
 
@@ -158,7 +158,7 @@ Thay `GovernanceRoutes.kt` trả raw JSON bằng typed DTOs sau khi map từ Ogm
 
 ### Checklist
 
-- [ ] **2.1** Thêm Zod schema + TypeScript types vào `packages/types/src/index.ts`:
+- [x] **2.1** Thêm Zod schema + TypeScript types vào `packages/types/src/index.ts`:
   ```typescript
   export const GovernanceActionSchema = z.object({
     txHash: z.string(),
@@ -183,7 +183,7 @@ Thay `GovernanceRoutes.kt` trả raw JSON bằng typed DTOs sau khi map từ Ogm
   export type GovernanceAction = z.infer<typeof GovernanceActionSchema>
   ```
 
-- [ ] **2.2** Tạo `apps/web/hooks/useGovernanceActions.ts`:
+- [x] **2.2** Tạo `apps/web/hooks/useGovernanceActions.ts`:
   ```typescript
   export function useGovernanceActions(network: string) {
     // SWR hoặc simple useState + useEffect
@@ -192,7 +192,7 @@ Thay `GovernanceRoutes.kt` trả raw JSON bằng typed DTOs sau khi map từ Ogm
   }
   ```
 
-- [ ] **2.3** Tạo `apps/web/lib/governance.ts` — helper functions:
+- [x] **2.3** Tạo `apps/web/lib/governance.ts` — helper functions:
   - `lovelaceToAda(n: number): string` → "5.13B", "912M", "1.5K"
   - `getActionTypeLabel(type: string): string`
   - `computeVotePercent(yes, no, abstain): { yesPercent, noPercent, abstainPercent }`
@@ -209,13 +209,13 @@ Thay mock data bằng API call, thêm UX tốt hơn.
 
 ### Checklist
 
-- [ ] **3.1** Cập nhật `GovernanceActionCard.tsx`:
+- [x] **3.1** Cập nhật `GovernanceActionCard.tsx`:
   - Nhận `GovernanceAction` type (từ `@tempo/types`) thay mock type
   - Giữ nguyên layout (vote bars, badge, etc.)
   - Thêm link đến detail page: `/governance-actions/{txHash}/{index}`
   - Lazy-load anchor metadata (title) từ `anchorUrl` nếu có
 
-- [ ] **3.2** Cập nhật `apps/web/app/governance-actions/page.tsx`:
+- [x] **3.2** Cập nhật `apps/web/app/governance-actions/page.tsx`:
   - Thay `mockGovernanceActions` bằng `useGovernanceActions` hook
   - Loading skeleton (4 placeholder cards)
   - Empty state ("Không có governance actions nào")
@@ -223,7 +223,7 @@ Thay mock data bằng API call, thêm UX tốt hơn.
   - Filter chips: All / Treasury / Protocol Param / Hard Fork / ...
   - Search (filter by title, txHash)
 
-- [ ] **3.3** Loại bỏ mock governance actions khỏi `lib/mock-data.ts`
+- [x] **3.3** Loại bỏ mock governance actions khỏi `lib/mock-data.ts`
 
 ---
 
@@ -236,13 +236,13 @@ Trang detail cho từng GA — hiển thị đầy đủ thông tin + cho phép 
 
 ### Checklist
 
-- [ ] **4.1** Tạo `apps/web/app/governance-actions/[txHash]/[index]/page.tsx`:
+- [x] **4.1** Tạo `apps/web/app/governance-actions/[txHash]/[index]/page.tsx`:
   - `GET /governance-actions/{txHash}/{index}` → full GA info
   - Hiển thị: loại, trạng thái epoch, anchor URL, mô tả (từ anchor metadata)
   - Vote breakdown: DRep bar + SPO bar + CC bar (tương tự GovernanceActionCard nhưng chi tiết hơn)
   - Breadcrumb: Governance Actions → {title}
 
-- [ ] **4.2** Vote section (chỉ hiển thị khi `isConnected && isDrepRegistered`):
+- [x] **4.2** Vote section (chỉ hiển thị khi `isConnected && isDrepRegistered`):
   ```
   ┌─────────────────────────────┐
   │  Bỏ phiếu của bạn           │
@@ -254,11 +254,11 @@ Trang detail cho từng GA — hiển thị đầy đủ thông tin + cho phép 
   - Đã vote: hiển thị vote hiện tại + option đổi
   - State machine: `idle` → `confirm` → `signing` → `success` / `error`
 
-- [ ] **4.3** Vote confirmation: modal hoặc inline confirm step
+- [x] **4.3** Vote confirmation: modal hoặc inline confirm step
   - Hiển thị: GA title, vote choice, network fee ~0.2 ADA
   - Nút "Xác nhận & Ký"
 
-- [ ] **4.4** Kết nối với `useTx`:
+- [x] **4.4** Kết nối với `useTx`:
   ```typescript
   await submitTx("VOTE", {
     drepId,
@@ -268,7 +268,7 @@ Trang detail cho từng GA — hiển thị đầy đủ thông tin + cho phép 
   })
   ```
 
-- [ ] **4.5** Success state: txHash link đến CardanoScan
+- [x] **4.5** Success state: txHash link đến CardanoScan
 
 ---
 
@@ -281,12 +281,12 @@ Hiển thị vote của connected DRep trên từng GA (nếu đã vote).
 
 ### Checklist
 
-- [ ] **5.1** Backend: `GET /governance-actions/{txHash}/{index}/votes?drepId=drep1...`
+- [x] **5.1** Backend: `GET /governance-actions/{txHash}/{index}/votes?drepId=drep1...`
   - Ogmios raw votes object có thể chứa individual DRep votes
   - Parse để tìm vote của drepId cụ thể
   - Trả `{ voted: "YES" | "NO" | "ABSTAIN" | null }`
 
-- [ ] **5.2** Frontend: `useMyVote(txHash, index, drepId)` hook
+- [x] **5.2** Frontend: `useMyVote(txHash, index, drepId)` hook
   - Hiển thị badge "Đã bỏ phiếu: YES ✓" trên GovernanceActionCard
   - Hiển thị trên detail page
 

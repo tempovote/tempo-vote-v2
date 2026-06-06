@@ -1,9 +1,8 @@
 import Link from "next/link"
-import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
-import { mockGovernanceActions, mockPolls } from "@/lib/mock-data"
+import GovernancePreview from "@/components/governance/GovernancePreview"
+import { mockPolls } from "@/lib/mock-data"
 
 export default function Home() {
-  const previewAction = mockGovernanceActions[0]
 
   return (
     <div className="page-container space-y-8">
@@ -82,7 +81,7 @@ export default function Home() {
             View more
           </Link>
         </div>
-        {previewAction && <GovernanceActionCard action={previewAction} />}
+        <GovernancePreview />
       </section>
 
       {/* ── Section 4: Community Quick Polls ────────────────── */}

@@ -1,122 +1,182 @@
-import type { GovernanceAction } from "@/lib/mock-data"
+"use client"
+
+import Link from "next/link"
+import type { GovernanceAction, VoteCounts } from "@tempo/types"
+import { computeVotePercent, VOTE_THRESHOLDS } from "@/lib/governance"
+import { useWalletStore } from "@/store/wallet"
+import { useMyVote } from "@/hooks/useMyVote"
+import type { MyVote } from "@/hooks/useMyVote"
+import { useAnchorTitle } from "@/hooks/useAnchorTitle"
+import { ActionIdChip } from "./ActionIdChip"
 
 interface Props {
   action: GovernanceAction
   compact?: boolean
 }
 
+function MyVoteBadge({ vote }: { vote: MyVote }) {
+  if (!vote) return null
+  const cfg = {
+    YES:     { cls: "bg-success/15 text-success border-success/30",  label: "✓ YES" },
+    NO:      { cls: "bg-danger/15 text-danger border-danger/30",     label: "✓ NO" },
+    ABSTAIN: { cls: "bg-bg-elevated text-text-secondary border-border-default", label: "✓ ABSTAIN" },
+  }[vote]
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
 export default function GovernanceActionCard({ action, compact = false }: Props) {
-  const yesWidth = action.drep.yesPercent
-  const noWidth = action.drep.noPercent
-  const ccPercent = (action.cc.approved / action.cc.total) * 100
+  const anchorTitle = useAnchorTitle(action.anchorUrl)
+
+  const { isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
+  const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
+  const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
+
+  const thresholds = VOTE_THRESHOLDS[action.actionType] ?? {}
+
+  const drepPct = computeVotePercent(action.drepVotes)
+  const spoPct  = computeVotePercent(action.spoVotes)
+  const ccPct   = computeVotePercent(action.ccVotes)
+
+  const spoHasVotes = action.spoVotes.yes + action.spoVotes.no + action.spoVotes.abstain > 0
+  const ccHasVotes  = action.ccVotes.yes  + action.ccVotes.no  + action.ccVotes.abstain  > 0
+
+  const showSpo = thresholds.spo !== undefined || spoHasVotes
+  const showCc  = thresholds.cc  !== undefined || ccHasVotes
+
+  const proposalTitle = anchorTitle ?? action.type
 
   return (
-    <div className="card-static space-y-4 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <h3 className={`font-semibold leading-snug ${compact ? "text-sm" : "text-base"}`}>
-          {action.title}
-        </h3>
-        <button className="text-text-muted hover:text-text-primary shrink-0 transition-colors">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="12" cy="5" r="2" />
-            <circle cx="12" cy="12" r="2" />
-            <circle cx="12" cy="19" r="2" />
-          </svg>
-        </button>
-      </div>
+    <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block">
+      <div className="card-static space-y-4 animate-fade-in hover:border-border-default transition-colors cursor-pointer">
 
-      {/* Meta */}
-      <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
-        <span>
-          Expires <span className="text-text-primary font-medium">{action.expires}</span>
-        </span>
-        <span>Status</span>
-        <span
-          className={`badge ${
-            action.status === "Active"
-              ? "badge-active"
-              : action.status === "Expired"
-              ? "badge-expired"
-              : "badge-active"
-          }`}
-        >
-          {action.status}
-        </span>
-        <span>
-          Type <span className="text-text-primary font-medium">{action.type}</span>
-        </span>
-      </div>
+        {/* Header */}
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className={`font-semibold leading-snug ${compact ? "text-sm" : "text-base"}`}>
+              {proposalTitle}
+            </h3>
+            <MyVoteBadge vote={myVote} />
+          </div>
+          <ActionIdChip txHash={action.txHash} index={action.index} size="sm" />
+        </div>
 
-      {/* Voting Results */}
-      <div className="bg-bg-secondary rounded-xl p-4 space-y-4 border border-border-subtle">
-        <div className="flex items-center justify-between">
-          <h4 className="font-semibold text-sm">Voting Results</h4>
-          <span className="text-xs text-text-muted flex items-center gap-1">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12,6 12,12 16,14" />
-            </svg>
-            {action.drep.threshold}%
+        {/* Meta — single row: epoch · status · type */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <span className="text-text-secondary">
+            Hết hạn{" "}
+            <span className="text-text-primary font-medium">Epoch {action.expiresEpoch}</span>
+          </span>
+          <span className="text-text-muted">·</span>
+          <span className="badge badge-active">Active</span>
+          <span className="text-text-muted">·</span>
+          <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-bg-elevated text-text-secondary border border-border-subtle">
+            {action.type}
           </span>
         </div>
 
-        {/* DRep bar */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-text-secondary w-12 shrink-0">DRep</span>
-            <div className="flex-1">
-              <div className="vote-bar">
-                <div className="vote-bar-yes" style={{ width: `${yesWidth}%` }} />
-                <div className="vote-bar-no" style={{ width: `${noWidth}%` }} />
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between text-xs text-text-muted pl-15">
-            <span>
-              {action.drep.yesAda} ({action.drep.yesPercent}%)
-            </span>
-            {/* Threshold marker */}
-            <div className="flex items-center gap-1">
-              <svg width="10" height="10" viewBox="0 0 10 10" className="text-warning">
-                <polygon points="5,0 10,10 0,10" fill="currentColor" />
-              </svg>
-              <span>{action.cc.threshold}%</span>
-            </div>
-          </div>
-        </div>
+        {/* Voting Results */}
+        <div className="bg-bg-secondary rounded-xl p-4 space-y-3 border border-border-subtle">
+          <h4 className="font-semibold text-sm">Kết quả bỏ phiếu</h4>
 
-        {/* CC bar */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-text-secondary w-12 shrink-0">CC</span>
-            <div className="flex-1">
-              <div className="vote-bar">
-                <div
-                  className="vote-bar-yes"
-                  style={{ width: `${ccPercent}%` }}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between text-xs text-text-muted pl-15">
-            <span>
-              {action.cc.approved} ({ccPercent.toFixed(0)}%)
-            </span>
-            <div className="flex items-center gap-1">
-              <svg width="10" height="10" viewBox="0 0 10 10" className="text-warning">
-                <polygon points="5,0 10,10 0,10" fill="currentColor" />
-              </svg>
-              <span>{action.cc.threshold}%</span>
-            </div>
-          </div>
+          <VoteRow
+            label="DRep"
+            votes={action.drepVotes}
+            yesPercent={drepPct.yesPercent}
+            noPercent={drepPct.noPercent}
+            threshold={thresholds.drep !== undefined ? Math.round(thresholds.drep * 100) : null}
+          />
+
+          {showSpo && (
+            <VoteRow
+              label="SPO"
+              votes={action.spoVotes}
+              yesPercent={spoPct.yesPercent}
+              noPercent={spoPct.noPercent}
+              threshold={thresholds.spo !== undefined ? Math.round(thresholds.spo * 100) : null}
+            />
+          )}
+
+          {showCc && (
+            <VoteRow
+              label="CC"
+              votes={action.ccVotes}
+              yesPercent={ccPct.yesPercent}
+              noPercent={ccPct.noPercent}
+              threshold={thresholds.cc !== undefined ? Math.round(thresholds.cc * 100) : null}
+            />
+          )}
         </div>
       </div>
+    </Link>
+  )
+}
 
-      {/* Poll button */}
-      <button className="btn-outline w-full text-sm py-2.5">
-        Poll your community
-      </button>
+interface VoteRowProps {
+  label: string
+  votes: VoteCounts
+  yesPercent: number
+  noPercent: number
+  threshold: number | null
+}
+
+function VoteRow({ label, votes, yesPercent, noPercent, threshold }: VoteRowProps) {
+  const total = votes.yes + votes.no + votes.abstain
+  const showLabelInBar = yesPercent > 20
+  const tooltipText = !showLabelInBar
+    ? `Yes: ${yesPercent}% · No: ${noPercent}% · Abstain: ${100 - yesPercent - noPercent}%`
+    : undefined
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-text-secondary w-10 shrink-0">{label}</span>
+        <div className="flex-1 relative">
+          <div className="vote-bar" title={tooltipText}>
+            <div
+              className="vote-bar-yes"
+              style={{ width: `${yesPercent}%` }}
+            >
+              {showLabelInBar && (
+                <span className="text-white text-[10px] font-bold px-1.5 leading-none drop-shadow-sm select-none">
+                  {yesPercent}%
+                </span>
+              )}
+            </div>
+            <div className="vote-bar-no" style={{ width: `${noPercent}%` }} />
+          </div>
+          {threshold !== null && (
+            <div
+              className="absolute z-10 w-[2px] rounded-full"
+              style={{
+                left:       `${threshold}%`,
+                top:        "-2px",
+                bottom:     "-2px",
+                background: "white",
+                boxShadow:  "0 0 0 1px rgba(0,0,0,0.3)",
+              }}
+            />
+          )}
+        </div>
+        {threshold !== null ? (
+          <span className="text-xs text-text-secondary font-semibold w-9 text-right shrink-0">
+            {threshold}%
+          </span>
+        ) : (
+          <span className="w-9 shrink-0" />
+        )}
+      </div>
+      <div className="pl-[52px] text-xs text-text-muted">
+        <span className="text-success">{votes.yes} Yes ({yesPercent}%)</span>
+        {" · "}
+        <span className="text-danger">{votes.no} No</span>
+        {" · "}
+        {votes.abstain} Abstain
+        {total > 0 && ` · ${total} tổng`}
+      </div>
     </div>
   )
 }
