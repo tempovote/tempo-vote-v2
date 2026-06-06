@@ -249,6 +249,172 @@ function PollStatusBadge({ status }: { status: PollStatus }) {
   )
 }
 
+// ─── Delegate Modal ───────────────────────────────────────────────────────────
+
+function DelegateModal({
+  drepId,
+  drepName,
+  network,
+  onClose,
+}: {
+  drepId: string
+  drepName: string | null
+  network: string
+  onClose: () => void
+}) {
+  const isConnected = useWalletStore((s) => s.isConnected)
+  const delegatedDrep = useWalletStore((s) => s.delegatedDrep)
+  const { submitTx, isReady } = useTx()
+  const [txStatus, setTxStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [txError, setTxError] = useState<string | null>(null)
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = "" }
+  }, [])
+
+  const alreadyDelegated = delegatedDrep?.id === drepId
+  const displayName = drepName ?? shortDrepId(drepId)
+  const explorerBase = network === "mainnet"
+    ? "https://cardanoscan.io/transaction"
+    : "https://preprod.cardanoscan.io/transaction"
+
+  async function handleDelegate() {
+    setTxStatus("loading")
+    setTxError(null)
+    try {
+      const hash = await submitTx("DELEGATE", { targetDrepId: drepId, delegationType: "drep" })
+      setTxHash(hash)
+      setTxStatus("success")
+    } catch (err: unknown) {
+      setTxError(err instanceof Error ? err.message : "Giao dịch thất bại")
+      setTxStatus("error")
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={txStatus !== "loading" ? onClose : undefined}
+      />
+
+      <div className="relative bg-bg-card rounded-2xl w-full max-w-sm shadow-2xl border border-border-subtle">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle">
+          <h2 className="text-sm font-bold">Ủy quyền bỏ phiếu</h2>
+          {txStatus !== "loading" && (
+            <button onClick={onClose} className="p-1 text-text-muted hover:text-text-primary transition-colors">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-5 space-y-4">
+
+          {/* Target DRep */}
+          <div className="bg-bg-elevated rounded-xl p-4 border border-border-subtle space-y-1">
+            <p className="text-xs text-text-muted">Ủy quyền cho</p>
+            <p className="font-semibold text-text-primary truncate">{displayName}</p>
+            <p className="font-mono text-xs text-text-muted">{shortDrepId(drepId)}</p>
+          </div>
+
+          {/* Current delegation */}
+          {isConnected && !alreadyDelegated && delegatedDrep && txStatus === "idle" && (
+            <div className="bg-bg-elevated rounded-xl p-3 border border-border-subtle text-xs text-text-muted space-y-0.5">
+              <p>Đang ủy quyền cho</p>
+              <p className="font-mono text-text-secondary truncate">
+                {delegatedDrep.name ?? shortDrepId(delegatedDrep.id)}
+              </p>
+              <p className="text-[10px] opacity-70">Ủy quyền mới sẽ thay thế ủy quyền hiện tại</p>
+            </div>
+          )}
+
+          {/* Not connected */}
+          {!isConnected && (
+            <div className="notice-warning rounded-xl p-4 text-sm text-center">
+              Vui lòng kết nối ví để ủy quyền
+            </div>
+          )}
+
+          {/* Already delegated */}
+          {isConnected && alreadyDelegated && txStatus === "idle" && (
+            <div className="notice-success rounded-xl p-4 text-sm text-center">
+              Bạn đã ủy quyền cho DRep này
+            </div>
+          )}
+
+          {/* Loading */}
+          {txStatus === "loading" && (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <div className="w-8 h-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
+              <p className="text-sm text-text-muted">Đang ký và gửi giao dịch...</p>
+            </div>
+          )}
+
+          {/* Success */}
+          {txStatus === "success" && txHash && (
+            <div className="notice-success rounded-xl p-4 space-y-2">
+              <p className="font-semibold text-sm">Ủy quyền thành công!</p>
+              <p className="text-xs break-all font-mono opacity-80">{txHash}</p>
+              <a
+                href={`${explorerBase}/${txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-xs underline"
+              >
+                Xem trên Cardanoscan →
+              </a>
+            </div>
+          )}
+
+          {/* Error */}
+          {txStatus === "error" && txError && (
+            <div className="notice-warning rounded-xl p-4 space-y-1">
+              <p className="font-semibold text-sm">Giao dịch thất bại</p>
+              <p className="text-xs opacity-80">{txError}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5 flex gap-3">
+          {txStatus === "success" ? (
+            <button onClick={onClose} className="btn-primary flex-1 text-sm">Đóng</button>
+          ) : txStatus === "error" ? (
+            <>
+              <button onClick={() => setTxStatus("idle")} className="btn-outline flex-1 text-sm">Thử lại</button>
+              <button onClick={onClose} className="btn-outline flex-1 text-sm">Đóng</button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onClose}
+                disabled={txStatus === "loading"}
+                className="btn-outline flex-1 text-sm"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => { void handleDelegate() }}
+                disabled={!isConnected || !isReady || txStatus === "loading" || alreadyDelegated}
+                className="btn-primary flex-1 text-sm disabled:opacity-50"
+              >
+                {alreadyDelegated ? "Đã ủy quyền" : "Xác nhận ủy quyền"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Community Modal ──────────────────────────────────────────────────────────
 
 function CommunityModal({
@@ -376,6 +542,7 @@ export default function DRepProfilePage({
   const [activating, setActivating] = useState(false)
   const [activateError, setActivateError] = useState<string | null>(null)
   const [communityModalOpen, setCommunityModalOpen] = useState(false)
+  const [delegateModalOpen, setDelegateModalOpen] = useState(false)
 
   // Redirect to canonical CIP-105 URL if user landed on a CIP-129 URL
   useEffect(() => {
@@ -533,7 +700,10 @@ export default function DRepProfilePage({
         )}
         <div className="flex gap-3">
           {showDelegateBtn && (
-            <button className="btn-primary flex-1 text-sm">
+            <button
+              className="btn-primary flex-1 text-sm"
+              onClick={() => setDelegateModalOpen(true)}
+            >
               Delegate Voting Power
             </button>
           )}
@@ -657,6 +827,16 @@ export default function DRepProfilePage({
           </>
         )}
       </div>
+
+      {/* ── Delegate Modal ────────────────────────────────────────────────── */}
+      {delegateModalOpen && (
+        <DelegateModal
+          drepId={profile.id}
+          drepName={profile.givenName ?? profile.name}
+          network={network}
+          onClose={() => setDelegateModalOpen(false)}
+        />
+      )}
 
       {/* ── Community Modal ───────────────────────────────────────────────── */}
       {communityModalOpen && (
