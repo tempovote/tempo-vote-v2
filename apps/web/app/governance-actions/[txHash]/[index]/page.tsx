@@ -7,6 +7,7 @@ import { useTx } from "@/hooks/useTx"
 import { useMyVote, type MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
 import { ActionIdChip } from "@/components/governance/ActionIdChip"
+import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { GovernanceActionSchema, type GovernanceAction, type VoteCounts } from "@tempo/types"
 import {
   computeVotePercent,
@@ -95,12 +96,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   if (!isConnected) {
-    return (
-      <div className="card-static text-center py-8 space-y-2 text-text-muted">
-        <p className="font-medium">Kết nối ví để bỏ phiếu</p>
-        <p className="text-sm">Cần kết nối ví hỗ trợ CIP-95 (DRep key).</p>
-      </div>
-    )
+    return <ConnectWalletCta message="Kết nối ví để bỏ phiếu" />
   }
 
   if (!isDrepRegistered) {

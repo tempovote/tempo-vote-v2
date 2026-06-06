@@ -22,16 +22,15 @@ function truncate(addr: string, chars = 6) {
 export default function Navbar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [walletModalOpen, setWalletModalOpen] = useState(false)
 
-  const { isConnected, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork } =
+  const { isConnected, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal } =
     useWalletStore()
 
   // When wallet is connected, network is locked to wallet's network
   const networkLocked = isConnected
 
-  const openModal  = useCallback(() => setWalletModalOpen(true),  [])
-  const closeModal = useCallback(() => setWalletModalOpen(false), [])
+  const openModal  = useCallback(() => openWalletModal(),  [openWalletModal])
+  const closeModal = useCallback(() => closeWalletModal(), [closeWalletModal])
 
   // Restore persisted network preference on first render
   useEffect(() => { initNetwork() }, [initNetwork])
