@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import type { Community, InternalPoll, PollsPage, PollComment, CommentsPage } from "@tempo/types"
+import type { Community, InternalPoll, PollsPage, PollDetail, PollComment, CommentsPage } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -76,6 +76,37 @@ export function useCommunityPolls(drepId: string, network: string, page: number)
   }, [drepId, network, page])
 
   return { polls, total, limit, isLoading, error }
+}
+
+// ─── Poll detail (with options + vote counts) ─────────────────────────────────
+
+export function usePollDetail(pollId: string, stakeAddress?: string | null) {
+  const [poll, setPoll] = useState<PollDetail | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!pollId) return
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+    const qs = stakeAddress ? `?stakeAddress=${encodeURIComponent(stakeAddress)}` : ""
+    fetch(`${API_URL}/communities/polls/${pollId}${qs}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((data: PollDetail) => {
+        if (cancelled) return
+        setPoll(data)
+      })
+      .catch(() => { if (!cancelled) setError("Không thể tải poll") })
+      .finally(() => { if (!cancelled) setIsLoading(false) })
+    return () => { cancelled = true }
+  }, [pollId, stakeAddress, tick])
+
+  return { poll, isLoading, error, refetch: () => setTick((t) => t + 1) }
 }
 
 // ─── Poll comments ────────────────────────────────────────────────────────────

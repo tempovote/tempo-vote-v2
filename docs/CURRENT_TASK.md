@@ -2,24 +2,27 @@
 
 *Cập nhật cuối: 2026-06-06*
 
-## Task: Optimize AI context system
+## Task: Hoàn thiện DRep Community — poll voting
 
-**Branch:** `docs/ai-context-system`
+**Branch:** `feature/community-polls`
 
-**Mục tiêu:** Giảm token cost khi bắt đầu session mới — từ 4 files (~4000 tokens) xuống 2 files (~1000 tokens).
+**Đã làm xong:**
+- `CommunityRoutes.kt`: auto-create Yes/No/Abstain khi tạo BASIC poll
+- `CommunityRoutes.kt`: `GET /communities/polls/{pollId}` — poll detail với options + vote counts + userVote
+- `CommunityRoutes.kt`: `POST /communities/polls/{pollId}/vote` — cast vote (validate active, no dup, option belongs)
+- `community.ts` types: thêm `PollDetail`, `PollOptionWithCount`, `CastVoteRequest`
+- `useCommunity.ts`: thêm `usePollDetail` hook
+- `[pollId]/page.tsx`: rewrite — hiển thị poll title/abstract/status + voting UI + result bars + comments
 
-**Thay đổi:**
-- Tạo `AGENT_CONTEXT.md` — file entry duy nhất, thay thế 3 files cũ
-- Xóa `CLAUDE_START_HERE.md`, `AI_CONTEXT.md`, `REPOSITORY_MAP.md`, `ADR/README.md`, `SESSION_SUMMARY_TEMPLATE.md`
-- Trim `CURRENT_STATUS.md` — bỏ 50-line checkbox "Đã hoàn thành", giữ pending + debt
-
-**Kết quả mong muốn:** Đọc `AGENT_CONTEXT.md` + `CURRENT_TASK.md` là đủ cho 90% tasks.
+**Còn lại (nếu muốn mở rộng):**
+- `votingPower` trong `PollVotes` đang là `0L` — cần Kupo UTxO query để lấy actual voting power
+- Weighted results (by votingPower) vs simple count — hiện dùng simple count
 
 ---
 
-## Bước tiếp theo (sau merge)
+## Bước tiếp theo
 
 **Next feature task — chọn 1:**
-1. **Active Voting Power**: implement Kupo UTxO query cho `stakeKeyBalance` trong `DRepRoutes.kt`
+1. **Active Voting Power (Kupo)**: implement Kupo UTxO query cho `stakeKeyBalance` + `votingPower` trong polls
 2. **Delegation UI**: nối flow `buildDelegation()` vào FE, tạo DelegateModal trên DRep profile
 3. **Auth enforcement**: quyết định scope rồi add JWT middleware cho community/poll endpoints
