@@ -25,6 +25,30 @@ export const InternalPollSchema = z.object({
 })
 export type InternalPoll = z.infer<typeof InternalPollSchema>
 
+export const PollOptionWithCountSchema = z.object({
+  id: z.string().uuid(),
+  text: z.string(),
+  order: z.number(),
+  voteCount: z.number(),
+})
+export type PollOptionWithCount = z.infer<typeof PollOptionWithCountSchema>
+
+export const PollDetailSchema = z.object({
+  id: z.string().uuid(),
+  communityId: z.string().uuid(),
+  title: z.string(),
+  abstract: z.string().nullable(),
+  votingType: z.enum(["BASIC", "SINGLE_CHOICE", "MULTIPLE_CHOICE"]),
+  status: PollStatusSchema,
+  startsAt: z.string(),
+  endsAt: z.string(),
+  createdAt: z.string(),
+  options: z.array(PollOptionWithCountSchema),
+  totalVotes: z.number(),
+  userVote: z.string().uuid().nullable(),
+})
+export type PollDetail = z.infer<typeof PollDetailSchema>
+
 export const PollCommentSchema = z.object({
   id: z.string().uuid(),
   stakeAddress: z.string(),
@@ -61,3 +85,9 @@ export const AddCommentRequestSchema = z.object({
   content: z.string().min(1),
 })
 export type AddCommentRequest = z.infer<typeof AddCommentRequestSchema>
+
+export const CastVoteRequestSchema = z.object({
+  optionId: z.string().uuid(),
+  stakeAddress: z.string(),
+})
+export type CastVoteRequest = z.infer<typeof CastVoteRequestSchema>

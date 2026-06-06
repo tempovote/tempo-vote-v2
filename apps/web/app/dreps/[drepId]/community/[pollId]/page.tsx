@@ -4,8 +4,8 @@ import { use, useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
-import { usePollComments } from "@/hooks/useCommunity"
-import type { PollComment } from "@tempo/types"
+import { usePollDetail, usePollComments } from "@/hooks/useCommunity"
+import type { PollOptionWithCount, PollComment } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -26,6 +26,199 @@ function relativeTime(iso: string): string {
 function shortAddress(addr: string): string {
   if (addr.length <= 20) return addr
   return `${addr.slice(0, 10)}…${addr.slice(-8)}`
+}
+
+function timeLabel(status: string, endsAt: string, startsAt: string): string {
+  if (status === "pending") {
+    const ms = new Date(startsAt).getTime() - Date.now()
+    if (ms <= 0) return "Sắp bắt đầu"
+    const d = Math.floor(ms / 86400000)
+    const h = Math.floor((ms % 86400000) / 3600000)
+    return d > 0 ? `Bắt đầu sau ${d}d ${h}h` : `Bắt đầu sau ${h}h`
+  }
+  if (status === "closed") {
+    const d = Math.floor((Date.now() - new Date(endsAt).getTime()) / 86400000)
+    return `Đã kết thúc ${d} ngày trước`
+  }
+  const ms = new Date(endsAt).getTime() - Date.now()
+  if (ms <= 0) return "Đang kết thúc..."
+  const d = Math.floor(ms / 86400000)
+  const h = Math.floor((ms % 86400000) / 3600000)
+  return d > 0 ? `Còn ${d}d ${h}h` : `Còn ${h}h`
+}
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string }) {
+  const cfg: Record<string, { cls: string; label: string }> = {
+    active:  { cls: "bg-success/15 text-success border-success/30", label: "Active" },
+    closed:  { cls: "bg-bg-elevated text-text-muted border-border-default", label: "Closed" },
+    pending: { cls: "bg-accent/15 text-accent border-accent/30", label: "Pending" },
+  }
+  const { cls, label } = cfg[status] ?? cfg["pending"]!
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>
+      {label}
+    </span>
+  )
+}
+
+// ─── Vote option button ───────────────────────────────────────────────────────
+
+function OptionButton({
+  option,
+  total,
+  selected,
+  hasVoted,
+  isActive,
+  isConnected,
+  onClick,
+}: {
+  option: PollOptionWithCount
+  total: number
+  selected: boolean
+  hasVoted: boolean
+  isActive: boolean
+  isConnected: boolean
+  onClick: () => void
+}) {
+  const pct = total > 0 ? Math.round((option.voteCount / total) * 100) : 0
+  const showResults = hasVoted || !isActive
+
+  const colorMap: Record<string, string> = {
+    Yes: "bg-success/20 border-success/40",
+    No: "bg-danger/20 border-danger/40",
+    Abstain: "bg-text-muted/15 border-border-default",
+  }
+  const barColorMap: Record<string, string> = {
+    Yes: "bg-success/50",
+    No: "bg-danger/50",
+    Abstain: "bg-text-muted/30",
+  }
+
+  const isVotable = isActive && isConnected && !hasVoted
+
+  return (
+    <button
+      onClick={isVotable ? onClick : undefined}
+      disabled={!isVotable}
+      className={[
+        "relative w-full rounded-xl border px-4 py-3 text-left transition-all overflow-hidden",
+        isVotable
+          ? "hover:border-accent/50 hover:bg-accent/5 cursor-pointer"
+          : "cursor-default",
+        selected
+          ? (colorMap[option.text] ?? "bg-accent/15 border-accent/50")
+          : "border-border-subtle bg-bg-elevated",
+      ].join(" ")}
+    >
+      {/* Result bar */}
+      {showResults && total > 0 && (
+        <div
+          className={`absolute inset-y-0 left-0 rounded-xl transition-all duration-500 ${barColorMap[option.text] ?? "bg-accent/20"}`}
+          style={{ width: `${pct}%` }}
+        />
+      )}
+
+      <div className="relative flex items-center justify-between gap-3">
+        <span className="font-semibold text-sm text-text-primary">{option.text}</span>
+        {showResults && (
+          <span className="text-xs text-text-muted shrink-0">
+            {option.voteCount} phiếu · {pct}%
+          </span>
+        )}
+        {selected && (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="shrink-0 text-success">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+      </div>
+    </button>
+  )
+}
+
+// ─── Voting section ───────────────────────────────────────────────────────────
+
+function VotingSection({
+  pollId,
+  options,
+  totalVotes,
+  userVote,
+  status,
+  stakeAddress,
+  isConnected,
+  onVoted,
+}: {
+  pollId: string
+  options: PollOptionWithCount[]
+  totalVotes: number
+  userVote: string | null
+  status: string
+  stakeAddress: string | null | undefined
+  isConnected: boolean
+  onVoted: () => void
+}) {
+  const [pending, setPending] = useState<string | null>(null)
+  const [voteError, setVoteError] = useState<string | null>(null)
+
+  const hasVoted = !!userVote
+  const isActive = status === "active"
+
+  async function castVote(optionId: string) {
+    if (!stakeAddress || hasVoted || !isActive) return
+    setPending(optionId)
+    setVoteError(null)
+    try {
+      const res = await fetch(`${API_URL}/communities/polls/${pollId}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optionId, stakeAddress }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as Record<string, string>).error ?? "Bỏ phiếu thất bại")
+      }
+      onVoted()
+    } catch (err: unknown) {
+      setVoteError(err instanceof Error ? err.message : "Đã xảy ra lỗi")
+    } finally {
+      setPending(null)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-xs text-text-muted">
+        <span>{totalVotes} phiếu đã bỏ</span>
+        {hasVoted && <span className="text-success font-medium">✓ Bạn đã bỏ phiếu</span>}
+        {!isConnected && isActive && <span>Kết nối ví để bỏ phiếu</span>}
+        {isConnected && !isActive && status === "closed" && <span>Poll đã kết thúc</span>}
+        {isConnected && !isActive && status === "pending" && <span>Poll chưa bắt đầu</span>}
+      </div>
+
+      <div className="space-y-2">
+        {options.map((opt) => (
+          <OptionButton
+            key={opt.id}
+            option={opt}
+            total={totalVotes}
+            selected={userVote === opt.id}
+            hasVoted={hasVoted}
+            isActive={isActive}
+            isConnected={isConnected}
+            onClick={() => { void castVote(opt.id) }}
+          />
+        ))}
+      </div>
+
+      {pending && (
+        <p className="text-xs text-text-muted text-center animate-pulse">Đang bỏ phiếu...</p>
+      )}
+      {voteError && (
+        <p className="text-xs text-danger text-center">{voteError}</p>
+      )}
+    </div>
+  )
 }
 
 // ─── Comment item ─────────────────────────────────────────────────────────────
@@ -60,7 +253,8 @@ export default function PollDetailPage({
   const { isConnected, rewardAddress: stakeAddress } = useWallet()
   const commentRef = useRef<HTMLDivElement>(null)
 
-  const { comments, total, isLoading, error, refetch } = usePollComments(pollId)
+  const { poll, isLoading: pollLoading, error: pollError, refetch: refetchPoll } = usePollDetail(pollId, stakeAddress)
+  const { comments, total: commentTotal, isLoading: commentsLoading, error: commentsError, refetch: refetchComments } = usePollComments(pollId)
 
   const [content, setContent] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -68,7 +262,6 @@ export default function PollDetailPage({
 
   const networkParam = network !== "mainnet" ? `?network=${network}` : ""
 
-  // Scroll to comment section if hash is #comment
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash === "#comment") {
       commentRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -91,12 +284,44 @@ export default function PollDetailPage({
         throw new Error((err as Record<string, string>).error ?? "Gửi comment thất bại")
       }
       setContent("")
-      refetch()
+      refetchComments()
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : "Đã xảy ra lỗi")
     } finally {
       setSubmitting(false)
     }
+  }
+
+  // ── Loading state ──────────────────────────────────────────────────────────
+  if (pollLoading) {
+    return (
+      <div className="page-container space-y-6 animate-pulse">
+        <div className="h-5 w-32 bg-bg-elevated rounded" />
+        <div className="card-static space-y-4">
+          <div className="h-7 w-3/4 bg-bg-elevated rounded" />
+          <div className="h-4 w-24 bg-bg-elevated rounded" />
+          <div className="h-3 w-full bg-bg-elevated rounded" />
+          <div className="h-3 w-5/6 bg-bg-elevated rounded" />
+          <div className="space-y-2 pt-2">
+            {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-bg-elevated rounded-xl" />)}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (pollError || !poll) {
+    return (
+      <div className="page-container">
+        <Link href={`/dreps/${drepId}/community${networkParam}`} className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors mb-6">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+          DRep Community
+        </Link>
+        <div className="notice-warning rounded-xl p-8 text-center">
+          <p className="font-semibold">Không tìm thấy poll</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -113,12 +338,43 @@ export default function PollDetailPage({
         DRep Community
       </Link>
 
-      {/* Comments section */}
+      {/* Poll card */}
+      <div className="card-static space-y-5">
+
+        {/* Header */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatusBadge status={poll.status} />
+            <span className="text-xs text-text-muted">{timeLabel(poll.status, poll.endsAt, poll.startsAt)}</span>
+          </div>
+          <h1 className="text-xl font-bold text-text-primary leading-snug">{poll.title}</h1>
+          {poll.abstract && (
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.abstract}</p>
+          )}
+        </div>
+
+        {/* Divider */}
+        <hr className="border-border-subtle" />
+
+        {/* Voting */}
+        <VotingSection
+          pollId={pollId}
+          options={poll.options}
+          totalVotes={poll.totalVotes}
+          userVote={poll.userVote}
+          status={poll.status}
+          stakeAddress={stakeAddress}
+          isConnected={isConnected}
+          onVoted={refetchPoll}
+        />
+      </div>
+
+      {/* Comments */}
       <div id="comment" ref={commentRef} className="card-static space-y-0 !p-0 overflow-hidden">
         <div className="px-5 py-4 border-b border-border-subtle">
           <h2 className="text-base font-bold">
             Thảo luận
-            {total > 0 && <span className="ml-2 text-sm font-normal text-text-muted">({total})</span>}
+            {commentTotal > 0 && <span className="ml-2 text-sm font-normal text-text-muted">({commentTotal})</span>}
           </h2>
         </div>
 
@@ -150,7 +406,7 @@ export default function PollDetailPage({
         )}
 
         {/* Comments list */}
-        {isLoading && (
+        {commentsLoading && (
           <div className="divide-y divide-border-subtle px-5">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="flex gap-3 py-4 animate-pulse">
@@ -165,18 +421,18 @@ export default function PollDetailPage({
           </div>
         )}
 
-        {!isLoading && error && (
+        {!commentsLoading && commentsError && (
           <div className="px-5 py-8 text-center text-sm text-text-muted">Không thể tải bình luận</div>
         )}
 
-        {!isLoading && !error && comments.length === 0 && (
+        {!commentsLoading && !commentsError && comments.length === 0 && (
           <div className="px-5 py-10 text-center space-y-2">
             <p className="text-3xl">💬</p>
             <p className="text-sm text-text-muted">Chưa có bình luận nào</p>
           </div>
         )}
 
-        {!isLoading && !error && comments.length > 0 && (
+        {!commentsLoading && !commentsError && comments.length > 0 && (
           <div className="px-5 divide-y divide-border-subtle">
             {comments.map((c) => <CommentItem key={c.id} comment={c} />)}
           </div>
