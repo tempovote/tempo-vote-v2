@@ -123,6 +123,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
     isConnected, isConnecting, error,
     name, networkId, changeAddress, drepKey,
     drepName, isDrepRegistered, delegatedDrep, drepStatusLoading, drepStatusError,
+    walletBalance,
     hasCip95: cip95Supported,
     connect, disconnect, availableWallets,
   } = useWallet()
@@ -209,6 +210,14 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   {changeAddress ? truncateAddress(changeAddress, 10) : "—"}
                 </p>
               </div>
+              {walletBalance !== null && (
+                <div className="text-right shrink-0">
+                  <p className="text-text-primary text-sm font-semibold tabular-nums">
+                    {walletBalance.ada.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="text-text-muted font-normal ml-1">₳</span>
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* ── Governance status (CIP-95 only) ── */}

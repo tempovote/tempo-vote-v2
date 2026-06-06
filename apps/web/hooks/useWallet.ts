@@ -18,9 +18,29 @@ import {
 const STORAGE_KEY = "tempo:last_wallet"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
-// Cancels any in-flight fetchDRepStatus when a new wallet connect starts.
-// Module-level because there is only one active wallet at a time.
+async function fetchWalletBalance(
+  address: string,
+  network: string,
+  setWalletBalance: (b: { lovelace: number; ada: number; utxoCount: number } | null) => void,
+  signal: AbortSignal
+): Promise<void> {
+  try {
+    const res = await fetch(
+      `${API_URL}/wallet/balance?address=${encodeURIComponent(address)}&network=${network}`,
+      { signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]) }
+    )
+    if (!res.ok || signal.aborted) return
+    const data = await res.json().catch(() => null)
+    if (data && typeof data.lovelace === "number") {
+      setWalletBalance({ lovelace: data.lovelace, ada: data.ada, utxoCount: data.utxoCount })
+    }
+  } catch {
+    // balance is optional — silently ignore failures
+  }
+}
+
 let _fetchController: AbortController | null = null
+let _balanceController: AbortController | null = null
 
 /**
  * Fetch DRep registration + delegation status from the backend (Ogmios).
@@ -164,11 +184,16 @@ export function useWallet() {
 
     try { localStorage.setItem(STORAGE_KEY, walletName) } catch { /* SSR safe */ }
 
-    // Fire-and-forget: verify actual DRep/delegation status via Ogmios.
-    // Cancel any previous in-flight call to prevent stale results overwriting fresh ones.
+    const network = networkId === 1 ? "mainnet" : "preprod"
+
+    // Fire-and-forget: wallet balance via Kupo (works for all wallets, not just CIP-95).
+    _balanceController?.abort()
+    _balanceController = new AbortController()
+    fetchWalletBalance(changeAddress, network, store.setWalletBalance, _balanceController.signal)
+
+    // Fire-and-forget: DRep / delegation status via Ogmios (CIP-95 only).
     if (cip95Active) {
-      const network = networkId === 1 ? "mainnet" : "preprod"
-      const drepId  = drepKey?.dRepIDCip105 || null
+      const drepId = drepKey?.dRepIDCip105 || null
 
       _fetchController?.abort()
       _fetchController = new AbortController()
@@ -208,10 +233,12 @@ export function useWallet() {
     }
   }, [store.isConnected, _populate])
 
-  /** Disconnect — cancel in-flight status fetch, clear state + persisted key */
+  /** Disconnect — cancel in-flight fetches, clear state + persisted key */
   const disconnect = useCallback(() => {
     _fetchController?.abort()
     _fetchController = null
+    _balanceController?.abort()
+    _balanceController = null
     store.reset()
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [store])

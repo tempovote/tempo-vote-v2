@@ -14,5 +14,6 @@ fun Application.configureRouting() {
         pollRoutes()
         communityRoutes()
         metadataRoutes()
+        walletRoutes()
     }
 }
