@@ -2,16 +2,16 @@ package vote.tempo.cardano
 
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.websocket.*
-import io.ktor.websocket.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 
-// Raw JSON element (may be object or array) — for queries that return arrays
+// Raw JSON element (may be object or array)
 typealias JsonResult = JsonElement
-
-/** Convert http(s):// → ws(s):// so Ktor's WebSocket client can connect. */
-private fun String.toWsUrl() = replace(Regex("^https://"), "wss://").replace(Regex("^http://"), "ws://")
 
 /**
  * Decode a bech32 DRep ID (drep1...) to its raw 28-byte credential hash in hex.
@@ -44,24 +44,26 @@ fun drepIdToCredentialHex(drepId: String): String {
     return bytes.joinToString("") { "%02x".format(it) }
 }
 
-private const val WS_TIMEOUT_MS = 20_000L
+private const val HTTP_TIMEOUT_MS = 20_000L
 
 class OgmiosStateQueries(private val network: Network) {
 
+    // Ogmios 6.x exposes JSON-RPC over HTTP (same URL as WebSocket) — prefer HTTP
+    // for ledger state queries; WebSocket is only needed for chain-sync subscriptions.
     private val ogmiosUrl = when (network) {
-        Network.PREPROD -> (System.getenv("OGMIOS_PREPROD_URL") ?: "ws://localhost:1337").toWsUrl()
-        Network.MAINNET -> (System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")).toWsUrl()
+        Network.PREPROD -> System.getenv("OGMIOS_PREPROD_URL") ?: "http://localhost:1337"
+        Network.MAINNET -> System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")
     }
 
     companion object {
-        // Shared across all instances — avoids spinning up a new NIO thread pool per request.
         private val client = HttpClient(CIO) {
-            install(WebSockets)
+            install(ContentNegotiation) { json() }
         }
+        private val json = Json { ignoreUnknownKeys = true }
     }
 
-    suspend fun getGovernanceActions(): JsonElement {
-        return queryRaw("queryLedgerState/governanceActions", buildJsonObject {})
+    suspend fun getGovernanceProposals(): JsonElement {
+        return queryRaw("queryLedgerState/governanceProposals", buildJsonObject {})
     }
 
     suspend fun getDelegateRepresentatives(): JsonElement {
@@ -69,16 +71,15 @@ class OgmiosStateQueries(private val network: Network) {
     }
 
     suspend fun getTreasury(): JsonObject {
-        return query("queryLedgerState/treasury", buildJsonObject {})
+        return queryRaw("queryLedgerState/treasury", buildJsonObject {}).jsonObject
     }
 
     suspend fun getProtocolParameters(): JsonObject {
-        return query("queryLedgerState/protocolParameters", buildJsonObject {})
+        return queryRaw("queryLedgerState/protocolParameters", buildJsonObject {}).jsonObject
     }
 
     /**
      * Query a specific DRep by ID (bech32 drep1... or hex credential hash).
-     * Returns the raw Ogmios result array (includes abstain/noConfidence entries).
      */
     suspend fun getDRepByIdRaw(drepId: String): JsonElement {
         val credentialHex = drepIdToCredentialHex(drepId)
@@ -94,72 +95,47 @@ class OgmiosStateQueries(private val network: Network) {
     }
 
     /**
-     * Get stake delegation AND the delegated DRep's info in a SINGLE WebSocket session.
-     * Avoids opening two separate connections for the common "who is this wallet delegated to?" flow.
-     * Returns (delegationResult, drepInfoResult?) — drepInfoResult is null if not delegated to a registered DRep.
+     * Fetch stake delegation and delegated DRep info via two separate HTTP calls.
+     * Returns (delegationResult, drepInfoResult?) — drepInfoResult is null if not
+     * delegated to a registered DRep.
      */
     suspend fun getStakeDelegationWithDRepInfo(stakeAddress: String): Pair<JsonElement, JsonElement?> {
-        var stakeDelegation: JsonElement = JsonArray(emptyList())
-        var drepInfo: JsonElement? = null
+        val stakeDelegation = getStakeDelegation(stakeAddress)
 
-        withTimeout(WS_TIMEOUT_MS) {
-            client.webSocket(ogmiosUrl) {
-                // Query 1: stake delegation
-                send(Frame.Text(buildRequest("queryLedgerState/rewardAccountSummaries", buildJsonObject {
-                    putJsonArray("keys") { add(stakeAddress) }
-                }).toString()))
-                val res1 = incoming.receive() as Frame.Text
-                stakeDelegation = Json.parseToJsonElement(res1.readText()).jsonObject["result"]
-                    ?: JsonArray(emptyList())
-
-                // Extract delegated DRep credential hex.
-                // Ogmios 6.x returns rewardAccountSummaries as a JsonObject keyed by stake address,
-                // not a JsonArray — handle both formats defensively.
-                // Capture into val so Kotlin can smart-cast (stakeDelegation is a var in a closure).
-                val delegation = stakeDelegation
-                val accountInfo = when {
-                    delegation is JsonArray -> delegation.firstOrNull()?.jsonObject
-                    delegation is JsonObject -> delegation[stakeAddress]?.jsonObject
-                        ?: delegation.values.firstOrNull()?.jsonObject
-                    else -> null
-                }
-                val drepCredentialHex = accountInfo?.let { info ->
-                    val delegate = info["delegateRepresentative"]?.jsonObject
-                    if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered") {
-                        delegate["id"]?.jsonPrimitive?.contentOrNull
-                    } else null
-                }
-
-                // Query 2: DRep details — reuse same WS session
-                if (drepCredentialHex != null) {
-                    send(Frame.Text(buildRequest("queryLedgerState/delegateRepresentatives", buildJsonObject {
-                        putJsonArray("keys") { add(drepCredentialHex) }
-                    }).toString()))
-                    val res2 = incoming.receive() as Frame.Text
-                    drepInfo = Json.parseToJsonElement(res2.readText()).jsonObject["result"]
-                }
-            }
+        val accountInfo = when {
+            stakeDelegation is JsonArray -> stakeDelegation.firstOrNull()?.jsonObject
+            stakeDelegation is JsonObject -> stakeDelegation[stakeAddress]?.jsonObject
+                ?: stakeDelegation.values.firstOrNull()?.jsonObject
+            else -> null
         }
+        val drepCredentialHex = accountInfo?.let { info ->
+            val delegate = info["delegateRepresentative"]?.jsonObject
+            if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered") {
+                delegate["id"]?.jsonPrimitive?.contentOrNull
+            } else null
+        }
+
+        val drepInfo = if (drepCredentialHex != null) {
+            queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {
+                putJsonArray("keys") { add(drepCredentialHex) }
+            })
+        } else null
+
         return Pair(stakeDelegation, drepInfo)
     }
 
     // -------------------------------------------------------------------------
 
-    private suspend fun query(method: String, params: JsonObject): JsonObject {
-        return queryRaw(method, params).jsonObject
-    }
-
     private suspend fun queryRaw(method: String, params: JsonObject): JsonElement {
-        var result: JsonElement = buildJsonObject {}
-        withTimeout(WS_TIMEOUT_MS) {
-            client.webSocket(ogmiosUrl) {
-                send(Frame.Text(buildRequest(method, params).toString()))
-                val response = incoming.receive() as Frame.Text
-                result = Json.parseToJsonElement(response.readText()).jsonObject["result"]
-                    ?: buildJsonObject {}
+        return withTimeout(HTTP_TIMEOUT_MS) {
+            val body = buildRequest(method, params).toString()
+            val response = client.post(ogmiosUrl) {
+                contentType(ContentType.Application.Json)
+                setBody(body)
             }
+            val text = response.bodyAsText()
+            json.parseToJsonElement(text).jsonObject["result"] ?: buildJsonObject {}
         }
-        return result
     }
 
     private fun buildRequest(method: String, params: JsonObject) = buildJsonObject {
