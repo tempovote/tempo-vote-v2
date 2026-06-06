@@ -24,10 +24,12 @@ interface WalletState {
   isConnected: boolean
   isConnecting: boolean
   error: string | null
+  // User-selected data network (independent of connected wallet's networkId)
+  selectedNetwork: "mainnet" | "preprod"
 }
 
 interface WalletActions {
-  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError">) => void
+  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError" | "selectedNetwork">) => void
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void
   setDRepStatusLoading: (v: boolean) => void
   setDRepStatusError: (kind: "network" | "server") => void
@@ -35,7 +37,11 @@ interface WalletActions {
   setError: (msg: string) => void
   clearError: () => void
   reset: () => void
+  setSelectedNetwork: (network: "mainnet" | "preprod") => void
+  initNetwork: () => void
 }
+
+const NETWORK_STORAGE_KEY = "tempo:network"
 
 const initialState: WalletState = {
   api: null,
@@ -53,11 +59,18 @@ const initialState: WalletState = {
   isConnected: false,
   isConnecting: false,
   error: null,
+  selectedNetwork: "mainnet",
 }
 
 export const useWalletStore = create<WalletState & WalletActions>((set) => ({
   ...initialState,
-  setWallet: (data) => set({ ...data, isConnecting: false, error: null }),
+  setWallet: (data) => set({
+    ...data,
+    isConnecting: false,
+    error: null,
+    // Auto-sync selected network to wallet's actual network
+    selectedNetwork: data.networkId === 1 ? "mainnet" : "preprod",
+  }),
   setDRepStatus: ({ isDrepRegistered, drepName, delegatedDrep }) =>
     set({ isDrepRegistered, drepName, delegatedDrep, drepStatusLoading: false, drepStatusError: null }),
   setDRepStatusLoading: (v) => set({ drepStatusLoading: v }),
@@ -65,5 +78,19 @@ export const useWalletStore = create<WalletState & WalletActions>((set) => ({
   setConnecting: (v) => set({ isConnecting: v }),
   setError: (msg) => set({ error: msg, isConnecting: false }),
   clearError: () => set({ error: null }),
-  reset: () => set(initialState),
+  // On disconnect: keep selectedNetwork so user can keep browsing the same network
+  reset: () => set((state) => ({ ...initialState, selectedNetwork: state.selectedNetwork })),
+  setSelectedNetwork: (network) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(NETWORK_STORAGE_KEY, network)
+    }
+    set({ selectedNetwork: network })
+  },
+  initNetwork: () => {
+    if (typeof window === "undefined") return
+    const stored = localStorage.getItem(NETWORK_STORAGE_KEY)
+    if (stored === "mainnet" || stored === "preprod") {
+      set({ selectedNetwork: stored })
+    }
+  },
 }))
