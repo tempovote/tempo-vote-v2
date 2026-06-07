@@ -117,15 +117,8 @@ Implement `POST /metadata/upload`:
 - [x] **3.1** Kết nối button trong `apps/web/app/page.tsx` → `/dreps/register`
 - [x] **3.2** Link trong `WalletModal.tsx` → `/dreps/register` (đã có sẵn)
 - [x] **3.3** Sau register: `setDRepStatus(isDrepRegistered: true, drepName)` optimistic update
-- [ ] **3.4** Test preprod end-to-end (Phase 1+2 đã hoàn thành, cần test thực tế):
-  - [ ] Connect Eternl wallet (preprod)
-  - [ ] Điền form, upload metadata → kiểm tra IPFS link
-  - [ ] Sign TX → kiểm tra txHash trên CardanoScan
-  - [ ] Reconnect ví → kiểm tra `isDrepRegistered = true`
-- [ ] **3.5** Test edge cases:
-  - [ ] Wallet từ chối sign → show error, cho phép retry
-  - [ ] IPFS upload fail → show error + retry
-  - [ ] Đã là DRep → không cho register lại
+- [x] **3.4** Test preprod end-to-end
+- [x] **3.5** Test edge cases
 
 ---
 
