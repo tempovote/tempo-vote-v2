@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from "react"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
+import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
 import { useMyVote, type MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
@@ -31,6 +32,7 @@ function cardanoscanUrl(txHash: string, network: string) {
 // ── Vote section ──────────────────────────────────────────────────────────────
 function VoteSection({ action, network }: { action: GovernanceAction; network: string }) {
   const { isConnected, isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
+  const { reauthenticate } = useWallet()
   const { submitTx, isReady } = useTx()
 
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
@@ -41,6 +43,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
   const [rationale, setRationale] = useState("")
   const [successTxHash, setSuccessTxHash] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [signingPhase, setSigningPhase] = useState<"auth" | "upload" | "sign">("sign")
 
   if (!isConnected) {
     return <ConnectWalletCta message="Kết nối ví để bỏ phiếu" />
@@ -66,22 +69,48 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
       let rationaleUrl: string | undefined
       let rationaleHash: string | undefined
       if (rationale.trim()) {
-        const jwt = getJwt()
-        const metaRes = await fetch(`${API_URL}/metadata/vote-rationale`, {
+        let jwt = getJwt()
+
+        // JWT absent — run auth flow now (user must approve signing popup in wallet)
+        if (!jwt) {
+          setSigningPhase("auth")
+          jwt = await reauthenticate()
+          if (!jwt) {
+            throw new Error("Không thể xác thực ví. Vui lòng ký xác thực khi ví hiện popup yêu cầu.")
+          }
+        }
+
+        setSigningPhase("upload")
+        const rationaleBody = JSON.stringify({
+          drepId: drepKey.dRepIDCip105,
+          govActionTxHash: action.txHash,
+          govActionIndex: action.index,
+          voteKind: choice,
+          comment: rationale.trim(),
+        })
+
+        let metaRes = await fetch(`${API_URL}/metadata/vote-rationale`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader(jwt) },
-          body: JSON.stringify({
-            drepId: drepKey.dRepIDCip105,
-            govActionTxHash: action.txHash,
-            govActionIndex: action.index,
-            voteKind: choice,
-            comment: rationale.trim(),
-          }),
+          body: rationaleBody,
         })
-        if (!metaRes.ok) {
-          if (metaRes.status === 401) {
-            throw new Error("Phiên xác thực hết hạn. Vui lòng ngắt kết nối ví và kết nối lại.")
+
+        // On 401, try one re-auth and retry (handles token expiry)
+        if (metaRes.status === 401) {
+          setSigningPhase("auth")
+          jwt = await reauthenticate()
+          if (!jwt) {
+            throw new Error("Xác thực thất bại. Vui lòng ký xác thực khi ví hiện popup yêu cầu.")
           }
+          setSigningPhase("upload")
+          metaRes = await fetch(`${API_URL}/metadata/vote-rationale`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeader(jwt) },
+            body: rationaleBody,
+          })
+        }
+
+        if (!metaRes.ok) {
           let errMsg = `Upload rationale thất bại (HTTP ${metaRes.status})`
           try {
             const errData = await metaRes.json()
@@ -94,6 +123,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
         rationaleHash = metaData.anchorDataHash
       }
 
+      setSigningPhase("sign")
       const txHash = await submitTx("VOTE", {
         drepId: drepKey.dRepIDCip105,
         govActionTxHash: action.txHash,
@@ -254,15 +284,17 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
 
   // Signing state
   if (step === "signing") {
+    const phaseMsg =
+      signingPhase === "auth"   ? "Đang xác thực ví… Vui lòng ký khi popup xuất hiện." :
+      signingPhase === "upload" ? "Đang upload rationale lên IPFS…" :
+                                  "Đang ký giao dịch trong ví…"
     return (
       <div className="card-static flex items-center justify-center gap-3 py-8">
         <svg className="animate-spin w-5 h-5 text-accent" viewBox="0 0 24 24" fill="none">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
         </svg>
-        <span className="text-text-secondary">
-          {rationale.trim() ? "Đang upload rationale lên IPFS…" : "Đang ký giao dịch trong ví…"}
-        </span>
+        <span className="text-text-secondary">{phaseMsg}</span>
       </div>
     )
   }

@@ -45,6 +45,48 @@ let _fetchController: AbortController | null = null
 let _balanceController: AbortController | null = null
 let _authController: AbortController | null = null
 
+// Returns JWT string on success, null on any failure (including user rejecting signing).
+async function attemptAuth(
+  api: WalletApi,
+  rewardAddressHex: string,
+  rewardAddressBech32: string,
+  network: string,
+  drepId: string | null,
+  signal: AbortSignal
+): Promise<string | null> {
+  // Step 1: Get challenge nonce
+  const challengeRes = await fetch(
+    `${API_URL}/auth/challenge?stakeAddress=${encodeURIComponent(rewardAddressBech32)}&network=${network}`,
+    { signal }
+  )
+  if (!challengeRes.ok || signal.aborted) return null
+  const { nonce } = await challengeRes.json()
+  if (!nonce || signal.aborted) return null
+
+  // Step 2: Sign nonce with wallet stake key
+  // nonce is a 64-char hex string (32 raw bytes); CIP-30 expects hex-encoded payload
+  const dataSignature = await signData(api, rewardAddressHex, nonce)
+  if (signal.aborted) return null
+
+  // Step 3: Verify on backend → receive JWT
+  const verifyRes = await fetch(`${API_URL}/auth/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      stakeAddress: rewardAddressBech32,
+      network,
+      nonce,
+      signature: dataSignature.signature,
+      key: dataSignature.key,
+      drepId: drepId ?? undefined,
+    }),
+    signal,
+  })
+  if (!verifyRes.ok || signal.aborted) return null
+  const { jwt } = await verifyRes.json()
+  return jwt ?? null
+}
+
 async function fetchWalletAuth(
   api: WalletApi,
   rewardAddressHex: string,
@@ -55,36 +97,7 @@ async function fetchWalletAuth(
   signal: AbortSignal
 ): Promise<void> {
   try {
-    // Step 1: Get challenge nonce
-    const challengeRes = await fetch(
-      `${API_URL}/auth/challenge?stakeAddress=${encodeURIComponent(rewardAddressBech32)}&network=${network}`,
-      { signal }
-    )
-    if (!challengeRes.ok || signal.aborted) return
-    const { nonce } = await challengeRes.json()
-    if (!nonce || signal.aborted) return
-
-    // Step 2: Sign nonce with wallet stake key
-    // nonce is a 64-char hex string (32 raw bytes); pass as-is to signData (CIP-30 expects hex payload)
-    const dataSignature = await signData(api, rewardAddressHex, nonce)
-    if (signal.aborted) return
-
-    // Step 3: Verify on backend → receive JWT
-    const verifyRes = await fetch(`${API_URL}/auth/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        stakeAddress: rewardAddressBech32,
-        network,
-        nonce,
-        signature: dataSignature.signature,
-        key: dataSignature.key,
-        drepId: drepId ?? undefined,
-      }),
-      signal,
-    })
-    if (!verifyRes.ok || signal.aborted) return
-    const { jwt } = await verifyRes.json()
+    const jwt = await attemptAuth(api, rewardAddressHex, rewardAddressBech32, network, drepId, signal)
     if (jwt && !signal.aborted) setJwt(jwt)
   } catch {
     // auth is optional — silently ignore (user might reject signing)
@@ -227,6 +240,7 @@ export function useWallet() {
       networkId,
       changeAddress,
       rewardAddress,
+      rewardAddressHex,
       drepKey,
       hasCip95: cip95Active,
       isConnected: true,
@@ -303,6 +317,28 @@ export function useWallet() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.isConnected, _populate])
 
+  /**
+   * Re-run the auth challenge→sign→verify flow with the currently connected wallet.
+   * Returns the new JWT on success, null if the user rejects signing or auth fails.
+   * Also persists the new JWT to the store on success.
+   */
+  const reauthenticate = useCallback(async (): Promise<string | null> => {
+    const state = useWalletStore.getState()
+    const { api: currentApi, rewardAddressHex: addrHex, rewardAddress: addrBech32, selectedNetwork, drepKey: key } = state
+    if (!currentApi || !addrHex || !addrBech32) return null
+    const ctrl = new AbortController()
+    try {
+      const jwt = await attemptAuth(
+        currentApi, addrHex, addrBech32, selectedNetwork,
+        key?.dRepIDCip105 ?? null, ctrl.signal
+      )
+      if (jwt) store.setJwt(jwt)
+      return jwt
+    } catch {
+      return null
+    }
+  }, [store])
+
   /** Disconnect — cancel in-flight fetches, clear state + persisted key */
   const disconnect = useCallback(() => {
     _fetchController?.abort()
@@ -337,6 +373,7 @@ export function useWallet() {
     connect,
     disconnect,
     autoReconnect,
+    reauthenticate,
     availableWallets: getAvailableWallets(),
   }
 }

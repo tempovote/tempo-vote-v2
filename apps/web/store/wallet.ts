@@ -12,6 +12,7 @@ interface WalletState {
   networkId: NetworkId | null
   changeAddress: string | null
   rewardAddress: string | null
+  rewardAddressHex: string | null
   drepKey: DRepKey | null
   drepName: string | null
   // null = not yet checked (loading or no CIP-95); true/false = confirmed by Ogmios
@@ -59,6 +60,7 @@ const initialState: WalletState = {
   networkId: null,
   changeAddress: null,
   rewardAddress: null,
+  rewardAddressHex: null,
   drepKey: null,
   drepName: null,
   isDrepRegistered: null,
