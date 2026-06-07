@@ -32,6 +32,7 @@ object InternalPolls : Table("internal_polls") {
     val communityId = uuid("community_id").references(Communities.id)
     val title       = varchar("title", 255)
     val abstract    = text("abstract").nullable()
+    val motivation  = text("motivation").nullable()
     val votingType  = varchar("voting_type", 20)  // BASIC | SINGLE_CHOICE | MULTIPLE_CHOICE
     val startEpoch  = integer("start_epoch")        // voting power snapshot epoch
     val startsAt    = datetime("starts_at")

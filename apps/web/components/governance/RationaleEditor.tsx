@@ -9,9 +9,13 @@ const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false })
 interface Props {
   value: string
   onChange: (v: string) => void
+  label?: string
+  description?: string
+  placeholder?: string
+  maxLength?: number
+  height?: number
+  optional?: boolean
 }
-
-const MAX_CHARS = 2000
 
 type PreviewMode = "edit" | "live" | "preview"
 
@@ -21,9 +25,18 @@ const MODES: { value: PreviewMode; label: string }[] = [
   { value: "preview", label: "Xem trước" },
 ]
 
-export function RationaleEditor({ value, onChange }: Props) {
+export function RationaleEditor({
+  value,
+  onChange,
+  label = "Lý do bỏ phiếu",
+  description = "Rationale sẽ được lưu trên IPFS và gắn vào giao dịch vote.",
+  placeholder = "Nhập lý do bỏ phiếu của bạn...",
+  maxLength = 2000,
+  height = 220,
+  optional = false,
+}: Props) {
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit")
-  const remaining = MAX_CHARS - value.length
+  const remaining = maxLength - value.length
   const isOver = remaining < 0
 
   return (
@@ -31,8 +44,12 @@ export function RationaleEditor({ value, onChange }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium text-text-secondary">
-          Lý do bỏ phiếu
-          <span className="ml-1.5 text-xs text-text-muted font-normal">Tuỳ chọn · CIP-100</span>
+          {label}
+          {optional && (
+            <span className="ml-1.5 text-xs text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">
+              Optional
+            </span>
+          )}
         </label>
 
         {/* Mode tabs */}
@@ -61,25 +78,27 @@ export function RationaleEditor({ value, onChange }: Props) {
             value={value}
             onChange={(v) => onChange(v ?? "")}
             preview={previewMode}
-            height={220}
+            height={height}
             visibleDragbar={false}
             hideToolbar={false}
             enableScroll={true}
             textareaProps={{
-              placeholder: "Nhập lý do bỏ phiếu của bạn...",
-              maxLength: MAX_CHARS + 50,
+              placeholder,
+              maxLength: maxLength + 50,
             }}
           />
         ) : (
-          <div className="h-[220px] bg-bg-secondary rounded-xl animate-pulse" />
+          <div className="animate-pulse bg-bg-secondary rounded-xl" style={{ height }} />
         )}
       </div>
 
       {/* Footer */}
       <div className="flex items-center justify-between text-xs">
-        <p className="text-text-muted/70">
-          Rationale sẽ được lưu trên IPFS và gắn vào giao dịch vote.
-        </p>
+        {description ? (
+          <p className="text-text-muted/70">{description}</p>
+        ) : (
+          <span />
+        )}
         <span className={isOver ? "text-danger font-medium" : "text-text-muted"}>
           {remaining.toLocaleString()} ký tự còn lại
         </span>

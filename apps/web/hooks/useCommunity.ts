@@ -53,6 +53,7 @@ export function useCommunityPolls(drepId: string, network: string, page: number)
   const [limit, setLimit] = useState(10)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     if (!drepId) return
@@ -73,9 +74,9 @@ export function useCommunityPolls(drepId: string, network: string, page: number)
       .catch(() => { if (!cancelled) setError("Không thể tải polls") })
       .finally(() => { if (!cancelled) setIsLoading(false) })
     return () => { cancelled = true }
-  }, [drepId, network, page])
+  }, [drepId, network, page, tick])
 
-  return { polls, total, limit, isLoading, error }
+  return { polls, total, limit, isLoading, error, refetch: () => setTick((t) => t + 1) }
 }
 
 // ─── Poll detail (with options + vote counts) ─────────────────────────────────

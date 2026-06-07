@@ -58,6 +58,7 @@ data class PollDetailResponse(
     val communityId: String,
     val title: String,
     val abstract: String?,
+    val motivation: String?,
     val votingType: String,
     val status: String,
     val startsAt: String,
@@ -103,6 +104,7 @@ data class CreatePollRequest(
     val network: String,
     val title: String,
     val abstract: String? = null,
+    val motivation: String? = null,
     val startsAt: String,
     val endsAt: String,
 )
@@ -311,6 +313,7 @@ fun Route.communityRoutes() {
                         it[InternalPolls.communityId] = communityId
                         it[InternalPolls.title] = req.title.trim()
                         it[InternalPolls.abstract] = req.abstract?.trim()
+                        it[InternalPolls.motivation] = req.motivation?.trim()
                         it[InternalPolls.votingType] = "BASIC"
                         it[InternalPolls.startEpoch] = 0
                         it[InternalPolls.startsAt] = startsAt
@@ -387,6 +390,7 @@ fun Route.communityRoutes() {
                     communityId = pollRow[InternalPolls.communityId].toString(),
                     title = pollRow[InternalPolls.title],
                     abstract = pollRow[InternalPolls.abstract],
+                    motivation = pollRow[InternalPolls.motivation],
                     votingType = pollRow[InternalPolls.votingType],
                     status = computeStatus(pollRow[InternalPolls.startsAt], pollRow[InternalPolls.endsAt], now),
                     startsAt = pollRow[InternalPolls.startsAt].toString(),

@@ -38,6 +38,7 @@ export const PollDetailSchema = z.object({
   communityId: z.string().uuid(),
   title: z.string(),
   abstract: z.string().nullable(),
+  motivation: z.string().nullable().optional(),
   votingType: z.enum(["BASIC", "SINGLE_CHOICE", "MULTIPLE_CHOICE"]),
   status: PollStatusSchema,
   startsAt: z.string(),
@@ -73,8 +74,9 @@ export type CommentsPage = z.infer<typeof CommentsPageSchema>
 
 export const CreatePollRequestSchema = z.object({
   network: z.string(),
-  title: z.string().min(1).max(255),
-  abstract: z.string().optional(),
+  title: z.string().min(1).max(80),
+  abstract: z.string().max(2500).optional(),
+  motivation: z.string().max(2500).optional(),
   startsAt: z.string(),
   endsAt: z.string(),
 })
