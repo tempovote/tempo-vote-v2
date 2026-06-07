@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
+import Link from "next/link"
 import { useWallet } from "@/hooks/useWallet"
 import { getWalletInfo, CIP95_WALLETS } from "@tempo/wallet-bridge"
 import type { NetworkId } from "@tempo/wallet-bridge"
@@ -59,7 +60,7 @@ function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null;
         </p>
       </div>
       <div className="p-3 flex gap-2">
-        <a
+        <Link
           href="/dreps/update"
           onClick={onClose}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-xs font-medium transition-colors"
@@ -69,8 +70,8 @@ function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null;
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
           </svg>
           Cập nhật
-        </a>
-        <a
+        </Link>
+        <Link
           href="/dreps/retire"
           onClick={onClose}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 text-xs font-medium transition-colors"
@@ -81,7 +82,7 @@ function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null;
             <path d="M10 11v6M14 11v6" />
           </svg>
           Retire
-        </a>
+        </Link>
       </div>
     </div>
   )
@@ -119,20 +120,20 @@ function GovernanceCTA({ onClose }: { onClose: () => void }) {
         Tham gia quản trị Cardano bằng cách delegate cho DRep hoặc tự đăng ký trở thành DRep.
       </p>
       <div className="flex flex-col gap-2">
-        <a
+        <Link
           href="/dreps"
           onClick={onClose}
           className="flex items-center justify-center py-2 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-xs font-medium transition-colors"
         >
           Tìm DRep để delegate
-        </a>
-        <a
+        </Link>
+        <Link
           href="/dreps/register"
           onClick={onClose}
           className="flex items-center justify-center py-2 rounded-lg bg-accent/15 border border-accent/30 text-accent-light hover:bg-accent/25 text-xs font-medium transition-colors"
         >
           Đăng ký trở thành DRep
-        </a>
+        </Link>
       </div>
     </div>
   )
