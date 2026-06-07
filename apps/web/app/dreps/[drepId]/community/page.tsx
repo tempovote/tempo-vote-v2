@@ -255,6 +255,7 @@ function CreatePollForm({
 
   // Lock body scroll on mobile when sheet is open
   useEffect(() => {
+    if (window.innerWidth >= 640) return  // desktop: form is inline, no lock needed
     const prev = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => { document.body.style.overflow = prev }
