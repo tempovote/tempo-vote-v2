@@ -45,6 +45,15 @@ function truncateAddress(addr: string, chars = 8): string {
 }
 
 function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null; drepId: string | null; onClose: () => void }) {
+  const [copiedDrepId, setCopiedDrepId] = useState(false)
+
+  const handleCopyDrepId = useCallback(async () => {
+    if (!drepId) return
+    await navigator.clipboard.writeText(drepId)
+    setCopiedDrepId(true)
+    setTimeout(() => setCopiedDrepId(false), 2000)
+  }, [drepId])
+
   return (
     <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
       {drepName && (
@@ -54,7 +63,33 @@ function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null;
         </div>
       )}
       <div className="p-3">
-        <p className="text-text-muted text-xs mb-1 font-medium">Your DRep ID</p>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-text-muted text-xs font-medium">Your DRep ID</p>
+          {drepId && (
+            <button
+              onClick={handleCopyDrepId}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors"
+              title="Copy DRep ID"
+            >
+              {copiedDrepId ? (
+                <>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                  Copy
+                </>
+              )}
+            </button>
+          )}
+        </div>
         <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
           {drepId || "—"}
         </p>
