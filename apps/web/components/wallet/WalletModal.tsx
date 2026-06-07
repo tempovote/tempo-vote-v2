@@ -43,7 +43,7 @@ function truncateAddress(addr: string, chars = 8): string {
   return `${addr.slice(0, chars)}...${addr.slice(-chars)}`
 }
 
-function DRepInfoPanel({ drepName, drepId }: { drepName: string | null; drepId: string | null }) {
+function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null; drepId: string | null; onClose: () => void }) {
   return (
     <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
       {drepName && (
@@ -57,6 +57,31 @@ function DRepInfoPanel({ drepName, drepId }: { drepName: string | null; drepId: 
         <p className="text-text-secondary text-xs font-mono break-all leading-relaxed">
           {drepId || "—"}
         </p>
+      </div>
+      <div className="p-3 flex gap-2">
+        <a
+          href="/dreps/update"
+          onClick={onClose}
+          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-xs font-medium transition-colors"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+          Cập nhật
+        </a>
+        <a
+          href="/dreps/retire"
+          onClick={onClose}
+          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 text-xs font-medium transition-colors"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+          </svg>
+          Retire
+        </a>
       </div>
     </div>
   )
@@ -230,7 +255,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 </div>
               ) : isDrepRegistered === true ? (
                 /* Confirmed by Ogmios: registered DRep */
-                <DRepInfoPanel drepName={drepName} drepId={drepKey?.dRepIDCip105 ?? null} />
+                <DRepInfoPanel drepName={drepName} drepId={drepKey?.dRepIDCip105 ?? null} onClose={onClose} />
               ) : isDrepRegistered === false && delegatedDrep ? (
                 /* Confirmed by Ogmios: not DRep, has delegated */
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-success">
