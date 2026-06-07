@@ -9,6 +9,9 @@ type PageState = "confirm" | "signing" | "success" | "error"
 
 function friendlyError(msg: string): { title: string; detail: string } {
   const m = msg.toLowerCase()
+  if (m.includes("locked")) {
+    return { title: "Ví đang bị khóa", detail: "Mở ví Eternl, nhập mật khẩu để mở khóa, sau đó nhấn \"Thử lại\"." }
+  }
   if (m.includes("declined") || m.includes("refuse") || m.includes("cancel")) {
     return { title: "Giao dịch bị từ chối", detail: "Bạn đã huỷ ký trong ví. Nhấn \"Thử lại\" để tiếp tục." }
   }
