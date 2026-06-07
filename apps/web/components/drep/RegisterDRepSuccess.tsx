@@ -3,16 +3,48 @@ interface Props {
   drepName: string
   networkId: number | null
   successMessage?: string
+  delegateTxHash?: string | null
 }
 
-export default function RegisterDRepSuccess({ txHash, drepName, networkId, successMessage = "Đăng ký thành công!" }: Props) {
+function TxHashBlock({
+  label,
+  txHash,
+  explorerBase,
+}: {
+  label: string
+  txHash: string
+  explorerBase: string
+}) {
+  const short = `${txHash.slice(0, 12)}...${txHash.slice(-8)}`
+  const url = `${explorerBase}/${txHash}`
+  return (
+    <div className="card-static text-left space-y-1">
+      <p className="text-text-muted text-xs font-medium">{label}</p>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-mono text-sm text-accent hover:text-accent-light break-all transition-colors"
+      >
+        {short}
+      </a>
+    </div>
+  )
+}
+
+export default function RegisterDRepSuccess({
+  txHash,
+  drepName,
+  networkId,
+  successMessage = "Đăng ký thành công!",
+  delegateTxHash,
+}: Props) {
   const explorerBase =
     networkId === 1
       ? "https://cardanoscan.io/transaction"
       : "https://preprod.cardanoscan.io/transaction"
 
-  const explorerUrl = `${explorerBase}/${txHash}`
-  const short = `${txHash.slice(0, 12)}...${txHash.slice(-8)}`
+  const registrationExplorerUrl = `${explorerBase}/${txHash}`
 
   return (
     <div className="text-center space-y-6 py-4">
@@ -30,17 +62,20 @@ export default function RegisterDRepSuccess({ txHash, drepName, networkId, succe
         </p>
       </div>
 
-      {/* TX Hash */}
-      <div className="card-static text-left space-y-1">
-        <p className="text-text-muted text-xs font-medium">Transaction Hash</p>
-        <a
-          href={explorerUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-mono text-sm text-accent hover:text-accent-light break-all transition-colors"
-        >
-          {short}
-        </a>
+      {/* TX hashes */}
+      <div className="space-y-2">
+        <TxHashBlock
+          label={delegateTxHash ? "TX 1 — Đăng ký DRep" : "Transaction Hash"}
+          txHash={txHash}
+          explorerBase={explorerBase}
+        />
+        {delegateTxHash && (
+          <TxHashBlock
+            label="TX 2 — Ủy quyền voting power"
+            txHash={delegateTxHash}
+            explorerBase={explorerBase}
+          />
+        )}
       </div>
 
       {/* Notice */}
@@ -50,12 +85,18 @@ export default function RegisterDRepSuccess({ txHash, drepName, networkId, succe
           Transaction cần khoảng 20–60 giây để được confirm. Sau khi confirm, DRep ID của bạn sẽ
           xuất hiện trong danh sách DRep trên chain và ví sẽ hiển thị trạng thái đã đăng ký.
         </p>
+        {delegateTxHash && (
+          <p className="text-text-secondary text-xs mt-1.5">
+            Voting power sẽ được cập nhật tại <span className="text-text-primary font-medium">epoch boundary tiếp theo</span> (~1–5 ngày).
+            Nếu chưa thấy voting power, bạn có thể self-delegate lại từ trang profile DRep.
+          </p>
+        )}
       </div>
 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row gap-3">
         <a
-          href={explorerUrl}
+          href={registrationExplorerUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="btn-outline flex-1 text-center"

@@ -11,12 +11,12 @@ import { resolveAnchorUrl } from "@/lib/governance"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
-type WizardStep = "step1" | "step2" | "confirm" | "uploading" | "signing" | "success" | "error"
+type WizardStep = "step1" | "step2" | "confirm" | "uploading" | "signing" | "delegating" | "success" | "error"
 
 const STEP_LABELS = ["Thông tin", "Hồ sơ", "Xác nhận", "Hoàn tất"]
 const STEP_INDEX: Record<WizardStep, number> = {
   step1: 0, step2: 1, confirm: 2,
-  uploading: 3, signing: 3, success: 3, error: 3,
+  uploading: 3, signing: 3, delegating: 3, success: 3, error: 3,
 }
 
 const EMPTY_FORM: DRepFormData = {
@@ -81,6 +81,8 @@ function ConfirmStep({
   onBack,
   isLoading,
   statusLabel,
+  enableSelfDelegate,
+  onToggleSelfDelegate,
   enableCommunity,
   onToggleCommunity,
 }: {
@@ -90,6 +92,8 @@ function ConfirmStep({
   onBack: () => void
   isLoading: boolean
   statusLabel: string | null
+  enableSelfDelegate: boolean
+  onToggleSelfDelegate: () => void
   enableCommunity: boolean
   onToggleCommunity: () => void
 }) {
@@ -166,9 +170,15 @@ function ConfirmStep({
             <span className="text-text-primary font-medium">500 ADA</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-text-muted">Network fee</span>
+            <span className="text-text-muted">Network fee (TX 1 — đăng ký DRep)</span>
             <span className="text-text-primary font-medium">~0.2 ADA</span>
           </div>
+          {enableSelfDelegate && (
+            <div className="flex justify-between items-center">
+              <span className="text-text-muted">Network fee (TX 2 — ủy quyền voting power)</span>
+              <span className="text-text-primary font-medium">~0.2 ADA</span>
+            </div>
+          )}
           <div className="flex justify-between items-center">
             <span className="text-text-muted">Metadata upload (Pinata)</span>
             <span className="text-text-primary font-medium">miễn phí</span>
@@ -184,6 +194,44 @@ function ConfirmStep({
           Số tiền chính xác sẽ hiển thị trong ví khi ký.
         </p>
       </div>
+
+      {/* Self-delegate toggle */}
+      <button
+        type="button"
+        onClick={onToggleSelfDelegate}
+        disabled={isLoading}
+        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-colors ${
+          enableSelfDelegate
+            ? "border-accent/50 bg-accent/5"
+            : "border-border-subtle bg-bg-elevated hover:border-border-default"
+        }`}
+      >
+        <div className="flex items-center gap-3 text-left">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+            enableSelfDelegate ? "bg-accent/20" : "bg-bg-elevated border border-border-default"
+          }`}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={enableSelfDelegate ? "text-accent" : "text-text-muted"}>
+              <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+              <circle cx="12" cy="12" r="2"/>
+            </svg>
+          </div>
+          <div>
+            <p className={`text-sm font-medium ${enableSelfDelegate ? "text-accent-light" : "text-text-secondary"}`}>
+              Ủy quyền voting power cho chính mình
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Bắt buộc để có voting power — ký thêm 1 TX (~0.2 ADA). Không bật = voting power = 0.
+            </p>
+          </div>
+        </div>
+        <div className={`w-10 h-6 rounded-full relative transition-colors shrink-0 ${
+          enableSelfDelegate ? "bg-accent" : "bg-bg-elevated border border-border-default"
+        }`}>
+          <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+            enableSelfDelegate ? "translate-x-4" : "translate-x-0.5"
+          }`} />
+        </div>
+      </button>
 
       {/* DRep Community toggle */}
       <button
@@ -284,8 +332,10 @@ export default function RegisterDRepPage() {
   const [anchorCache, setAnchorCache] = useState<{ anchorUrl: string; anchorDataHash: string } | null>(null)
 
   const drepId = drepKey?.dRepIDCip105 ?? null
-  const isSubmitting = wizardStep === "uploading" || wizardStep === "signing"
+  const isSubmitting = wizardStep === "uploading" || wizardStep === "signing" || wizardStep === "delegating"
+  const [selfDelegateEnabled, setSelfDelegateEnabled] = useState(true)
   const [communityEnabled, setCommunityEnabled] = useState(false)
+  const [delegateTxHash, setDelegateTxHash] = useState<string | null>(null)
 
   // ── Guards ──────────────────────────────────────────────────────────────
   if (!isConnected) {
@@ -386,14 +436,36 @@ export default function RegisterDRepPage() {
         setAnchorCache(anchor)
       }
 
-      // Step: build + sign + submit TX
+      // TX 1: register DRep
       setWizardStep("signing")
-      setStatusLabel("Đang yêu cầu ký giao dịch trong ví...")
+      setStatusLabel(
+        selfDelegateEnabled
+          ? "Ký giao dịch 1/2 — Đăng ký DRep..."
+          : "Đang yêu cầu ký giao dịch trong ví...",
+      )
 
       const hash = await submitTx("DREP_REGISTER", { drepId, anchorUrl: anchor.anchorUrl, anchorDataHash: anchor.anchorDataHash })
 
+      // TX 2: self-delegate voting power (non-blocking — user chose to enable)
+      let selfDelegateDone = false
+      if (selfDelegateEnabled) {
+        setWizardStep("delegating")
+        setStatusLabel("Ký giao dịch 2/2 — Ủy quyền voting power cho chính mình...")
+        try {
+          const delegateHash = await submitTx("DELEGATE", { targetDrepId: drepId, delegationType: "drep" })
+          setDelegateTxHash(delegateHash)
+          selfDelegateDone = true
+        } catch (delegateErr: unknown) {
+          console.warn("[DRep Register] Self-delegation failed (non-blocking):", delegateErr)
+        }
+      }
+
       // Update wallet store optimistically
-      setDRepStatus({ isDrepRegistered: true, drepName: formData.givenName, delegatedDrep: null })
+      setDRepStatus({
+        isDrepRegistered: true,
+        drepName: formData.givenName,
+        delegatedDrep: selfDelegateDone ? { id: drepId, name: formData.givenName } : null,
+      })
 
       // Optional: activate DRep Community (2 ADA fee)
       if (communityEnabled) {
@@ -467,7 +539,7 @@ export default function RegisterDRepPage() {
             />
           )}
 
-          {(wizardStep === "confirm" || wizardStep === "uploading" || wizardStep === "signing") && (
+          {(wizardStep === "confirm" || wizardStep === "uploading" || wizardStep === "signing" || wizardStep === "delegating") && (
             <ConfirmStep
               data={formData}
               drepId={drepId}
@@ -475,6 +547,8 @@ export default function RegisterDRepPage() {
               onBack={() => setWizardStep("step2")}
               isLoading={isSubmitting}
               statusLabel={statusLabel}
+              enableSelfDelegate={selfDelegateEnabled}
+              onToggleSelfDelegate={() => setSelfDelegateEnabled((v) => !v)}
               enableCommunity={communityEnabled}
               onToggleCommunity={() => setCommunityEnabled((v) => !v)}
             />
@@ -527,6 +601,7 @@ export default function RegisterDRepPage() {
               txHash={txHash}
               drepName={formData.givenName}
               networkId={networkId}
+              delegateTxHash={delegateTxHash}
             />
           )}
         </div>
