@@ -122,8 +122,12 @@ fun parseActiveCCMemberCount(raw: JsonElement): Int {
     val obj = raw as? JsonObject ?: return 0
     val members = obj["members"]?.jsonArray ?: return 0
     return members.count { entry ->
-        // Ogmios returns status as a plain string: "active" | "expired" | "unrecognized"
-        entry.jsonObject["status"]?.jsonPrimitive?.contentOrNull == "active"
+        val member = entry.jsonObject
+        // A CC member can vote only if their seat is active AND their hot key (delegate) is authorized.
+        // delegate.status == "resigned" means the hot key resigned → cannot vote → exclude from N_Active.
+        val seatActive     = member["status"]?.jsonPrimitive?.contentOrNull == "active"
+        val delegateActive = member["delegate"]?.jsonObject?.get("status")?.jsonPrimitive?.contentOrNull == "authorized"
+        seatActive && delegateActive
     }
 }
 
