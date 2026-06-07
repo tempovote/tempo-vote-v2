@@ -8,7 +8,7 @@
 - Gradle (bundled via wrapper `./gradlew`)
 - cardano-node + ogmios + kupo đang chạy (preprod là đủ để dev)
 
-## Setup
+## Setup (lần đầu)
 
 ```bash
 # 1. Clone và cài dependencies
@@ -22,25 +22,48 @@ pnpm install
 cp .env.example .env
 # Điền OGMIOS_PREPROD_URL, KUPO_PREPROD_URL, DATABASE_URL
 
-# 4. Khởi động PostgreSQL (Docker)
+# 4. Khởi động Docker runtime (Colima) + tạo PostgreSQL container
+colima start
 docker run -d \
-  --name tempo-postgres \
+  --name tempo-pg \
   -e POSTGRES_DB=tempo_vote \
   -e POSTGRES_PASSWORD=password \
   -p 5432:5432 \
   postgres:16
 
 # 5. Chạy API (Flyway migrations chạy tự động khi start)
-cd apps/api
-./gradlew run
+./gradlew :apps:api:run
 
 # 6. Chạy web (tab khác)
-cd ../..
 pnpm dev
 ```
 
-Web: http://localhost:3000
+Web: http://localhost:3000  
 API: http://localhost:8080
+
+## Khởi động server sạch (mỗi lần mở máy)
+
+**Thứ tự bắt buộc** — thiếu bước nào cũng sẽ lỗi DB:
+
+```bash
+# Bước 1: Khởi động Docker runtime
+colima start
+
+# Bước 2: Khởi động PostgreSQL container
+docker start tempo-pg
+
+# Bước 3: Chờ PostgreSQL sẵn sàng (tùy chọn, thường xong ngay)
+docker exec tempo-pg pg_isready -U postgres
+
+# Bước 4: Chạy API (từ root monorepo)
+./gradlew :apps:api:run
+
+# Bước 5: Chạy web (tab khác)
+pnpm dev
+```
+
+> **Lưu ý**: Luôn chạy `./gradlew :apps:api:run` từ **root monorepo**, không phải từ `apps/api/`.  
+> API tự chạy Flyway migrations khi start — không cần chạy migration thủ công.
 
 ## Cấu trúc môi trường preprod
 
@@ -92,6 +115,15 @@ wscat -c ws://localhost:1337
 ```
 
 ## Lỗi thường gặp
+
+### "Challenge thất bại (HTTP 500)" khi bỏ phiếu / "Please call Database.connect()"
+API start được nhưng không kết nối được PostgreSQL. Kiểm tra theo thứ tự:
+```bash
+colima status          # phải "running"
+docker ps | grep tempo-pg  # phải "Up"
+curl http://localhost:8080/auth/challenge?stakeAddress=test&network=preprod
+# Nếu vẫn 500: kill port 8080 rồi ./gradlew :apps:api:run lại sau khi DB đã chạy
+```
 
 ### "KupmiosBackendService not found"
 Kiểm tra artifact `cardano-client-backend-ogmios` đã có trong Gradle deps. Tên class chính xác có thể khác nhau theo version — xem Javadoc của thư viện.
