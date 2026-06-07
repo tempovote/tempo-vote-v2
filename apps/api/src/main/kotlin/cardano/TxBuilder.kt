@@ -107,9 +107,13 @@ class TxBuilder(private val network: Network) {
             else      -> Vote.ABSTAIN
         }
 
-        val txBase = Tx().createVote(voter, govActionId, vote).from(changeAddress)
-        // TODO: attach rationale anchor once cardano-client-lib supports it in createVote
-        return buildUnsigned(txBase, changeAddress)
+        val tx = if (rationaleUrl != null && rationaleHash != null) {
+            val anchor = Anchor(rationaleUrl, HexUtil.decodeHexString(rationaleHash))
+            Tx().createVote(voter, govActionId, vote, anchor).from(changeAddress)
+        } else {
+            Tx().createVote(voter, govActionId, vote).from(changeAddress)
+        }
+        return buildUnsigned(tx, changeAddress)
     }
 
     /**

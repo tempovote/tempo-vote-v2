@@ -49,6 +49,15 @@ data class MetadataReference(
     val uri: String,
 )
 
+@Serializable
+data class VoteRationaleRequest(
+    val drepId: String,
+    val govActionTxHash: String,
+    val govActionIndex: Int,
+    val voteKind: String,  // YES | NO | ABSTAIN
+    val comment: String,
+)
+
 fun Route.metadataRoutes() {
     route("/metadata") {
         authenticate("jwt") {
@@ -149,6 +158,50 @@ fun Route.metadataRoutes() {
                 )
             )
         }
+        // POST /metadata/vote-rationale  [requires JWT]
+        post("/vote-rationale") {
+            val pinataJwt = System.getenv("PINATA_JWT")
+                ?: return@post call.respond(
+                    HttpStatusCode.InternalServerError,
+                    mapOf("error" to "PINATA_JWT not configured")
+                )
+
+            val req = try {
+                call.receive<VoteRationaleRequest>()
+            } catch (e: Exception) {
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("error" to "Invalid request body: ${e.message}")
+                )
+            }
+
+            if (req.comment.isBlank()) {
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("error" to "comment is required")
+                )
+            }
+
+            val metadata = buildCip100VoteRationale(req)
+            val metadataBytes = json.encodeToString(metadata).toByteArray(Charsets.UTF_8)
+            val anchorDataHash = blake2b256Hex(metadataBytes)
+
+            val ipfsHash = try {
+                val pinataName = "vote-rationale-${req.drepId.take(16)}-${req.govActionTxHash.take(8)}"
+                uploadJsonToPinata(pinataJwt, metadata, pinataName)
+            } catch (e: Exception) {
+                return@post call.respond(
+                    HttpStatusCode.BadGateway,
+                    mapOf("error" to "Pinata upload failed: ${e.message}")
+                )
+            }
+
+            call.respond(mapOf(
+                "anchorUrl" to "ipfs://$ipfsHash",
+                "anchorDataHash" to anchorDataHash,
+            ))
+        }
+
         } // authenticate("jwt")
     }
 }
@@ -249,11 +302,33 @@ private fun unpinFromPinata(jwt: String, ipfsHash: String) {
     }
 }
 
-private fun uploadToPinata(jwt: String, drepId: String, metadata: JsonObject): String {
+private fun buildCip100VoteRationale(req: VoteRationaleRequest): JsonObject = buildJsonObject {
+    putJsonObject("@context") {
+        put("CIP100", "https://github.com/cardano-foundation/CIPs/blob/master/CIP-0100/README.md#")
+        put("hashAlgorithm", "CIP100:hashAlgorithm")
+        putJsonObject("body") {
+            put("@id", "CIP100:body")
+            putJsonObject("@context") {
+                put("comment", "CIP100:comment")
+            }
+        }
+        putJsonObject("authors") {
+            put("@id", "CIP100:authors")
+            put("@container", "@set")
+        }
+    }
+    put("hashAlgorithm", "blake2b-256")
+    putJsonObject("body") {
+        put("comment", req.comment)
+    }
+    putJsonArray("authors") {}
+}
+
+private fun uploadJsonToPinata(jwt: String, metadata: JsonObject, name: String): String {
     val body = buildJsonObject {
         put("pinataContent", metadata)
         putJsonObject("pinataMetadata") {
-            put("name", "drep-$drepId-metadata")
+            put("name", name)
         }
     }.toString().toRequestBody("application/json".toMediaType())
 
@@ -267,11 +342,11 @@ private fun uploadToPinata(jwt: String, drepId: String, metadata: JsonObject): S
     val responseBody = response.body?.string()
         ?: throw Exception("Empty response from Pinata")
 
-    if (!response.isSuccessful) {
-        throw Exception("HTTP ${response.code}: $responseBody")
-    }
+    if (!response.isSuccessful) throw Exception("HTTP ${response.code}: $responseBody")
 
-    val parsed = Json.parseToJsonElement(responseBody).jsonObject
-    return parsed["IpfsHash"]?.jsonPrimitive?.content
+    return Json.parseToJsonElement(responseBody).jsonObject["IpfsHash"]?.jsonPrimitive?.content
         ?: throw Exception("IpfsHash missing from Pinata response")
 }
+
+private fun uploadToPinata(jwt: String, drepId: String, metadata: JsonObject): String =
+    uploadJsonToPinata(jwt, metadata, "drep-$drepId-metadata")

@@ -8,13 +8,15 @@ import { useMyVote, type MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
 import { ActionIdChip } from "@/components/governance/ActionIdChip"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
+import { RationaleEditor } from "@/components/governance/RationaleEditor"
 import { GovernanceActionSchema, type GovernanceAction } from "@tempo/types"
 import { resolveAnchorUrl } from "@/lib/governance"
+import { getJwt, authHeader } from "@/lib/api"
 import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
-type VoteStep = "idle" | "confirm" | "signing" | "success" | "error"
+type VoteStep = "idle" | "rationale" | "confirm" | "signing" | "success" | "error"
 type VoteChoice = "YES" | "NO" | "ABSTAIN"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
 
   const [step, setStep] = useState<VoteStep>("idle")
   const [choice, setChoice] = useState<VoteChoice | null>(null)
+  const [rationale, setRationale] = useState("")
   const [successTxHash, setSuccessTxHash] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -59,11 +62,38 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
     setStep("signing")
     setErrorMsg(null)
     try {
+      // If rationale provided: upload CIP-100 metadata to IPFS first
+      let rationaleUrl: string | undefined
+      let rationaleHash: string | undefined
+      if (rationale.trim()) {
+        const jwt = getJwt()
+        const metaRes = await fetch(`${API_URL}/metadata/vote-rationale`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(jwt) },
+          body: JSON.stringify({
+            drepId: drepKey.dRepIDCip105,
+            govActionTxHash: action.txHash,
+            govActionIndex: action.index,
+            voteKind: choice,
+            comment: rationale.trim(),
+          }),
+        })
+        if (!metaRes.ok) {
+          const err = await metaRes.json().catch(() => ({ error: "Metadata upload failed" }))
+          throw new Error(err.error ?? "Không thể upload rationale lên IPFS")
+        }
+        const metaData = await metaRes.json()
+        rationaleUrl = metaData.anchorUrl
+        rationaleHash = metaData.anchorDataHash
+      }
+
       const txHash = await submitTx("VOTE", {
         drepId: drepKey.dRepIDCip105,
         govActionTxHash: action.txHash,
         govActionIndex: action.index,
         voteKind: choice,
+        rationaleUrl,
+        rationaleHash,
       })
       setSuccessTxHash(txHash)
       setStep("success")
@@ -87,6 +117,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
             <p className="font-semibold">Đã bỏ phiếu thành công!</p>
             <p className="text-sm text-text-muted">
               Phiếu <span className={`font-bold ${choice === "YES" ? "text-success" : choice === "NO" ? "text-danger" : "text-text-secondary"}`}>{choice}</span> đã được ghi nhận on-chain.
+              {rationale.trim() && " Rationale đã được lưu trên IPFS."}
             </p>
           </div>
         </div>
@@ -134,6 +165,18 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
               {choice}
             </span>
           </div>
+          {rationale.trim() && (
+            <div className="border-t border-border-subtle pt-3 space-y-1">
+              <span className="text-text-muted block">Rationale</span>
+              <p className="text-text-secondary text-xs line-clamp-3 whitespace-pre-wrap">{rationale.trim()}</p>
+              <button
+                onClick={() => setStep("rationale")}
+                className="text-xs text-accent-light hover:underline"
+              >
+                Chỉnh sửa
+              </button>
+            </div>
+          )}
           <div className="flex justify-between border-t border-border-subtle pt-3">
             <span className="text-text-muted">Phí mạng</span>
             <span className="text-text-primary">~0.2 ADA</span>
@@ -141,10 +184,10 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => setStep("idle")}
+            onClick={() => setStep("rationale")}
             className="btn-outline flex-1 text-sm"
           >
-            Huỷ
+            ← Quay lại
           </button>
           <button
             onClick={handleVote}
@@ -152,6 +195,50 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
             className="btn-primary flex-1 text-sm"
           >
             Xác nhận &amp; Ký
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Rationale step — optional markdown editor
+  if (step === "rationale" && choice) {
+    const isOver = rationale.length > 2000
+    return (
+      <div className="card-static space-y-5">
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+            choice === "YES" ? "bg-success/20 text-success" : choice === "NO" ? "bg-danger/20 text-danger" : "bg-bg-elevated text-text-secondary"
+          }`}>
+            {choice === "YES" ? "Y" : choice === "NO" ? "N" : "A"}
+          </div>
+          <div>
+            <p className="font-semibold text-sm">Thêm lý do bỏ phiếu</p>
+            <p className="text-xs text-text-muted">Tuỳ chọn · Sẽ được lưu on-chain theo CIP-100</p>
+          </div>
+        </div>
+
+        <RationaleEditor value={rationale} onChange={setRationale} />
+
+        <div className="flex gap-3">
+          <button
+            onClick={() => setStep("idle")}
+            className="btn-outline flex-1 text-sm"
+          >
+            ← Quay lại
+          </button>
+          <button
+            onClick={() => setStep("confirm")}
+            className="btn-outline flex-1 text-sm"
+          >
+            Bỏ qua
+          </button>
+          <button
+            onClick={() => setStep("confirm")}
+            disabled={isOver}
+            className="btn-primary flex-1 text-sm"
+          >
+            Tiếp tục →
           </button>
         </div>
       </div>
@@ -166,7 +253,9 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
         </svg>
-        <span className="text-text-secondary">Đang ký giao dịch trong ví…</span>
+        <span className="text-text-secondary">
+          {rationale.trim() ? "Đang upload rationale lên IPFS…" : "Đang ký giao dịch trong ví…"}
+        </span>
       </div>
     )
   }
@@ -223,7 +312,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
           return (
             <button
               key={value}
-              onClick={() => { setChoice(value); setStep("confirm") }}
+              onClick={() => { setChoice(value); setRationale(""); setStep("rationale") }}
               className={`py-3 rounded-xl border-2 font-bold text-sm transition-colors ${
                 isCurrentVote ? activeCls : cls
               }`}
