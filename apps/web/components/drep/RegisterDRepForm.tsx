@@ -5,6 +5,29 @@ import { authHeader, getJwt } from "@/lib/api"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
+// Ordered fallback list — gateway.pinata.cloud first (files pinned via Pinata are always available there)
+const IPFS_DISPLAY_GATEWAYS = [
+  "https://gateway.pinata.cloud/ipfs/",
+  "https://ipfs.io/ipfs/",
+  "https://dweb.link/ipfs/",
+]
+
+// Extract bare CID from ipfs:// or any known https gateway URL
+function extractCid(url: string): string | null {
+  if (url.startsWith("ipfs://")) return url.slice(7)
+  for (const gw of IPFS_DISPLAY_GATEWAYS) {
+    if (url.startsWith(gw)) return url.slice(gw.length)
+  }
+  return null
+}
+
+// Resolve URL for <img> display using a specific gateway index (for onError fallback)
+function toDisplaySrc(url: string, gwIdx: number): string {
+  const cid = extractCid(url)
+  if (cid) return IPFS_DISPLAY_GATEWAYS[Math.min(gwIdx, IPFS_DISPLAY_GATEWAYS.length - 1)] + cid
+  return url
+}
+
 export interface DRepFormData {
   givenName: string
   motivations: string
@@ -29,6 +52,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
   const set = (patch: Partial<DRepFormData>) => onChange({ ...data, ...patch })
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "error">("idle")
+  const [imgGwIdx, setImgGwIdx] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -43,6 +67,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
     const localUrl = URL.createObjectURL(file)
     setImagePreview(localUrl)
     setUploadState("uploading")
+    setImgGwIdx(0)
     set({ imageUrl: "" })
 
     try {
@@ -116,9 +141,14 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
             <div className="flex items-center gap-3 mb-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={imagePreview || data.imageUrl}
+                src={imagePreview || toDisplaySrc(data.imageUrl, imgGwIdx)}
                 alt="preview"
                 className="w-14 h-14 rounded-full object-cover border border-border-subtle"
+                onError={() => {
+                  if (!imagePreview && imgGwIdx < IPFS_DISPLAY_GATEWAYS.length - 1) {
+                    setImgGwIdx(i => i + 1)
+                  }
+                }}
               />
               {uploadState === "uploading" && (
                 <div className="flex items-center gap-2 text-text-muted text-xs">
