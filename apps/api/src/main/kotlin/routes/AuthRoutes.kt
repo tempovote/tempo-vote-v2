@@ -150,10 +150,11 @@ private fun verifyCoseSign1(signatureHex: String, keyHex: String, nonce: String)
     val payloadBstr   = coseSign1[2] as? ByteArray ?: return false
     val signature     = coseSign1[3] as? ByteArray ?: return false
 
-    // Payload must match our nonce — wallets may encode it as raw bytes or as UTF-8 hex string
-    val nonceRawBytes  = hexToBytes(nonce)
-    val nonceUtf8Bytes = nonce.toByteArray(Charsets.UTF_8)
-    if (!payloadBstr.contentEquals(nonceRawBytes) && !payloadBstr.contentEquals(nonceUtf8Bytes)) return false
+    // Payload must match the human-readable sign-in message the frontend constructs:
+    //   "tempo.vote sign-in\nnonce: <hex-nonce>"
+    // encoded as UTF-8. This is what the wallet displays to the user.
+    val expectedPayload = "tempo.vote sign-in\nnonce: $nonce".toByteArray(Charsets.UTF_8)
+    if (!payloadBstr.contentEquals(expectedPayload)) return false
 
     // Decode COSE_Key map, extract x-coordinate (-2 key = 32-byte Ed25519 public key)
     val coseKey    = CborDecoder(keyBytes).readMap() ?: return false
