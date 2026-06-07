@@ -205,6 +205,11 @@ class TxBuilder(private val network: Network) {
             }
         }
 
+        val certCount = transaction.body.certs?.size ?: 0
+        println("[TxBuilder] Built TX: certs=$certCount fee=${transaction.body.fee}")
+        transaction.body.certs?.forEachIndexed { i, cert ->
+            println("[TxBuilder]   cert[$i] = ${cert.javaClass.simpleName}")
+        }
         return transaction.serializeToHex()
     }
 }
