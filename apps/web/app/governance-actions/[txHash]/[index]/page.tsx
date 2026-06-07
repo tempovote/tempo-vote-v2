@@ -8,12 +8,9 @@ import { useMyVote, type MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
 import { ActionIdChip } from "@/components/governance/ActionIdChip"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
-import { GovernanceActionSchema, type GovernanceAction, type VoteCounts } from "@tempo/types"
-import {
-  computeVotePercent,
-  resolveAnchorUrl,
-  VOTE_THRESHOLDS,
-} from "@/lib/governance"
+import { GovernanceActionSchema, type GovernanceAction } from "@tempo/types"
+import { resolveAnchorUrl } from "@/lib/governance"
+import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -27,59 +24,6 @@ function cardanoscanUrl(txHash: string, network: string) {
     ? "https://cardanoscan.io"
     : "https://preprod.cardanoscan.io"
   return `${base}/transaction/${txHash}`
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-function VoteBar({ label, votes, threshold }: { label: string; votes: VoteCounts; threshold?: number }) {
-  const { yesPercent, noPercent, abstainPercent } = computeVotePercent(votes)
-  const total = votes.yes + votes.no + votes.abstain
-  const showLabelInBar = yesPercent > 20
-  const tooltipText = !showLabelInBar
-    ? `Yes: ${yesPercent}% · No: ${noPercent}% · Abstain: ${abstainPercent}%`
-    : undefined
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-text-secondary">{label}</span>
-        {threshold !== undefined && (
-          <span className="text-xs text-text-secondary font-semibold">
-            Ngưỡng {threshold}%
-          </span>
-        )}
-      </div>
-      <div className="relative">
-        <div className="vote-bar" title={tooltipText}>
-          <div className="vote-bar-yes" style={{ width: `${yesPercent}%` }}>
-            {showLabelInBar && (
-              <span className="text-white text-[10px] font-bold px-2 leading-none drop-shadow-sm select-none">
-                {yesPercent}%
-              </span>
-            )}
-          </div>
-          <div className="vote-bar-no" style={{ width: `${noPercent}%` }} />
-        </div>
-        {threshold !== undefined && (
-          <div
-            className="absolute z-10 w-[2px] rounded-full"
-            style={{
-              left:       `${threshold}%`,
-              top:        "-2px",
-              bottom:     "-2px",
-              background: "white",
-              boxShadow:  "0 0 0 1px rgba(0,0,0,0.3)",
-            }}
-          />
-        )}
-      </div>
-      <div className="flex justify-between text-xs text-text-muted">
-        <span className="text-success font-medium">{votes.yes} Yes ({yesPercent}%)</span>
-        <span>{votes.abstain} Abstain ({abstainPercent}%)</span>
-        <span className="text-danger font-medium">{votes.no} No ({noPercent}%)</span>
-      </div>
-      <p className="text-xs text-text-muted">{total} tổng phiếu</p>
-    </div>
-  )
 }
 
 // ── Vote section ──────────────────────────────────────────────────────────────
@@ -344,7 +288,6 @@ export default function GovernanceActionDetailPage({
       .finally(() => setLoading(false))
   }, [txHash, index, network])
 
-  const thresholds = action ? VOTE_THRESHOLDS[action.actionType] : undefined
   const heading = anchorTitle ?? action?.type ?? "Governance Action"
 
   return (
@@ -434,23 +377,9 @@ export default function GovernanceActionDetailPage({
           </div>
 
           {/* Vote results card */}
-          <div className="card-static space-y-6 animate-fade-in">
+          <div className="card-static space-y-3 animate-fade-in">
             <h2 className="font-semibold text-base">Kết quả bỏ phiếu</h2>
-            <VoteBar
-              label="DRep"
-              votes={action.drepVotes}
-              threshold={thresholds?.drep ? Math.round(thresholds.drep * 100) : undefined}
-            />
-            <VoteBar
-              label="SPO"
-              votes={action.spoVotes}
-              threshold={thresholds?.spo ? Math.round(thresholds.spo * 100) : undefined}
-            />
-            <VoteBar
-              label="Constitutional Committee"
-              votes={action.ccVotes}
-              threshold={thresholds?.cc ? Math.round(thresholds.cc * 100) : undefined}
-            />
+            <VoteResultsPanel action={action} />
           </div>
 
           {/* Vote action */}
