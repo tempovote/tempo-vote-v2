@@ -51,13 +51,19 @@ class TxBuilder(private val network: Network) {
         anchorDataHash: String,
         selfDelegate: Boolean = false,
     ): String {
+        println("[DRepRegister] selfDelegate=$selfDelegate rewardAddress=$rewardAddress drepId=$drepId")
+
         val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
         val drepCredential = drepIdToCredential(drepId)
 
         var tx = Tx().registerDRep(drepCredential, anchor)
         if (selfDelegate) {
+            println("[DRepRegister] Adding VoteDelegCert for rewardAddress=$rewardAddress")
             val selfDrep = LegacyDRepId.toDrep(drepId, DRepType.ADDR_KEYHASH)
             tx = tx.delegateVotingPowerTo(rewardAddress, selfDrep)
+            println("[DRepRegister] VoteDelegCert added successfully")
+        } else {
+            println("[DRepRegister] selfDelegate=false — skipping VoteDelegCert")
         }
 
         return buildUnsigned(tx.from(changeAddress), changeAddress)
