@@ -45,7 +45,10 @@ function extractTitle(data: unknown): string | null {
   if (!data || typeof data !== "object") return null
   const d = data as Record<string, unknown>
   const body = d.body as Record<string, unknown> | undefined
-  return ((body?.title ?? d.title) as string | undefined) ?? null
+  // GA anchor: body.title / title
+  // DRep CIP-119: body.givenName / givenName
+  const val = body?.title ?? d.title ?? body?.givenName ?? d.givenName
+  return (val as string | undefined) ?? null
 }
 
 async function fetchTitle(anchorUrl: string): Promise<string | null> {

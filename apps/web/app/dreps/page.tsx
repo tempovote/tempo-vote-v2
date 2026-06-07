@@ -10,6 +10,10 @@ import {
   mockTopDRepsByChange,
 } from "@/lib/mock-data"
 import DRepList from "@/components/drep/DRepList"
+import { useWalletStore } from "@/store/wallet"
+import { useDRepList } from "@/hooks/useDRepList"
+import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
+import { lovelaceToAda } from "@/lib/governance"
 import {
   PieChart,
   Pie,
@@ -21,7 +25,6 @@ import {
 
 function looksLikeDrepId(q: string): boolean {
   const t = q.trim()
-  // CIP-105 bech32 (drep1...) or raw 56-char hex credential
   return t.toLowerCase().startsWith("drep1") || /^[0-9a-f]{56}$/i.test(t)
 }
 
@@ -41,7 +44,32 @@ const ccMembersPieData = mockRegions
 
 export default function DRepsPage() {
   const router = useRouter()
+  const network = useWalletStore((s) => s.selectedNetwork)
   const [inputValue, setInputValue] = useState("")
+
+  const q = inputValue.trim().toLowerCase()
+  const isIdQuery = looksLikeDrepId(inputValue)
+  const nameQ = isIdQuery ? "" : q
+
+  // Real DRep list — fetch once per network, ready when user starts searching
+  const { dreps, isLoading: isDrepsLoading } = useDRepList(network)
+
+  // Batch-fetch DRep names from IPFS anchors only while user is name-searching.
+  // Lazy-load top 150 by voting power (already sorted desc) to avoid IPFS overload.
+  const anchorUrlsForSearch = nameQ ? dreps.slice(0, 150).map((d) => d.anchorUrl) : []
+  const namesMap = useAnchorTitlesMap(anchorUrlsForSearch)
+
+  // Filter real DReps by ID fragment or by loaded name
+  const searchResults = nameQ
+    ? dreps.filter((d) => {
+        const name = d.anchorUrl ? (namesMap.get(d.anchorUrl) ?? "") : ""
+        return (
+          d.id.toLowerCase().includes(nameQ) ||
+          d.credHex.toLowerCase().includes(nameQ) ||
+          name.toLowerCase().includes(nameQ)
+        )
+      })
+    : []
 
   const handleNavigateToId = useCallback(() => {
     const trimmed = inputValue.trim()
@@ -50,31 +78,15 @@ export default function DRepsPage() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && looksLikeDrepId(inputValue)) handleNavigateToId()
+      if (e.key === "Enter" && isIdQuery) handleNavigateToId()
     },
-    [inputValue, handleNavigateToId],
+    [isIdQuery, handleNavigateToId],
   )
 
-  // Live filter: always derived from inputValue so results update as user types
-  const q = inputValue.trim().toLowerCase()
-  const isIdQuery = looksLikeDrepId(inputValue)
-  // Name filter only applies when query doesn't look like an ID
-  const nameQ = isIdQuery ? "" : q
-  const filteredByDelegators = nameQ
-    ? mockTopDRepsByDelegators.filter((d) => d.name.toLowerCase().includes(nameQ))
-    : mockTopDRepsByDelegators
-  const filteredByVotingPower = nameQ
-    ? mockTopDRepsByVotingPower.filter((d) => d.name.toLowerCase().includes(nameQ))
-    : mockTopDRepsByVotingPower
-  const filteredByChange = nameQ
-    ? mockTopDRepsByChange.filter((d) => d.name.toLowerCase().includes(nameQ))
-    : mockTopDRepsByChange
-
-  const hasNoResults =
-    nameQ &&
-    filteredByDelegators.length === 0 &&
-    filteredByVotingPower.length === 0 &&
-    filteredByChange.length === 0
+  // Count how many anchor URLs still need name resolution
+  const anchorWithUrl = anchorUrlsForSearch.filter(Boolean).length
+  const namesLoaded = namesMap.size
+  const namesStillLoading = nameQ && namesLoaded < anchorWithUrl
 
   return (
     <div className="page-container-wide space-y-10">
@@ -255,37 +267,99 @@ export default function DRepsPage() {
 
       {/* DRep Lists */}
       <div className="space-y-10">
-        {hasNoResults ? (
-          <div className="text-center py-12 text-text-muted space-y-2">
-            <p className="text-3xl">🔍</p>
-            <p className="font-medium">Không tìm thấy DRep nào khớp với &ldquo;{q}&rdquo;</p>
-            <button
-              className="text-sm text-accent-light underline"
-              onClick={() => setInputValue("")}
-            >
-              Xoá tìm kiếm
-            </button>
+        {nameQ ? (
+          /* Real search results from on-chain data */
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <h3 className="text-base font-semibold">Kết quả tìm kiếm</h3>
+              {isDrepsLoading && (
+                <span className="text-xs text-text-muted">Đang tải danh sách...</span>
+              )}
+              {namesStillLoading && !isDrepsLoading && (
+                <span className="text-xs text-text-muted">
+                  Đang tải tên ({namesLoaded}/{anchorWithUrl})...
+                </span>
+              )}
+            </div>
+
+            {!isDrepsLoading && searchResults.length === 0 ? (
+              <div className="text-center py-10 text-text-muted space-y-2">
+                <p className="text-3xl">🔍</p>
+                <p className="font-medium">
+                  Không tìm thấy DRep phù hợp với &ldquo;{q}&rdquo;
+                </p>
+                {namesStillLoading && (
+                  <p className="text-xs">Tên DRep đang tải — thử lại sau vài giây</p>
+                )}
+                <button
+                  className="text-sm text-accent-light underline"
+                  onClick={() => setInputValue("")}
+                >
+                  Xoá tìm kiếm
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {searchResults.slice(0, 30).map((drep) => {
+                  const name = drep.anchorUrl
+                    ? (namesMap.get(drep.anchorUrl) ?? null)
+                    : null
+                  const initial = (name ?? drep.id).slice(4, 5).toUpperCase() || "D"
+                  return (
+                    <Link
+                      key={drep.id}
+                      href={`/dreps/${encodeURIComponent(drep.id)}`}
+                      className="block"
+                    >
+                      <div className="card flex items-center gap-4 !py-3 !px-4 hover:border-border-default transition-colors cursor-pointer">
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+                          style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                        >
+                          {initial}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {name ? (
+                            <div className="font-medium text-sm truncate">{name}</div>
+                          ) : (
+                            <div className="text-xs text-text-muted italic">
+                              {drep.anchorUrl ? "Đang tải tên..." : "Không có tên"}
+                            </div>
+                          )}
+                          <div className="text-xs text-text-muted font-mono truncate">
+                            {drep.id}
+                          </div>
+                        </div>
+                        <div className="text-xs text-text-secondary shrink-0">
+                          {lovelaceToAda(drep.votingPower)} ₳
+                        </div>
+                      </div>
+                    </Link>
+                  )
+                })}
+                {searchResults.length > 30 && (
+                  <p className="text-xs text-center text-text-muted py-2">
+                    Còn {searchResults.length - 30} DRep khác — nhập thêm để thu hẹp kết quả
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         ) : (
+          /* Mock top-lists when not searching */
           <>
-            {filteredByDelegators.length > 0 && (
-              <DRepList
-                title="Top DReps with the most delegators"
-                dreps={filteredByDelegators}
-              />
-            )}
-            {filteredByVotingPower.length > 0 && (
-              <DRepList
-                title="Top DReps with the largest voting power"
-                dreps={filteredByVotingPower}
-              />
-            )}
-            {filteredByChange.length > 0 && (
-              <DRepList
-                title="Top DReps with the largest voting power change"
-                dreps={filteredByChange}
-              />
-            )}
+            <DRepList
+              title="Top DReps with the most delegators"
+              dreps={mockTopDRepsByDelegators}
+            />
+            <DRepList
+              title="Top DReps with the largest voting power"
+              dreps={mockTopDRepsByVotingPower}
+            />
+            <DRepList
+              title="Top DReps with the largest voting power change"
+              dreps={mockTopDRepsByChange}
+            />
           </>
         )}
       </div>
