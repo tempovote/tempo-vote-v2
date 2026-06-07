@@ -52,12 +52,8 @@ fun Route.governanceRoutes() {
             val credentialHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull()
                 ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid drepId"))
 
-            // Get raw proposals (cache-first)
-            val raw = CardanoCache.govActions.getIfPresent(network.name) ?: run {
-                val r = OgmiosStateQueries(network).getGovernanceProposals()
-                CardanoCache.govActions.put(network.name, r)
-                r
-            }
+            // Bypass cache: always query Ogmios fresh so recently submitted votes are visible immediately
+            val raw = OgmiosStateQueries(network).getGovernanceProposals()
 
             val array: JsonArray = when (raw) {
                 is JsonArray  -> raw
