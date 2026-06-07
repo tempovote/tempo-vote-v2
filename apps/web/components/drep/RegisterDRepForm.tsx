@@ -288,37 +288,39 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
         ) : (
           <div className="space-y-3">
             {data.references.map((ref, i) => (
-              <div key={i} className="bg-bg-elevated rounded-lg p-3 space-y-2">
-                <div className="flex gap-2">
-                  <select
-                    className="input text-sm w-28 shrink-0"
-                    value={ref.type}
-                    onChange={e => updateReference(i, { type: e.target.value })}
-                  >
-                    <option value="Link">Link</option>
-                    <option value="GovernanceMetadata">Governance</option>
-                    <option value="Identity">Identity</option>
-                  </select>
+              <div key={i} className="bg-bg-elevated rounded-lg p-3 flex gap-2 items-start">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex gap-2">
+                    <select
+                      className="input text-sm w-28 shrink-0 pr-7"
+                      value={ref.type}
+                      onChange={e => updateReference(i, { type: e.target.value })}
+                    >
+                      <option value="Link">Link</option>
+                      <option value="GovernanceMetadata">Governance</option>
+                      <option value="Identity">Identity</option>
+                    </select>
+                    <input
+                      className="input text-sm flex-1 min-w-0"
+                      placeholder="Nhãn (vd: Twitter)"
+                      value={ref.label}
+                      onChange={e => updateReference(i, { label: e.target.value })}
+                    />
+                  </div>
                   <input
-                    className="input text-sm flex-1"
-                    placeholder="Nhãn (vd: Twitter)"
-                    value={ref.label}
-                    onChange={e => updateReference(i, { label: e.target.value })}
+                    className="input text-sm w-full"
+                    placeholder="https://..."
+                    value={ref.uri}
+                    onChange={e => updateReference(i, { uri: e.target.value })}
                   />
-                  <button
-                    className="text-text-muted hover:text-danger transition-colors shrink-0 text-lg leading-none"
-                    onClick={() => removeReference(i)}
-                    title="Xóa"
-                  >
-                    ×
-                  </button>
                 </div>
-                <input
-                  className="input text-sm w-full"
-                  placeholder="https://..."
-                  value={ref.uri}
-                  onChange={e => updateReference(i, { uri: e.target.value })}
-                />
+                <button
+                  className="text-text-muted hover:text-danger transition-colors shrink-0 text-lg leading-none mt-1.5"
+                  onClick={() => removeReference(i)}
+                  title="Xóa"
+                >
+                  ×
+                </button>
               </div>
             ))}
           </div>
