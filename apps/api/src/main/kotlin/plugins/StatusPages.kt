@@ -7,6 +7,9 @@ import io.ktor.server.response.*
 
 fun Application.configureStatusPages() {
     install(StatusPages) {
+        status(HttpStatusCode.NotFound) { call, _ ->
+            call.respond(HttpStatusCode.NotFound, mapOf("error" to "Endpoint not found"))
+        }
         exception<IllegalArgumentException> { call, cause ->
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "Bad request")))
         }

@@ -79,8 +79,15 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
           }),
         })
         if (!metaRes.ok) {
-          const err = await metaRes.json().catch(() => ({ error: "Metadata upload failed" }))
-          throw new Error(err.error ?? "Không thể upload rationale lên IPFS")
+          if (metaRes.status === 401) {
+            throw new Error("Phiên xác thực hết hạn. Vui lòng ngắt kết nối ví và kết nối lại.")
+          }
+          let errMsg = `Upload rationale thất bại (HTTP ${metaRes.status})`
+          try {
+            const errData = await metaRes.json()
+            if (errData.error) errMsg = errData.error
+          } catch { /* response body không phải JSON, dùng status code */ }
+          throw new Error(errMsg)
         }
         const metaData = await metaRes.json()
         rationaleUrl = metaData.anchorUrl
