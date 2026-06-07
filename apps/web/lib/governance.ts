@@ -103,6 +103,20 @@ export function resolveAnchorUrl(url: string | null): string | null {
   return urls[0] ?? null
 }
 
+// 28-byte hex credential → bech32 DRep ID (drep1...)
+export function credentialHexToDrepId(hex: string): string {
+  try {
+    const bytes = new Uint8Array(28)
+    for (let i = 0; i < 28; i++) {
+      bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+    }
+    const words = bech32.toWords(bytes)
+    return bech32.encode("drep", words, 200)
+  } catch {
+    return hex
+  }
+}
+
 // CIP-129: governance action ID → bech32 (gov_action1...)
 // Payload: txHash bytes (32) + index as 4-byte big-endian
 export function govActionIdToBech32(txHash: string, index: number): string {
