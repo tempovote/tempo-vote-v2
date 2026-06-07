@@ -288,37 +288,44 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
         ) : (
           <div className="space-y-3">
             {data.references.map((ref, i) => (
-              <div key={i} className="bg-bg-elevated rounded-lg p-3 space-y-2">
-                <div className="flex gap-2">
-                  <select
-                    className="input text-sm w-28 shrink-0"
-                    value={ref.type}
-                    onChange={e => updateReference(i, { type: e.target.value })}
-                  >
-                    <option value="Link">Link</option>
-                    <option value="GovernanceMetadata">Governance</option>
-                    <option value="Identity">Identity</option>
-                  </select>
+              <div key={i} className="bg-bg-elevated rounded-lg p-3 flex gap-2 items-start">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex gap-2">
+                    <div className="relative w-28 shrink-0">
+                      <select
+                        className="input text-sm w-full appearance-none pr-8"
+                        value={ref.type}
+                        onChange={e => updateReference(i, { type: e.target.value })}
+                      >
+                        <option value="Link">Link</option>
+                        <option value="GovernanceMetadata">Governance</option>
+                        <option value="Identity">Identity</option>
+                      </select>
+                      <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </div>
+                    <input
+                      className="input text-sm flex-1 min-w-0"
+                      placeholder="Nhãn (vd: Twitter)"
+                      value={ref.label}
+                      onChange={e => updateReference(i, { label: e.target.value })}
+                    />
+                  </div>
                   <input
-                    className="input text-sm flex-1"
-                    placeholder="Nhãn (vd: Twitter)"
-                    value={ref.label}
-                    onChange={e => updateReference(i, { label: e.target.value })}
+                    className="input text-sm w-full"
+                    placeholder="https://..."
+                    value={ref.uri}
+                    onChange={e => updateReference(i, { uri: e.target.value })}
                   />
-                  <button
-                    className="text-text-muted hover:text-danger transition-colors shrink-0 text-lg leading-none"
-                    onClick={() => removeReference(i)}
-                    title="Xóa"
-                  >
-                    ×
-                  </button>
                 </div>
-                <input
-                  className="input text-sm w-full"
-                  placeholder="https://..."
-                  value={ref.uri}
-                  onChange={e => updateReference(i, { uri: e.target.value })}
-                />
+                <button
+                  className="text-text-muted hover:text-danger transition-colors shrink-0 text-lg leading-none mt-1.5"
+                  onClick={() => removeReference(i)}
+                  title="Xóa"
+                >
+                  ×
+                </button>
               </div>
             ))}
           </div>

@@ -2,9 +2,10 @@ interface Props {
   txHash: string
   drepName: string
   networkId: number | null
+  successMessage?: string
 }
 
-export default function RegisterDRepSuccess({ txHash, drepName, networkId }: Props) {
+export default function RegisterDRepSuccess({ txHash, drepName, networkId, successMessage = "Đăng ký thành công!" }: Props) {
   const explorerBase =
     networkId === 1
       ? "https://cardanoscan.io/transaction"
@@ -23,7 +24,7 @@ export default function RegisterDRepSuccess({ txHash, drepName, networkId }: Pro
       </div>
 
       <div>
-        <h2 className="text-xl font-bold text-text-primary">Đăng ký thành công!</h2>
+        <h2 className="text-xl font-bold text-text-primary">{successMessage}</h2>
         <p className="text-text-secondary text-sm mt-1">
           <span className="text-accent font-semibold">{drepName}</span> đã được gửi lên Cardano blockchain.
         </p>

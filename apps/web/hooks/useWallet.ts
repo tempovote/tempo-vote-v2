@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useCallback } from "react"
+import { useEffect, useCallback, useState } from "react"
 import { useWalletStore } from "@/store/wallet"
 import type { DelegatedDrep } from "@/store/wallet"
 import {
@@ -205,6 +205,13 @@ async function fetchDRepStatus(
 export function useWallet() {
   const store = useWalletStore()
 
+  // True while autoReconnect hasn't finished — prevents "Kết nối ví" guard
+  // from flashing on pages that require an authenticated wallet (update, retire).
+  // Must start as false so SSR and first client render match (no hydration error).
+  // A separate useEffect (below) sets it to true right after mount if a reconnect
+  // is expected, before autoReconnect's async work begins.
+  const [isWalletHydrating, setIsWalletHydrating] = useState(false)
+
   /** Internal: fetch all wallet data after enabling */
   const _populate = useCallback(async (walletName: string) => {
     const api = await connectWallet(walletName)
@@ -274,18 +281,22 @@ export function useWallet() {
 
   /** Silent reconnect on page load — no popup if wallet already approved */
   const autoReconnect = useCallback(async () => {
-    if (store.isConnected) return
-    let savedWallet: string | null = null
-    try { savedWallet = localStorage.getItem(STORAGE_KEY) } catch { return }
-    if (!savedWallet) return
-
-    const enabled = await isWalletEnabled(savedWallet).catch(() => false)
-    if (!enabled) return
-
     try {
-      await _populate(savedWallet)
-    } catch {
-      try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+      if (store.isConnected) return
+      let savedWallet: string | null = null
+      try { savedWallet = localStorage.getItem(STORAGE_KEY) } catch { return }
+      if (!savedWallet) return
+
+      const enabled = await isWalletEnabled(savedWallet).catch(() => false)
+      if (!enabled) return
+
+      try {
+        await _populate(savedWallet)
+      } catch {
+        try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+      }
+    } finally {
+      setIsWalletHydrating(false)
     }
   }, [store.isConnected, _populate])
 
@@ -301,6 +312,18 @@ export function useWallet() {
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [store])
 
+  // Must be defined BEFORE the autoReconnect effect so it runs first.
+  // Sets hydrating=true synchronously (after mount) when a reconnect is expected,
+  // so the spinner renders before autoReconnect's async work finishes.
+  useEffect(() => {
+    try {
+      if (!store.isConnected && localStorage.getItem(STORAGE_KEY)) {
+        setIsWalletHydrating(true)
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     autoReconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,6 +334,7 @@ export function useWallet() {
     connect,
     disconnect,
     autoReconnect,
+    isWalletHydrating,
     availableWallets: getAvailableWallets(),
   }
 }
