@@ -42,49 +42,36 @@ const ccMembersPieData = mockRegions
 export default function DRepsPage() {
   const router = useRouter()
   const [inputValue, setInputValue] = useState("")
-  const [activeQuery, setActiveQuery] = useState("")
 
-  const handleSearch = useCallback(() => {
+  const handleNavigateToId = useCallback(() => {
     const trimmed = inputValue.trim()
-    if (!trimmed) return
-    if (looksLikeDrepId(trimmed)) {
-      router.push(`/dreps/${encodeURIComponent(trimmed)}`)
-    } else {
-      setActiveQuery(trimmed)
-    }
+    if (trimmed) router.push(`/dreps/${encodeURIComponent(trimmed)}`)
   }, [inputValue, router])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") handleSearch()
+      if (e.key === "Enter" && looksLikeDrepId(inputValue)) handleNavigateToId()
     },
-    [handleSearch],
+    [inputValue, handleNavigateToId],
   )
 
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = e.target.value
-      setInputValue(val)
-      // Clear active query if user erases the search box
-      if (!val.trim()) setActiveQuery("")
-    },
-    [],
-  )
-
-  const q = activeQuery.toLowerCase()
-  const filteredByDelegators = q
-    ? mockTopDRepsByDelegators.filter((d) => d.name.toLowerCase().includes(q))
+  // Live filter: always derived from inputValue so results update as user types
+  const q = inputValue.trim().toLowerCase()
+  const isIdQuery = looksLikeDrepId(inputValue)
+  // Name filter only applies when query doesn't look like an ID
+  const nameQ = isIdQuery ? "" : q
+  const filteredByDelegators = nameQ
+    ? mockTopDRepsByDelegators.filter((d) => d.name.toLowerCase().includes(nameQ))
     : mockTopDRepsByDelegators
-  const filteredByVotingPower = q
-    ? mockTopDRepsByVotingPower.filter((d) => d.name.toLowerCase().includes(q))
+  const filteredByVotingPower = nameQ
+    ? mockTopDRepsByVotingPower.filter((d) => d.name.toLowerCase().includes(nameQ))
     : mockTopDRepsByVotingPower
-  const filteredByChange = q
-    ? mockTopDRepsByChange.filter((d) => d.name.toLowerCase().includes(q))
+  const filteredByChange = nameQ
+    ? mockTopDRepsByChange.filter((d) => d.name.toLowerCase().includes(nameQ))
     : mockTopDRepsByChange
 
-  const isIdQuery = looksLikeDrepId(inputValue)
   const hasNoResults =
-    activeQuery &&
+    nameQ &&
     filteredByDelegators.length === 0 &&
     filteredByVotingPower.length === 0 &&
     filteredByChange.length === 0
@@ -242,12 +229,12 @@ export default function DRepsPage() {
               type="text"
               placeholder="Search by name, drep1… or 56-char credential hex"
               value={inputValue}
-              onChange={handleInputChange}
+              onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               className="input pl-10"
             />
           </div>
-          <button className="btn-primary px-6" onClick={handleSearch}>
+          <button className="btn-primary px-6" onClick={isIdQuery ? handleNavigateToId : undefined}>
             {isIdQuery ? "Go to Profile" : "Search"}
           </button>
         </div>
@@ -271,10 +258,10 @@ export default function DRepsPage() {
         {hasNoResults ? (
           <div className="text-center py-12 text-text-muted space-y-2">
             <p className="text-3xl">🔍</p>
-            <p className="font-medium">Không tìm thấy DRep nào khớp với &ldquo;{activeQuery}&rdquo;</p>
+            <p className="font-medium">Không tìm thấy DRep nào khớp với &ldquo;{q}&rdquo;</p>
             <button
               className="text-sm text-accent-light underline"
-              onClick={() => { setActiveQuery(""); setInputValue("") }}
+              onClick={() => setInputValue("")}
             >
               Xoá tìm kiếm
             </button>
