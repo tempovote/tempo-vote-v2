@@ -23,7 +23,7 @@ export default function Navbar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const { isConnected, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal } =
+  const { isConnected, isWalletHydrating, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal } =
     useWalletStore()
 
   // When wallet is connected, network is locked to wallet's network
@@ -125,7 +125,7 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Wallet button — 2 states */}
+            {/* Wallet button — 3 states: connected / hydrating / disconnected */}
             {isConnected && changeAddress ? (
               <button
                 className="wallet-connected-btn"
@@ -133,7 +133,6 @@ export default function Navbar() {
                 title={changeAddress}
                 id="wallet-connected-btn"
               >
-                {/* Mini avatar */}
                 <div
                   className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
                   style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
@@ -145,6 +144,14 @@ export default function Navbar() {
                   <polyline points="6 9 12 15 18 9"/>
                 </svg>
               </button>
+            ) : isWalletHydrating ? (
+              <div className="btn-primary text-sm px-4 py-1.5 opacity-70 flex items-center gap-2 cursor-default pointer-events-none select-none">
+                <svg className="w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Đang kết nối...
+              </div>
             ) : (
               <button
                 className="btn-primary text-sm px-4 py-1.5"
