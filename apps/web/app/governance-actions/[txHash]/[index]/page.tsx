@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
-import { useMyVote, type MyVote } from "@/hooks/useMyVote"
+import { useMyVote, writeOptimisticVote, type MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
 import { ActionIdChip } from "@/components/governance/ActionIdChip"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
@@ -146,6 +146,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
         rationaleUrl,
         rationaleHash,
       })
+      writeOptimisticVote(action.txHash, action.index, choice)
       setSuccessTxHash(txHash)
       setStep("success")
     } catch (err: unknown) {
@@ -412,6 +413,7 @@ export default function GovernanceActionDetailPage({
   const anchorTitle = useAnchorTitle(action?.anchorUrl ?? null)
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
     setFetchError(null)
     setAction(null)
@@ -421,14 +423,17 @@ export default function GovernanceActionDetailPage({
         return r.json()
       })
       .then((data) => {
+        if (cancelled) return
         const parsed = GovernanceActionSchema.safeParse(data)
         if (parsed.success) setAction(parsed.data)
         else setFetchError("Dữ liệu không hợp lệ từ server")
       })
       .catch((err: unknown) => {
+        if (cancelled) return
         setFetchError(err instanceof Error ? err.message : "Không thể tải governance action")
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [txHash, index, network])
 
   const heading = anchorTitle ?? action?.type ?? "Governance Action"
