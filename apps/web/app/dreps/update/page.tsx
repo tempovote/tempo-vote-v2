@@ -199,7 +199,7 @@ function friendlyError(msg: string): { title: string; detail: string } {
 }
 
 export default function UpdateDRepPage() {
-  const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId } = useWallet()
+  const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId, isWalletHydrating } = useWallet()
   const { submitTx } = useTx()
 
   const drepId = drepKey?.dRepIDCip105 ?? null
@@ -254,6 +254,17 @@ export default function UpdateDRepPage() {
   }, [profileLoading, profile, prefilled])
 
   // ── Guards ──────────────────────────────────────────────────────────────
+  if (isWalletHydrating) {
+    return (
+      <main className="page-container py-16 flex justify-center">
+        <div className="flex items-center gap-3 text-text-muted text-sm">
+          <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+          Đang khôi phục kết nối ví...
+        </div>
+      </main>
+    )
+  }
+
   if (!isConnected) {
     return (
       <main className="page-container py-16 text-center">
