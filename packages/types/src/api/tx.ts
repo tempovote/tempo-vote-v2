@@ -32,6 +32,8 @@ export const BuildTxRequestSchema = z.object({
   // Delegation
   delegationType: z.enum(["drep", "abstain", "no_confidence"]).optional(),
   targetDrepId: z.string().optional(),
+  // DREP_REGISTER: include a self-delegation cert in the same TX (atomic, no double-spent risk)
+  selfDelegate: z.boolean().optional(),
 })
 export type BuildTxRequest = z.infer<typeof BuildTxRequestSchema>
 

@@ -3,9 +3,16 @@ interface Props {
   drepName: string
   networkId: number | null
   successMessage?: string
+  selfDelegated?: boolean
 }
 
-export default function RegisterDRepSuccess({ txHash, drepName, networkId, successMessage = "Đăng ký thành công!" }: Props) {
+export default function RegisterDRepSuccess({
+  txHash,
+  drepName,
+  networkId,
+  successMessage = "Đăng ký thành công!",
+  selfDelegated = false,
+}: Props) {
   const explorerBase =
     networkId === 1
       ? "https://cardanoscan.io/transaction"
@@ -28,6 +35,11 @@ export default function RegisterDRepSuccess({ txHash, drepName, networkId, succe
         <p className="text-text-secondary text-sm mt-1">
           <span className="text-accent font-semibold">{drepName}</span> đã được gửi lên Cardano blockchain.
         </p>
+        {selfDelegated && (
+          <p className="text-text-muted text-xs mt-1">
+            Giao dịch bao gồm cả đăng ký DRep + ủy quyền voting power (atomic).
+          </p>
+        )}
       </div>
 
       {/* TX Hash */}
@@ -50,6 +62,11 @@ export default function RegisterDRepSuccess({ txHash, drepName, networkId, succe
           Transaction cần khoảng 20–60 giây để được confirm. Sau khi confirm, DRep ID của bạn sẽ
           xuất hiện trong danh sách DRep trên chain và ví sẽ hiển thị trạng thái đã đăng ký.
         </p>
+        {selfDelegated && (
+          <p className="text-text-secondary text-xs mt-1.5">
+            Voting power sẽ được cập nhật tại <span className="text-text-primary font-medium">epoch boundary tiếp theo</span> (~1–5 ngày tùy mạng).
+          </p>
+        )}
       </div>
 
       {/* Actions */}

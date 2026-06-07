@@ -37,6 +37,8 @@ data class BuildTxRequest(
     // Delegation
     val delegationType: String? = null,  // drep | abstain | no_confidence
     val targetDrepId: String? = null,
+    // DREP_REGISTER: include a self-delegation cert in the same TX (atomic)
+    val selfDelegate: Boolean = false,
 )
 
 @Serializable
@@ -76,6 +78,7 @@ fun Route.transactionRoutes() {
                         drepId = req.drepId ?: error("drepId required"),
                         anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
                         anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                        selfDelegate = req.selfDelegate,
                     )
                     "DREP_UPDATE" -> builder.buildDRepUpdate(
                         changeAddress = req.changeAddress,
