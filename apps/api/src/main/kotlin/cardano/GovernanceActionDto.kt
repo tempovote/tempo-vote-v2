@@ -13,9 +13,35 @@ data class GovernanceActionDto(
     val anchorHash: String?,
     val expiresEpoch: Int,
     val deposit: Long,          // lovelace
-    val drepVotes: VoteCounts,
+    val drepVotes: DRepVoteStats,
     val spoVotes: VoteCounts,
     val ccVotes: VoteCounts,
+)
+
+/**
+ * DRep vote totals with ADA voting power — implements the GovTool ratification formula.
+ *
+ * Ratification check (denominator = totalActiveDRepStake, abstain excluded):
+ *   Non-NoConfidence: yesTotal = yesVotingPower,           noTotal = noVotingPower + autoNoConfidenceStake
+ *   NoConfidence:     yesTotal = yesVotingPower + autoNoConfidenceStake, noTotal = noVotingPower
+ *
+ * Ref: https://docs.gov.tools/cardano-govtool/faqs/how-governance-action-vote-totals-are-calculated-in-govtool
+ */
+@Serializable
+data class DRepVoteStats(
+    val yes: Int,
+    val no: Int,
+    val abstain: Int,
+    /** Lovelace staked by DReps that voted yes (active DReps only, excludes predefined). */
+    val yesVotingPower: Long,
+    val noVotingPower: Long,
+    val abstainVotingPower: Long,
+    /** Stake delegated to the always-abstain predefined DRep. Added to abstain total, NOT in denominator. */
+    val autoAbstainStake: Long,
+    /** Stake delegated to the always-no-confidence predefined DRep. Counted as No (or Yes for NoConfidence). IS in denominator. */
+    val autoNoConfidenceStake: Long,
+    /** Denominator: sum of all active registered DRep stakes + autoNoConfidenceStake (excludes autoAbstain). */
+    val totalActiveDRepStake: Long,
 )
 
 @Serializable
@@ -27,8 +53,62 @@ data class VoteCounts(
     val total: Int get() = yes + no + abstain
 }
 
+/**
+ * Parsed stake context from `queryLedgerState/delegateRepresentatives`.
+ * Built once per cache refresh and passed into proposal mapping.
+ */
+data class DRepStakeContext(
+    /** credentialHex (56-char) → lovelace for all registered active DReps. */
+    val stakeMap: Map<String, Long>,
+    val autoAbstainStake: Long,
+    val autoNoConfidenceStake: Long,
+    /** = Σ(stakeMap.values) + autoNoConfidenceStake — the ratification denominator. */
+    val totalActiveDRepStake: Long,
+) {
+    companion object {
+        val EMPTY = DRepStakeContext(emptyMap(), 0L, 0L, 0L)
+    }
+}
+
+/**
+ * Parse DRep stake distribution from the `delegateRepresentatives` Ogmios response.
+ * Handles both JsonArray (direct) and JsonObject wrapper shapes.
+ */
+fun parseDRepStakeContext(raw: JsonElement): DRepStakeContext {
+    val entries: JsonArray = when (raw) {
+        is JsonArray  -> raw
+        is JsonObject -> raw["delegateRepresentatives"]?.jsonArray
+            ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+            ?: return DRepStakeContext.EMPTY
+        else -> return DRepStakeContext.EMPTY
+    }
+
+    val stakeMap = mutableMapOf<String, Long>()
+    var autoAbstainStake = 0L
+    var autoNoConfidenceStake = 0L
+
+    for (entry in entries) {
+        val obj = entry.jsonObject
+        val type  = obj["type"]?.jsonPrimitive?.contentOrNull ?: continue
+        val stake = obj["stake"]?.jsonObject?.let { extractLovelace(it) } ?: 0L
+
+        when (type) {
+            "abstain"      -> autoAbstainStake = stake
+            "noConfidence" -> autoNoConfidenceStake = stake
+            "registered"   -> {
+                val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: continue
+                stakeMap[id] = stake
+            }
+        }
+    }
+
+    val totalActiveDRepStake = stakeMap.values.sumOf { it } + autoNoConfidenceStake
+
+    return DRepStakeContext(stakeMap, autoAbstainStake, autoNoConfidenceStake, totalActiveDRepStake)
+}
+
 /** Map one Ogmios `governanceProposals` item → GovernanceActionDto. Returns null on parse error. */
-fun mapOgmiosProposal(obj: JsonObject): GovernanceActionDto? = runCatching {
+fun mapOgmiosProposal(obj: JsonObject, stakeCtx: DRepStakeContext = DRepStakeContext.EMPTY): GovernanceActionDto? = runCatching {
     val proposal = obj["proposal"]?.jsonObject ?: return null
     val txHash = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return null
     val index = proposal["index"]?.jsonPrimitive?.int ?: 0
@@ -49,9 +129,9 @@ fun mapOgmiosProposal(obj: JsonObject): GovernanceActionDto? = runCatching {
     // votes is an array of { issuer: { role, from, id }, vote: "yes"|"no"|"abstain" }
     val votes = obj["votes"]?.jsonArray ?: JsonArray(emptyList())
 
-    val drepVotes = aggregateVotes(votes, "delegateRepresentative")
-    val spoVotes = aggregateVotes(votes, "stakePoolOperator")
-    val ccVotes = aggregateVotes(votes, "constitutionalCommittee")
+    val drepVotes = aggregateDRepVotes(votes, stakeCtx)
+    val spoVotes  = aggregateVotes(votes, "stakePoolOperator")
+    val ccVotes   = aggregateVotes(votes, "constitutionalCommittee")
 
     GovernanceActionDto(
         txHash = txHash,
@@ -67,6 +147,37 @@ fun mapOgmiosProposal(obj: JsonObject): GovernanceActionDto? = runCatching {
         ccVotes = ccVotes,
     )
 }.getOrNull()
+
+private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {
+    var yes = 0; var no = 0; var abstain = 0
+    var yesPower = 0L; var noPower = 0L; var abstainPower = 0L
+
+    for (entry in votes) {
+        val obj  = entry.jsonObject
+        val role = obj["issuer"]?.jsonObject?.get("role")?.jsonPrimitive?.contentOrNull
+        if (role != "delegateRepresentative") continue
+        val id    = obj["issuer"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull ?: continue
+        val stake = stakeCtx.stakeMap[id] ?: 0L
+
+        when (obj["vote"]?.jsonPrimitive?.contentOrNull) {
+            "yes"     -> { yes++;     yesPower    += stake }
+            "no"      -> { no++;      noPower     += stake }
+            "abstain" -> { abstain++; abstainPower += stake }
+        }
+    }
+
+    return DRepVoteStats(
+        yes = yes,
+        no = no,
+        abstain = abstain,
+        yesVotingPower = yesPower,
+        noVotingPower = noPower,
+        abstainVotingPower = abstainPower,
+        autoAbstainStake = stakeCtx.autoAbstainStake,
+        autoNoConfidenceStake = stakeCtx.autoNoConfidenceStake,
+        totalActiveDRepStake = stakeCtx.totalActiveDRepStake,
+    )
+}
 
 private fun aggregateVotes(votes: JsonArray, role: String): VoteCounts {
     var yes = 0; var no = 0; var abstain = 0

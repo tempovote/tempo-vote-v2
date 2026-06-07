@@ -1,5 +1,5 @@
 import { bech32 } from "bech32"
-import type { VoteCounts } from "@tempo/types"
+import type { VoteCounts, DRepVoteStats } from "@tempo/types"
 
 export function lovelaceToAda(lovelace: number): string {
   const ada = lovelace / 1_000_000
@@ -9,6 +9,38 @@ export function lovelaceToAda(lovelace: number): string {
   return ada.toFixed(0)
 }
 
+/**
+ * Compute DRep vote percentages using the GovTool ratification formula.
+ *
+ * Denominator = totalActiveDRepStake (excludes abstain stake).
+ * Non-NoConfidence: yesTotal = yesVotingPower,                     noTotal = noVotingPower + autoNoConfidenceStake
+ * NoConfidence:     yesTotal = yesVotingPower + autoNoConfidenceStake, noTotal = noVotingPower
+ *
+ * Returns notVotedPercent = remaining active stake that hasn't voted (shows ratification progress).
+ */
+export function computeDRepVotePercent(
+  votes: DRepVoteStats,
+  actionType: string
+): { yesPercent: number; noPercent: number; notVotedPercent: number } {
+  const isNoConfidence = actionType === "noConfidence"
+
+  const yesTotal = isNoConfidence
+    ? votes.yesVotingPower + votes.autoNoConfidenceStake
+    : votes.yesVotingPower
+
+  const noTotal = isNoConfidence
+    ? votes.noVotingPower
+    : votes.noVotingPower + votes.autoNoConfidenceStake
+
+  const total = votes.totalActiveDRepStake
+  if (total === 0) return { yesPercent: 0, noPercent: 0, notVotedPercent: 100 }
+
+  const yesPercent = Math.round((yesTotal / total) * 100)
+  const noPercent  = Math.round((noTotal  / total) * 100)
+  return { yesPercent, noPercent, notVotedPercent: Math.max(0, 100 - yesPercent - noPercent) }
+}
+
+/** Legacy count-based percentage (used for SPO and CC where voting power is not tracked). */
 export function computeVotePercent(votes: VoteCounts): {
   yesPercent: number
   noPercent: number
