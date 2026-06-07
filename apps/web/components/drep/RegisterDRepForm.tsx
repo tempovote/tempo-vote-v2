@@ -3,6 +3,7 @@
 import { useState, useRef } from "react"
 import { authHeader, getJwt } from "@/lib/api"
 import { useWallet } from "@/hooks/useWallet"
+import MarkdownEditor from "@/components/ui/MarkdownEditor"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -281,12 +282,11 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
         <label className="block text-sm font-medium text-text-secondary mb-1.5">
           Động lực
         </label>
-        <textarea
-          className="input w-full resize-none"
-          rows={3}
-          placeholder="Tại sao bạn muốn trở thành DRep?"
+        <MarkdownEditor
           value={data.motivations}
-          onChange={e => set({ motivations: e.target.value })}
+          onChange={v => set({ motivations: v })}
+          placeholder="Tại sao bạn muốn trở thành DRep?"
+          rows={4}
         />
       </div>
 
@@ -295,12 +295,11 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
         <label className="block text-sm font-medium text-text-secondary mb-1.5">
           Mục tiêu
         </label>
-        <textarea
-          className="input w-full resize-none"
-          rows={3}
-          placeholder="Bạn muốn đạt được gì khi là DRep?"
+        <MarkdownEditor
           value={data.objectives}
-          onChange={e => set({ objectives: e.target.value })}
+          onChange={v => set({ objectives: v })}
+          placeholder="Bạn muốn đạt được gì khi là DRep?"
+          rows={4}
         />
       </div>
 
@@ -309,12 +308,11 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
         <label className="block text-sm font-medium text-text-secondary mb-1.5">
           Kinh nghiệm & Năng lực
         </label>
-        <textarea
-          className="input w-full resize-none"
-          rows={3}
-          placeholder="Kinh nghiệm, kỹ năng hoặc chuyên môn liên quan..."
+        <MarkdownEditor
           value={data.qualifications}
-          onChange={e => set({ qualifications: e.target.value })}
+          onChange={v => set({ qualifications: v })}
+          placeholder="Kinh nghiệm, kỹ năng hoặc chuyên môn liên quan..."
+          rows={4}
         />
       </div>
 
