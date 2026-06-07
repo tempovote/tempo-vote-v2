@@ -23,8 +23,13 @@ export default function Navbar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const { isConnected, isWalletHydrating, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal } =
+  const { isConnected, isWalletHydrating, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal, reset } =
     useWalletStore()
+
+  const handleDisconnect = useCallback(() => {
+    reset()
+    try { localStorage.removeItem("tempo:last_wallet") } catch { /* ignore */ }
+  }, [reset])
 
   // When wallet is connected, network is locked to wallet's network
   const networkLocked = isConnected
@@ -127,23 +132,37 @@ export default function Navbar() {
 
             {/* Wallet button — 3 states: connected / hydrating / disconnected */}
             {isConnected && changeAddress ? (
-              <button
-                className="wallet-connected-btn"
-                onClick={openModal}
-                title={changeAddress}
-                id="wallet-connected-btn"
-              >
-                <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                  style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="wallet-connected-btn"
+                  onClick={openModal}
+                  title={changeAddress}
+                  id="wallet-connected-btn"
                 >
-                  {name ? name[0]?.toUpperCase() : "W"}
-                </div>
-                <span className="font-mono">{truncate(changeAddress)}</span>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-muted">
-                  <polyline points="6 9 12 15 18 9"/>
-                </svg>
-              </button>
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                    style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                  >
+                    {name ? name[0]?.toUpperCase() : "W"}
+                  </div>
+                  <span className="font-mono">{truncate(changeAddress)}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-muted">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
+                <button
+                  onClick={handleDisconnect}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors shrink-0"
+                  title="Disconnect wallet"
+                  aria-label="Disconnect wallet"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                </button>
+              </div>
             ) : isWalletHydrating ? (
               <div className="btn-primary text-sm px-4 py-1.5 opacity-70 flex items-center gap-2 cursor-default pointer-events-none select-none">
                 <svg className="w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
