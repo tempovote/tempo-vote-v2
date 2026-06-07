@@ -39,21 +39,28 @@ class TxBuilder(private val network: Network) {
      * @param anchorDataHash blake2b-256 hash of the metadata file (hex)
      * @return unsigned transaction CBOR hex
      */
+    /**
+     * @param selfDelegate if true, includes a VoteDelegCert to self in the same TX (atomic).
+     *   This avoids the double-spent / unconfirmed-DRep issues of submitting two separate TXs.
+     */
     fun buildDRepRegister(
         changeAddress: String,
         rewardAddress: String,
         drepId: String,
         anchorUrl: String,
         anchorDataHash: String,
+        selfDelegate: Boolean = false,
     ): String {
         val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
         val drepCredential = drepIdToCredential(drepId)
 
-        val tx = Tx()
-            .registerDRep(drepCredential, anchor)
-            .from(changeAddress)
+        var tx = Tx().registerDRep(drepCredential, anchor)
+        if (selfDelegate) {
+            val selfDrep = LegacyDRepId.toDrep(drepId, DRepType.ADDR_KEYHASH)
+            tx = tx.delegateVotingPowerTo(rewardAddress, selfDrep)
+        }
 
-        return buildUnsigned(tx, changeAddress)
+        return buildUnsigned(tx.from(changeAddress), changeAddress)
     }
 
     /**

@@ -11,12 +11,12 @@ import { resolveAnchorUrl } from "@/lib/governance"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
-type WizardStep = "step1" | "step2" | "confirm" | "uploading" | "signing" | "delegating" | "success" | "error"
+type WizardStep = "step1" | "step2" | "confirm" | "uploading" | "signing" | "success" | "error"
 
 const STEP_LABELS = ["Thông tin", "Hồ sơ", "Xác nhận", "Hoàn tất"]
 const STEP_INDEX: Record<WizardStep, number> = {
   step1: 0, step2: 1, confirm: 2,
-  uploading: 3, signing: 3, delegating: 3, success: 3, error: 3,
+  uploading: 3, signing: 3, success: 3, error: 3,
 }
 
 const EMPTY_FORM: DRepFormData = {
@@ -332,10 +332,9 @@ export default function RegisterDRepPage() {
   const [anchorCache, setAnchorCache] = useState<{ anchorUrl: string; anchorDataHash: string } | null>(null)
 
   const drepId = drepKey?.dRepIDCip105 ?? null
-  const isSubmitting = wizardStep === "uploading" || wizardStep === "signing" || wizardStep === "delegating"
+  const isSubmitting = wizardStep === "uploading" || wizardStep === "signing"
   const [selfDelegateEnabled, setSelfDelegateEnabled] = useState(true)
   const [communityEnabled, setCommunityEnabled] = useState(false)
-  const [delegateTxHash, setDelegateTxHash] = useState<string | null>(null)
 
   // ── Guards ──────────────────────────────────────────────────────────────
   if (!isConnected) {
@@ -436,35 +435,27 @@ export default function RegisterDRepPage() {
         setAnchorCache(anchor)
       }
 
-      // TX 1: register DRep
+      // Build + sign single TX: DRep registration cert (+ optional VoteDelegCert if selfDelegate).
+      // Both certs are atomic in the same block — no double-spent or unconfirmed-DRep risk.
       setWizardStep("signing")
       setStatusLabel(
         selfDelegateEnabled
-          ? "Ký giao dịch 1/2 — Đăng ký DRep..."
+          ? "Ký giao dịch — Đăng ký DRep + Ủy quyền voting power..."
           : "Đang yêu cầu ký giao dịch trong ví...",
       )
 
-      const hash = await submitTx("DREP_REGISTER", { drepId, anchorUrl: anchor.anchorUrl, anchorDataHash: anchor.anchorDataHash })
-
-      // TX 2: self-delegate voting power (non-blocking — user chose to enable)
-      let selfDelegateDone = false
-      if (selfDelegateEnabled) {
-        setWizardStep("delegating")
-        setStatusLabel("Ký giao dịch 2/2 — Ủy quyền voting power cho chính mình...")
-        try {
-          const delegateHash = await submitTx("DELEGATE", { targetDrepId: drepId, delegationType: "drep" })
-          setDelegateTxHash(delegateHash)
-          selfDelegateDone = true
-        } catch (delegateErr: unknown) {
-          console.warn("[DRep Register] Self-delegation failed (non-blocking):", delegateErr)
-        }
-      }
+      const hash = await submitTx("DREP_REGISTER", {
+        drepId,
+        anchorUrl: anchor.anchorUrl,
+        anchorDataHash: anchor.anchorDataHash,
+        selfDelegate: selfDelegateEnabled,
+      })
 
       // Update wallet store optimistically
       setDRepStatus({
         isDrepRegistered: true,
         drepName: formData.givenName,
-        delegatedDrep: selfDelegateDone ? { id: drepId, name: formData.givenName } : null,
+        delegatedDrep: selfDelegateEnabled ? { id: drepId, name: formData.givenName } : null,
       })
 
       // Optional: activate DRep Community (2 ADA fee)
@@ -539,7 +530,7 @@ export default function RegisterDRepPage() {
             />
           )}
 
-          {(wizardStep === "confirm" || wizardStep === "uploading" || wizardStep === "signing" || wizardStep === "delegating") && (
+          {(wizardStep === "confirm" || wizardStep === "uploading" || wizardStep === "signing") && (
             <ConfirmStep
               data={formData}
               drepId={drepId}
@@ -601,7 +592,7 @@ export default function RegisterDRepPage() {
               txHash={txHash}
               drepName={formData.givenName}
               networkId={networkId}
-              delegateTxHash={delegateTxHash}
+              selfDelegated={selfDelegateEnabled}
             />
           )}
         </div>
