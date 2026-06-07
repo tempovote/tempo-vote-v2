@@ -75,6 +75,63 @@ async function fetchTitle(anchorUrl: string): Promise<string | null> {
   return result
 }
 
+/**
+ * Batch-resolve anchor titles for a list of URLs.
+ * Uses the same session/localStorage cache and in-flight dedup as useAnchorTitle.
+ * Re-renders the consumer whenever a new title is resolved, so search filters
+ * using the returned map stay up to date as IPFS fetches complete.
+ */
+export function useAnchorTitlesMap(
+  urls: (string | null | undefined)[],
+): ReadonlyMap<string, string> {
+  const urlsKey = urls.filter(Boolean).join("\0")
+
+  const [map, setMap] = useState<Map<string, string>>(() => {
+    const m = new Map<string, string>()
+    for (const url of urls) {
+      if (!url) continue
+      const cached = sessionCache.get(url)
+      if (cached) m.set(url, cached)
+    }
+    return m
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    for (const url of urls) {
+      if (!url) continue
+      if (sessionCache.has(url)) {
+        const t = sessionCache.get(url)
+        if (t != null)
+          setMap((prev) =>
+            prev.get(url) === t ? prev : new Map([...prev, [url, t]]),
+          )
+        continue
+      }
+      let p = inFlight.get(url)
+      if (!p) {
+        p = fetchTitle(url)
+        inFlight.set(url, p)
+        p.finally(() => inFlight.delete(url))
+      }
+      p.then((result) => {
+        if (cancelled || result == null) return
+        setMap((prev) =>
+          prev.get(url) === result ? prev : new Map([...prev, [url, result]]),
+        )
+      })
+    }
+    return () => {
+      cancelled = true
+    }
+    // urlsKey is a stable serialisation of the url list; changing it means a
+    // genuinely different set of anchors (new page of actions loaded, etc.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlsKey])
+
+  return map
+}
+
 export function useAnchorTitle(anchorUrl: string | null | undefined): string | null {
   const [title, setTitle] = useState<string | null>(null)
 

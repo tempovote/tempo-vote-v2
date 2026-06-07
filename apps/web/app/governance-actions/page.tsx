@@ -5,6 +5,7 @@ import { useWalletStore } from "@/store/wallet"
 import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
 import { govActionIdToBech32 } from "@/lib/governance"
+import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 
 const FILTER_CHIPS = [
   { label: "Tất cả",           value: "" },
@@ -28,14 +29,22 @@ export default function GovernanceActionsPage() {
     activeFilter || undefined,
   )
 
+  // Batch-resolve anchor titles so we can search by proposal name (from IPFS metadata).
+  // Re-renders as titles load in, so filter results stay live while fetches complete.
+  const titlesMap = useAnchorTitlesMap(actions.map((a) => a.anchorUrl))
+
   const q = search.trim().toLowerCase()
   const visible = [...(q
-    ? actions.filter((a) =>
-        a.txHash.toLowerCase().includes(q) ||
-        a.type.toLowerCase().includes(q) ||
-        a.actionType.toLowerCase().includes(q) ||
-        govActionIdToBech32(a.txHash, a.index).toLowerCase().includes(q)
-      )
+    ? actions.filter((a) => {
+        const title = a.anchorUrl ? (titlesMap.get(a.anchorUrl) ?? null) : null
+        return (
+          a.txHash.toLowerCase().includes(q) ||
+          a.type.toLowerCase().includes(q) ||
+          a.actionType.toLowerCase().includes(q) ||
+          govActionIdToBech32(a.txHash, a.index).toLowerCase().includes(q) ||
+          (title?.toLowerCase().includes(q) ?? false)
+        )
+      })
     : actions
   )].sort((a, b) => b.expiresEpoch - a.expiresEpoch)
 

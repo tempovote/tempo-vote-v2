@@ -1,5 +1,8 @@
 "use client"
 
+import { useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
 import {
   mockRegions,
   mockTopDRepsByDelegators,
@@ -16,6 +19,12 @@ import {
   Legend,
 } from "recharts"
 
+function looksLikeDrepId(q: string): boolean {
+  const t = q.trim()
+  // CIP-105 bech32 (drep1...) or raw 56-char hex credential
+  return t.toLowerCase().startsWith("drep1") || /^[0-9a-f]{56}$/i.test(t)
+}
+
 const votingPowerPieData = mockRegions.map((r) => ({
   name: r.name,
   value: r.votingPowerPercent,
@@ -31,6 +40,55 @@ const ccMembersPieData = mockRegions
   }))
 
 export default function DRepsPage() {
+  const router = useRouter()
+  const [inputValue, setInputValue] = useState("")
+  const [activeQuery, setActiveQuery] = useState("")
+
+  const handleSearch = useCallback(() => {
+    const trimmed = inputValue.trim()
+    if (!trimmed) return
+    if (looksLikeDrepId(trimmed)) {
+      router.push(`/dreps/${encodeURIComponent(trimmed)}`)
+    } else {
+      setActiveQuery(trimmed)
+    }
+  }, [inputValue, router])
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") handleSearch()
+    },
+    [handleSearch],
+  )
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value
+      setInputValue(val)
+      // Clear active query if user erases the search box
+      if (!val.trim()) setActiveQuery("")
+    },
+    [],
+  )
+
+  const q = activeQuery.toLowerCase()
+  const filteredByDelegators = q
+    ? mockTopDRepsByDelegators.filter((d) => d.name.toLowerCase().includes(q))
+    : mockTopDRepsByDelegators
+  const filteredByVotingPower = q
+    ? mockTopDRepsByVotingPower.filter((d) => d.name.toLowerCase().includes(q))
+    : mockTopDRepsByVotingPower
+  const filteredByChange = q
+    ? mockTopDRepsByChange.filter((d) => d.name.toLowerCase().includes(q))
+    : mockTopDRepsByChange
+
+  const isIdQuery = looksLikeDrepId(inputValue)
+  const hasNoResults =
+    activeQuery &&
+    filteredByDelegators.length === 0 &&
+    filteredByVotingPower.length === 0 &&
+    filteredByChange.length === 0
+
   return (
     <div className="page-container-wide space-y-10">
       {/* Header */}
@@ -182,28 +240,67 @@ export default function DRepsPage() {
             </svg>
             <input
               type="text"
-              placeholder="Search by name or ID"
+              placeholder="Search by name, drep1… or 56-char credential hex"
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
               className="input pl-10"
             />
           </div>
-          <button className="btn-primary px-6">Search</button>
+          <button className="btn-primary px-6" onClick={handleSearch}>
+            {isIdQuery ? "Go to Profile" : "Search"}
+          </button>
         </div>
+
+        {/* ID shortcut — show profile link as soon as query looks like a DRep ID */}
+        {isIdQuery && (
+          <Link
+            href={`/dreps/${encodeURIComponent(inputValue.trim())}`}
+            className="flex items-center gap-2 text-sm text-accent-light hover:underline"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+            View profile for {inputValue.trim().slice(0, 20)}{inputValue.trim().length > 20 ? "…" : ""}
+          </Link>
+        )}
       </div>
 
       {/* DRep Lists */}
       <div className="space-y-10">
-        <DRepList
-          title="Top DReps with the most delegators"
-          dreps={mockTopDRepsByDelegators}
-        />
-        <DRepList
-          title="Top DReps with the largest voting power"
-          dreps={mockTopDRepsByVotingPower}
-        />
-        <DRepList
-          title="Top DReps with the largest voting power change"
-          dreps={mockTopDRepsByChange}
-        />
+        {hasNoResults ? (
+          <div className="text-center py-12 text-text-muted space-y-2">
+            <p className="text-3xl">🔍</p>
+            <p className="font-medium">Không tìm thấy DRep nào khớp với &ldquo;{activeQuery}&rdquo;</p>
+            <button
+              className="text-sm text-accent-light underline"
+              onClick={() => { setActiveQuery(""); setInputValue("") }}
+            >
+              Xoá tìm kiếm
+            </button>
+          </div>
+        ) : (
+          <>
+            {filteredByDelegators.length > 0 && (
+              <DRepList
+                title="Top DReps with the most delegators"
+                dreps={filteredByDelegators}
+              />
+            )}
+            {filteredByVotingPower.length > 0 && (
+              <DRepList
+                title="Top DReps with the largest voting power"
+                dreps={filteredByVotingPower}
+              />
+            )}
+            {filteredByChange.length > 0 && (
+              <DRepList
+                title="Top DReps with the largest voting power change"
+                dreps={filteredByChange}
+              />
+            )}
+          </>
+        )}
       </div>
     </div>
   )
