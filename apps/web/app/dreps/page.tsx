@@ -56,7 +56,10 @@ export default function DRepsPage() {
 
   // Batch-fetch DRep names from IPFS anchors only while user is name-searching.
   // Lazy-load top 150 by voting power (already sorted desc) to avoid IPFS overload.
-  const anchorUrlsForSearch = nameQ ? dreps.slice(0, 150).map((d) => d.anchorUrl) : []
+  // Fetch names for ALL DReps when user is searching by name (not just top 150).
+  // Newly registered DReps have low voting power and would be cut off by a slice limit.
+  // Session cache + in-flight dedup prevent redundant IPFS requests across re-renders.
+  const anchorUrlsForSearch = nameQ.length >= 2 ? dreps.map((d) => d.anchorUrl) : []
   const namesMap = useAnchorTitlesMap(anchorUrlsForSearch)
 
   // Filter real DReps by ID fragment or by loaded name
