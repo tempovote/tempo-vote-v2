@@ -57,7 +57,11 @@ export default function VoteResultsPanel({ action }: Props) {
           yesPercent={ccPct.yesPercent}
           noPercent={ccPct.noPercent}
           notVotedPercent={ccPct.notVotedPercent}
-          threshold={thresholds.cc !== undefined ? Math.round(thresholds.cc * 100) : null}
+          threshold={
+            action.ccVotes.quorum > 0
+              ? Math.round(action.ccVotes.quorum * 100)
+              : thresholds.cc !== undefined ? Math.round(thresholds.cc * 100) : null
+          }
         />
       )}
     </div>

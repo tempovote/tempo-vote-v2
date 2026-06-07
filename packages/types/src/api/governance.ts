@@ -6,6 +6,8 @@ export const VoteCountsSchema = z.object({
   abstain: z.number().int(),
   /** For CC only: total active CC members. Used as denominator (N_Yes/N_Active). 0 = fall back to votes-cast. */
   activeMembers: z.number().int().default(0),
+  /** For CC only: on-chain quorum fraction (e.g. 0.6667 for 2/3). 0 = use static fallback threshold. */
+  quorum: z.number().default(0),
 })
 export type VoteCounts = z.infer<typeof VoteCountsSchema>
 
