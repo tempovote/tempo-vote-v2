@@ -43,7 +43,6 @@ async function fetchWalletBalance(
 
 let _fetchController: AbortController | null = null
 let _balanceController: AbortController | null = null
-let _authController: AbortController | null = null
 
 // Runs challenge → signData → verify. Throws on any failure so callers can surface the error.
 // Returns null only when the AbortSignal fires mid-flight.
@@ -68,8 +67,14 @@ async function attemptAuth(
   if (!nonce) throw new Error("Server không trả nonce hợp lệ")
   if (signal.aborted) return null
 
-  // Step 2: Sign nonce with wallet stake key (CIP-30 expects hex-encoded payload)
-  const dataSignature = await signData(api, rewardAddressHex, nonce)
+  // Step 2: Sign nonce with wallet stake key.
+  // CIP-30 signData expects a hex-encoded payload. We encode a human-readable message
+  // so the wallet (Eternl, Lace, etc.) displays legible text instead of garbled binary.
+  const message = `tempo.vote sign-in\nnonce: ${nonce}`
+  const payloadHex = Array.from(new TextEncoder().encode(message))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("")
+  const dataSignature = await signData(api, rewardAddressHex, payloadHex)
   if (signal.aborted) return null
 
   // Step 3: Verify on backend → receive JWT
@@ -95,24 +100,6 @@ async function attemptAuth(
 
   const { jwt } = await verifyRes.json()
   return jwt ?? null
-}
-
-async function fetchWalletAuth(
-  api: WalletApi,
-  rewardAddressHex: string,
-  rewardAddressBech32: string,
-  network: string,
-  drepId: string | null,
-  setJwt: (token: string | null) => void,
-  signal: AbortSignal
-): Promise<void> {
-  try {
-    const jwt = await attemptAuth(api, rewardAddressHex, rewardAddressBech32, network, drepId, signal)
-    if (jwt && !signal.aborted) setJwt(jwt)
-  } catch (err) {
-    // Background auth on connect is optional — log but don't surface
-    console.warn("[auth] background auth failed:", err)
-  }
 }
 
 /**
@@ -267,13 +254,6 @@ export function useWallet() {
     _balanceController = new AbortController()
     fetchWalletBalance(changeAddress, network, store.setWalletBalance, _balanceController.signal)
 
-    // Fire-and-forget: wallet auth (challenge → sign → JWT) — requires stake address
-    if (rewardAddressHex && rewardAddress) {
-      _authController?.abort()
-      _authController = new AbortController()
-      fetchWalletAuth(api, rewardAddressHex, rewardAddress, network, drepId, store.setJwt, _authController.signal)
-    }
-
     // Fire-and-forget: DRep / delegation status via Ogmios (CIP-95 only).
     if (cip95Active) {
       _fetchController?.abort()
@@ -330,17 +310,15 @@ export function useWallet() {
 
   /**
    * Re-run the auth challenge→sign→verify flow with the currently connected wallet.
-   * Returns the new JWT on success, null if the user rejects signing or auth fails.
-   * Also persists the new JWT to the store on success.
+   * Called on-demand before actions that require a JWT (e.g., vote rationale upload).
+   * Throws on failure so callers can surface the reason to the user.
    */
-  // Throws on auth failure so callers can surface the actual reason to the user.
   const reauthenticate = useCallback(async (): Promise<string | null> => {
     const state = useWalletStore.getState()
     const { api: currentApi, rewardAddressHex: addrHex, rewardAddress: addrBech32, selectedNetwork, drepKey: key } = state
     if (!currentApi) throw new Error("Ví chưa được kết nối")
     if (!addrHex || !addrBech32) throw new Error("Ví không có stake address — không thể xác thực")
     const ctrl = new AbortController()
-    // Errors from attemptAuth propagate directly to the caller
     const jwt = await attemptAuth(
       currentApi, addrHex, addrBech32, selectedNetwork,
       key?.dRepIDCip105 ?? null, ctrl.signal
@@ -355,8 +333,6 @@ export function useWallet() {
     _fetchController = null
     _balanceController?.abort()
     _balanceController = null
-    _authController?.abort()
-    _authController = null
     store.reset()
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [store])
