@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react"
 import { authHeader, getJwt } from "@/lib/api"
+import { useWallet } from "@/hooks/useWallet"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -51,9 +52,17 @@ interface Props {
 export default function RegisterDRepForm({ data, step, onChange, onNext, onBack }: Props) {
   const set = (patch: Partial<DRepFormData>) => onChange({ ...data, ...patch })
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "error">("idle")
+  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "error" | "auth">("idle")
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [imgGwIdx, setImgGwIdx] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { reauthenticate } = useWallet()
+
+  async function ensureJwt(): Promise<string | null> {
+    const existing = getJwt()
+    if (existing) return existing
+    return reauthenticate()
+  }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -66,11 +75,17 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
 
     const localUrl = URL.createObjectURL(file)
     setImagePreview(localUrl)
-    setUploadState("uploading")
+    setUploadError(null)
     setImgGwIdx(0)
     set({ imageUrl: "" })
 
     try {
+      // Ensure JWT — re-run auth challenge if session expired
+      setUploadState("auth")
+      const jwt = await ensureJwt()
+      if (!jwt) throw new Error("auth")
+
+      setUploadState("uploading")
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(((reader.result as string).split(",")[1]) ?? "")
@@ -80,16 +95,22 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
 
       const res = await fetch(`${API_URL}/metadata/upload-image`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
+        headers: { "Content-Type": "application/json", ...authHeader(jwt) },
         body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
       })
 
-      if (!res.ok) throw new Error("Upload failed")
+      if (res.status === 401) throw new Error("auth")
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error ?? `HTTP ${res.status}`)
+      }
       const { imageUrl } = await res.json()
       set({ imageUrl, imagePreviewUrl: localUrl })
       setUploadState("idle")
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ""
       setUploadState("error")
+      setUploadError(msg === "auth" ? "Phiên xác thực hết hạn. Vui lòng ký xác nhận trong ví và thử lại." : null)
       URL.revokeObjectURL(localUrl)
       setImagePreview(null)
     }
@@ -150,13 +171,13 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
                   }
                 }}
               />
-              {uploadState === "uploading" && (
+              {(uploadState === "uploading" || uploadState === "auth") && (
                 <div className="flex items-center gap-2 text-text-muted text-xs">
                   <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>
-                  Đang upload lên IPFS...
+                  {uploadState === "auth" ? "Đang xác thực ví..." : "Đang upload lên IPFS..."}
                 </div>
               )}
               {uploadState === "idle" && data.imageUrl && (
@@ -180,15 +201,15 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
                 setImagePreview(null)
                 setUploadState("idle")
               }}
-              disabled={uploadState === "uploading"}
+              disabled={uploadState === "uploading" || uploadState === "auth"}
             />
             <button
               type="button"
               className="btn-outline text-xs px-3 shrink-0"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadState === "uploading"}
+              disabled={uploadState === "uploading" || uploadState === "auth"}
             >
-              {uploadState === "uploading" ? "Đang tải..." : "Tải tệp lên"}
+              {uploadState === "uploading" || uploadState === "auth" ? "Đang tải..." : "Tải tệp lên"}
             </button>
           </div>
           <input
@@ -200,7 +221,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
           />
           {uploadState === "error" && (
             <p className="text-danger text-xs mt-1">
-              Upload thất bại. Vui lòng thử lại hoặc dán URL trực tiếp.
+              {uploadError ?? "Upload thất bại. Vui lòng thử lại hoặc dán URL trực tiếp."}
             </p>
           )}
         </div>
