@@ -779,7 +779,7 @@ export default function CommunityPage({
 
   const { profile, isLoading: profileLoading } = useDRepProfile(drepId, network)
   const { isActive, isLoading: communityLoading } = useCommunity(drepId, network)
-  const { polls, total, limit, isLoading: pollsLoading, refetch } = useCommunityPolls(drepId, network, page)
+  const { polls, total, limit, isLoading: pollsLoading, error: pollsError, refetch } = useCommunityPolls(drepId, network, page)
 
   const canonicalId = profile?.id ?? drepId
   const isOwner = !!drepKey?.dRepIDCip105 && drepKey.dRepIDCip105 === canonicalId
@@ -935,7 +935,15 @@ export default function CommunityPage({
           </div>
         )}
 
-        {!pollsLoading && filteredPolls.length === 0 && (
+        {!pollsLoading && pollsError && (
+          <div className="py-10 text-center space-y-2">
+            <p className="text-sm text-danger font-medium">Không thể tải danh sách poll</p>
+            <p className="text-xs text-text-muted">{pollsError}</p>
+            <button onClick={refetch} className="text-xs text-accent-light underline mt-1">Thử lại</button>
+          </div>
+        )}
+
+        {!pollsLoading && !pollsError && filteredPolls.length === 0 && (
           <div className="py-16 text-center space-y-3">
             <p className="text-4xl">📋</p>
             <p className="text-sm text-text-muted">
