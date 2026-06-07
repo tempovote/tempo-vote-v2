@@ -32,6 +32,9 @@ data class CommunityResponse(
 )
 
 @Serializable
+data class ActivateCommunityResponse(val id: String, val isActive: Boolean)
+
+@Serializable
 data class PollOptionDetail(
     val id: String,
     val text: String,
@@ -202,7 +205,7 @@ fun Route.communityRoutes() {
                     }
                 }
 
-                call.respond(mapOf("id" to communityId, "isActive" to true))
+                call.respond(ActivateCommunityResponse(id = communityId, isActive = true))
             }
         }
 
