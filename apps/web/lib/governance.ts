@@ -79,7 +79,9 @@ export function getActionTypeLabel(actionType: string): string {
 
 function buildIpfsGateways(): string[] {
   const pinata = process.env.NEXT_PUBLIC_PINATA_GATEWAY
-  const base = ["https://ipfs.io/ipfs/", "https://cloudflare-ipfs.com/ipfs/", "https://dweb.link/ipfs/"]
+  // cloudflare-ipfs.com was shut down in 2023 — removed.
+  // gateway.pinata.cloud is the most reliable for Pinata-pinned files.
+  const base = ["https://gateway.pinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/"]
   return pinata ? [`${pinata}/ipfs/`, ...base] : base
 }
 
