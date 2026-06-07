@@ -1,5 +1,5 @@
 import { bech32 } from "bech32"
-import type { VoteCounts } from "@tempo/types"
+import type { VoteCounts, DRepVoteStats } from "@tempo/types"
 
 export function lovelaceToAda(lovelace: number): string {
   const ada = lovelace / 1_000_000
@@ -9,18 +9,59 @@ export function lovelaceToAda(lovelace: number): string {
   return ada.toFixed(0)
 }
 
+/**
+ * Compute DRep vote percentages using the GovTool ratification formula.
+ *
+ * Denominator = totalActiveDRepStake (excludes abstain stake).
+ * Non-NoConfidence: yesTotal = yesVotingPower,                     noTotal = noVotingPower + autoNoConfidenceStake
+ * NoConfidence:     yesTotal = yesVotingPower + autoNoConfidenceStake, noTotal = noVotingPower
+ *
+ * Returns notVotedPercent = remaining active stake that hasn't voted (shows ratification progress).
+ */
+export function computeDRepVotePercent(
+  votes: DRepVoteStats,
+  actionType: string
+): { yesPercent: number; noPercent: number; notVotedPercent: number } {
+  const isNoConfidence = actionType === "noConfidence"
+
+  const yesTotal = isNoConfidence
+    ? votes.yesVotingPower + votes.autoNoConfidenceStake
+    : votes.yesVotingPower
+
+  const noTotal = isNoConfidence
+    ? votes.noVotingPower
+    : votes.noVotingPower + votes.autoNoConfidenceStake
+
+  const total = votes.totalActiveDRepStake
+  if (total === 0) return { yesPercent: 0, noPercent: 0, notVotedPercent: 100 }
+
+  const yesPercent = Math.round((yesTotal / total) * 100)
+  const noPercent  = Math.round((noTotal  / total) * 100)
+  return { yesPercent, noPercent, notVotedPercent: Math.max(0, 100 - yesPercent - noPercent) }
+}
+
+/**
+ * Count-based percentage for SPO and CC.
+ *
+ * For CC: if activeMembers > 0, uses N_Yes/N_Active (GovTool formula).
+ * A CC member who doesn't vote counts against the threshold — same logic as DRep "not voted".
+ * For SPO: uses votes cast as denominator (activeMembers = 0).
+ */
 export function computeVotePercent(votes: VoteCounts): {
   yesPercent: number
   noPercent: number
   abstainPercent: number
+  notVotedPercent: number
 } {
-  const total = votes.yes + votes.no + votes.abstain
-  if (total === 0) return { yesPercent: 0, noPercent: 0, abstainPercent: 0 }
-  return {
-    yesPercent:     Math.round((votes.yes     / total) * 100),
-    noPercent:      Math.round((votes.no      / total) * 100),
-    abstainPercent: Math.round((votes.abstain / total) * 100),
-  }
+  const activeTotal = votes.activeMembers > 0 ? votes.activeMembers : (votes.yes + votes.no + votes.abstain)
+  if (activeTotal === 0) return { yesPercent: 0, noPercent: 0, abstainPercent: 0, notVotedPercent: 0 }
+  const yesPercent     = Math.round((votes.yes     / activeTotal) * 100)
+  const noPercent      = Math.round((votes.no      / activeTotal) * 100)
+  const abstainPercent = Math.round((votes.abstain / activeTotal) * 100)
+  const notVotedPercent = votes.activeMembers > 0
+    ? Math.max(0, 100 - yesPercent - noPercent - abstainPercent)
+    : 0
+  return { yesPercent, noPercent, abstainPercent, notVotedPercent }
 }
 
 export function getActionTypeLabel(actionType: string): string {

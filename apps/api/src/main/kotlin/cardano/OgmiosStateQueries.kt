@@ -141,6 +141,10 @@ class OgmiosStateQueries(private val network: Network) {
         return queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {})
     }
 
+    suspend fun getConstitutionalCommittee(): JsonElement {
+        return queryRaw("queryLedgerState/constitutionalCommittee", buildJsonObject {})
+    }
+
     suspend fun getTreasury(): JsonObject {
         return queryRaw("queryLedgerState/treasury", buildJsonObject {}).jsonObject
     }

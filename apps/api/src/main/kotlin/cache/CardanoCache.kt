@@ -37,6 +37,11 @@ object CardanoCache {
         .expireAfterWrite(24, TimeUnit.HOURS)
         .build<String, JsonElement>()
 
+    /** Constitutional committee members — changes only on updateCommittee actions. */
+    val ccCommittee = Caffeine.newBuilder()
+        .expireAfterWrite(30, TimeUnit.MINUTES)
+        .build<String, JsonElement>()
+
     // ── Per-entity data ───────────────────────────────────────────────────────
 
     /**
