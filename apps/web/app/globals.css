@@ -584,3 +584,97 @@ body {
   border-color: var(--color-accent);
   background: var(--color-bg-card-hover);
 }
+
+/* ── @uiw/react-md-editor — dark theme override ──────────────────────────── */
+.rationale-editor-wrap .w-md-editor {
+  --md-editor-background-color: var(--color-bg-secondary);
+  --md-editor-box-shadow-color: var(--color-border-subtle);
+  --color-fg-default: var(--color-text-primary);
+  --color-canvas-default: var(--color-bg-secondary);
+  --color-border-default: var(--color-border-subtle);
+  --color-neutral-muted: var(--color-bg-elevated);
+  --color-accent-fg: var(--color-accent-light);
+  background-color: var(--color-bg-secondary);
+  border-radius: 0.75rem;
+  box-shadow: 0 0 0 1px var(--color-border-subtle);
+  color: var(--color-text-primary);
+}
+
+.rationale-editor-wrap .w-md-editor-toolbar {
+  background-color: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-radius: 0.75rem 0.75rem 0 0;
+  padding: 4px 6px;
+}
+
+.rationale-editor-wrap .w-md-editor-toolbar ul li button {
+  color: var(--color-text-secondary);
+  border-radius: 4px;
+}
+
+.rationale-editor-wrap .w-md-editor-toolbar ul li button:hover,
+.rationale-editor-wrap .w-md-editor-toolbar ul li.active button {
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-card);
+}
+
+/* Divider between toolbar groups */
+.rationale-editor-wrap .w-md-editor-toolbar li.divider {
+  background-color: var(--color-border-subtle);
+}
+
+/* Textarea area */
+.rationale-editor-wrap .w-md-editor-text-pre,
+.rationale-editor-wrap .w-md-editor-text-input,
+.rationale-editor-wrap .w-md-editor-text {
+  color: var(--color-text-primary) !important;
+  caret-color: var(--color-text-primary);
+}
+
+/* Preview pane */
+.rationale-editor-wrap .w-md-editor-preview {
+  background-color: var(--color-bg-secondary);
+  box-shadow: inset 1px 0 0 0 var(--color-border-subtle);
+}
+
+.rationale-editor-wrap .w-md-editor-preview .wmde-markdown {
+  background-color: transparent;
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* Markdown elements in preview */
+.rationale-editor-wrap .wmde-markdown h1,
+.rationale-editor-wrap .wmde-markdown h2,
+.rationale-editor-wrap .wmde-markdown h3 {
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.rationale-editor-wrap .wmde-markdown a {
+  color: var(--color-accent-light);
+}
+
+.rationale-editor-wrap .wmde-markdown code {
+  background-color: var(--color-bg-elevated);
+  color: var(--color-accent-light);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.rationale-editor-wrap .wmde-markdown pre {
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+}
+
+.rationale-editor-wrap .wmde-markdown blockquote {
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-muted);
+}
+
+/* Split divider line */
+.rationale-editor-wrap .w-md-editor-show-live .w-md-editor-input {
+  box-shadow: inset -1px 0 0 0 var(--color-border-subtle);
+}
