@@ -313,9 +313,29 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   <span className="font-semibold text-sm capitalize">{name}</span>
                   <NetworkBadge networkId={networkId} />
                 </div>
-                <p className="text-text-muted text-xs mt-0.5 font-mono truncate">
-                  {changeAddress ? truncateAddress(changeAddress, 10) : "—"}
-                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <p className="text-text-muted text-xs font-mono truncate">
+                    {changeAddress ? truncateAddress(changeAddress, 10) : "—"}
+                  </p>
+                  {changeAddress && (
+                    <button
+                      onClick={handleCopyAddress}
+                      className="shrink-0 text-text-muted hover:text-text-primary transition-colors"
+                      title={copied ? "Copied!" : "Copy address"}
+                    >
+                      {copied ? (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" />
+                          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
               {walletBalance !== null && (
                 <div className="text-right shrink-0">
@@ -369,30 +389,6 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
               </div>
             )}
 
-            {/* Actions */}
-            <div className="flex gap-2">
-              <button
-                onClick={handleCopyAddress}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-sm font-medium transition-colors"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                </svg>
-                {copied ? "Copied!" : "Copy Address"}
-              </button>
-              <button
-                onClick={handleDisconnect}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 text-sm font-medium transition-colors"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
-                Disconnect
-              </button>
-            </div>
           </div>
         )}
 
