@@ -4,8 +4,27 @@ import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useWallet } from "@/hooks/useWallet"
+import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { getWalletInfo, CIP95_WALLETS } from "@tempo/wallet-bridge"
 import type { NetworkId } from "@tempo/wallet-bridge"
+
+const IPFS_DISPLAY_GATEWAYS = [
+  "https://gateway.pinata.cloud/ipfs/",
+  "https://ipfs.io/ipfs/",
+  "https://dweb.link/ipfs/",
+]
+
+function resolveIpfsSrc(url: string, gwIdx: number): string {
+  if (url.startsWith("ipfs://")) {
+    return IPFS_DISPLAY_GATEWAYS[Math.min(gwIdx, IPFS_DISPLAY_GATEWAYS.length - 1)] + url.slice(7)
+  }
+  for (const gw of IPFS_DISPLAY_GATEWAYS) {
+    if (url.startsWith(gw)) {
+      return IPFS_DISPLAY_GATEWAYS[Math.min(gwIdx, IPFS_DISPLAY_GATEWAYS.length - 1)] + url.slice(gw.length)
+    }
+  }
+  return url
+}
 
 // All well-known wallets — shown even if not installed
 const KNOWN_WALLETS = [
@@ -44,8 +63,9 @@ function truncateAddress(addr: string, chars = 8): string {
   return `${addr.slice(0, chars)}...${addr.slice(-chars)}`
 }
 
-function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null; drepId: string | null; onClose: () => void }) {
+function DRepInfoPanel({ drepName, drepId, imageUrl, onClose }: { drepName: string | null; drepId: string | null; imageUrl: string | null; onClose: () => void }) {
   const [copiedDrepId, setCopiedDrepId] = useState(false)
+  const [imgGwIdx, setImgGwIdx] = useState(0)
 
   const handleCopyDrepId = useCallback(async () => {
     if (!drepId) return
@@ -54,12 +74,33 @@ function DRepInfoPanel({ drepName, drepId, onClose }: { drepName: string | null;
     setTimeout(() => setCopiedDrepId(false), 2000)
   }, [drepId])
 
+  const displayName = drepName ?? "DRep"
+  const initial = displayName[0]?.toUpperCase() ?? "D"
+
   return (
     <div className="rounded-xl bg-bg-card border border-border-subtle divide-y divide-border-subtle overflow-hidden">
-      {drepName && (
-        <div className="p-3">
-          <p className="text-text-muted text-xs mb-1 font-medium">DRep Name</p>
-          <p className="text-text-primary text-sm font-semibold">{drepName}</p>
+      {(drepName || imageUrl) && (
+        <div className="p-3 flex items-center gap-3">
+          {/* Avatar: image or initial */}
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolveIpfsSrc(imageUrl, imgGwIdx)}
+              alt={displayName}
+              className="w-10 h-10 rounded-full object-cover border border-border-subtle shrink-0"
+              onError={() => {
+                if (imgGwIdx < IPFS_DISPLAY_GATEWAYS.length - 1) setImgGwIdx(i => i + 1)
+              }}
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-base shrink-0">
+              {initial}
+            </div>
+          )}
+          <div>
+            <p className="text-text-muted text-xs mb-0.5 font-medium">DRep Name</p>
+            <p className="text-text-primary text-sm font-semibold">{displayName}</p>
+          </div>
         </div>
       )}
       <div className="p-3">
@@ -184,10 +225,15 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
     isConnected, isConnecting, error,
     name, networkId, changeAddress, drepKey,
     drepName, isDrepRegistered, delegatedDrep, drepStatusLoading, drepStatusError,
-    walletBalance,
+    walletBalance, selectedNetwork,
     hasCip95: cip95Supported,
     connect, disconnect, availableWallets,
   } = useWallet()
+
+  const { profile: drepProfile } = useDRepProfile(
+    isDrepRegistered ? (drepKey?.dRepIDCip105 ?? "") : "",
+    selectedNetwork
+  )
 
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -291,7 +337,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 </div>
               ) : isDrepRegistered === true ? (
                 /* Confirmed by Ogmios: registered DRep */
-                <DRepInfoPanel drepName={drepName} drepId={drepKey?.dRepIDCip105 ?? null} onClose={onClose} />
+                <DRepInfoPanel drepName={drepName} drepId={drepKey?.dRepIDCip105 ?? null} imageUrl={drepProfile?.imageUrl ?? null} onClose={onClose} />
               ) : isDrepRegistered === false && delegatedDrep ? (
                 /* Confirmed by Ogmios: not DRep, has delegated */
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-success">

@@ -37,6 +37,11 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!drepId) {
+      setIsLoading(false)
+      return
+    }
+
     let cancelled = false
     setIsLoading(true)
     setError(null)
