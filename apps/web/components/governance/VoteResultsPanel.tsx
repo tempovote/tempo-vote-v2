@@ -45,6 +45,7 @@ export default function VoteResultsPanel({ action }: Props) {
           votes={action.spoVotes}
           yesPercent={spoPct.yesPercent}
           noPercent={spoPct.noPercent}
+          notVotedPercent={spoPct.notVotedPercent}
           threshold={thresholds.spo !== undefined ? Math.round(thresholds.spo * 100) : null}
         />
       )}
@@ -55,6 +56,7 @@ export default function VoteResultsPanel({ action }: Props) {
           votes={action.ccVotes}
           yesPercent={ccPct.yesPercent}
           noPercent={ccPct.noPercent}
+          notVotedPercent={ccPct.notVotedPercent}
           threshold={thresholds.cc !== undefined ? Math.round(thresholds.cc * 100) : null}
         />
       )}
@@ -172,15 +174,16 @@ interface SimpleVoteRowProps {
   votes: VoteCounts
   yesPercent: number
   noPercent: number
+  notVotedPercent: number
   threshold: number | null
 }
 
-export function VoteRow({ label, votes, yesPercent, noPercent, threshold }: SimpleVoteRowProps) {
-  return <SimpleVoteRow label={label} votes={votes} yesPercent={yesPercent} noPercent={noPercent} threshold={threshold} />
+export function VoteRow({ label, votes, yesPercent, noPercent, notVotedPercent, threshold }: SimpleVoteRowProps) {
+  return <SimpleVoteRow label={label} votes={votes} yesPercent={yesPercent} noPercent={noPercent} notVotedPercent={notVotedPercent} threshold={threshold} />
 }
 
-function SimpleVoteRow({ label, votes, yesPercent, noPercent, threshold }: SimpleVoteRowProps) {
-  const total = votes.yes + votes.no + votes.abstain
+function SimpleVoteRow({ label, votes, yesPercent, noPercent, notVotedPercent, threshold }: SimpleVoteRowProps) {
+  const hasActiveMembers = votes.activeMembers > 0
   const showLabelInBar = yesPercent > 20
 
   return (
@@ -197,6 +200,17 @@ function SimpleVoteRow({ label, votes, yesPercent, noPercent, threshold }: Simpl
               )}
             </div>
             <div className="vote-bar-no" style={{ width: `${noPercent}%` }} />
+            {/* Not voted segment — only shown for CC where N_Active is known */}
+            {hasActiveMembers && notVotedPercent > 0 && (
+              <div
+                className="opacity-20"
+                style={{
+                  width: `${notVotedPercent}%`,
+                  backgroundColor: "var(--color-text-muted)",
+                  transition: "width 0.6s ease",
+                }}
+              />
+            )}
           </div>
           {threshold !== null && (
             <div
@@ -220,11 +234,25 @@ function SimpleVoteRow({ label, votes, yesPercent, noPercent, threshold }: Simpl
         )}
       </div>
       <div className="pl-[52px] text-xs text-text-muted">
-        <span className="text-success">{votes.yes} Yes ({yesPercent}%)</span>
-        {" · "}
-        <span className="text-danger">{votes.no} No</span>
-        {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
-        {total > 0 && ` · ${total} tổng`}
+        {hasActiveMembers ? (
+          <>
+            <span className="text-success font-medium">{votes.yes}/{votes.activeMembers} Yes ({yesPercent}%)</span>
+            {" · "}
+            <span className="text-danger">{votes.no} No</span>
+            {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
+            {notVotedPercent > 0 && (
+              <span className="text-text-muted/70"> · {votes.activeMembers - votes.yes - votes.no - votes.abstain} chưa bỏ phiếu</span>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="text-success">{votes.yes} Yes ({yesPercent}%)</span>
+            {" · "}
+            <span className="text-danger">{votes.no} No</span>
+            {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
+            {votes.yes + votes.no + votes.abstain > 0 && ` · ${votes.yes + votes.no + votes.abstain} tổng`}
+          </>
+        )}
       </div>
     </div>
   )

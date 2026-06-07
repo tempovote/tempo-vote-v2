@@ -4,6 +4,8 @@ export const VoteCountsSchema = z.object({
   yes: z.number().int(),
   no: z.number().int(),
   abstain: z.number().int(),
+  /** For CC only: total active CC members. Used as denominator (N_Yes/N_Active). 0 = fall back to votes-cast. */
+  activeMembers: z.number().int().default(0),
 })
 export type VoteCounts = z.infer<typeof VoteCountsSchema>
 

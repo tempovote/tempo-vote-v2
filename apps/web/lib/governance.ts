@@ -40,19 +40,28 @@ export function computeDRepVotePercent(
   return { yesPercent, noPercent, notVotedPercent: Math.max(0, 100 - yesPercent - noPercent) }
 }
 
-/** Legacy count-based percentage (used for SPO and CC where voting power is not tracked). */
+/**
+ * Count-based percentage for SPO and CC.
+ *
+ * For CC: if activeMembers > 0, uses N_Yes/N_Active (GovTool formula).
+ * A CC member who doesn't vote counts against the threshold — same logic as DRep "not voted".
+ * For SPO: uses votes cast as denominator (activeMembers = 0).
+ */
 export function computeVotePercent(votes: VoteCounts): {
   yesPercent: number
   noPercent: number
   abstainPercent: number
+  notVotedPercent: number
 } {
-  const total = votes.yes + votes.no + votes.abstain
-  if (total === 0) return { yesPercent: 0, noPercent: 0, abstainPercent: 0 }
-  return {
-    yesPercent:     Math.round((votes.yes     / total) * 100),
-    noPercent:      Math.round((votes.no      / total) * 100),
-    abstainPercent: Math.round((votes.abstain / total) * 100),
-  }
+  const activeTotal = votes.activeMembers > 0 ? votes.activeMembers : (votes.yes + votes.no + votes.abstain)
+  if (activeTotal === 0) return { yesPercent: 0, noPercent: 0, abstainPercent: 0, notVotedPercent: 0 }
+  const yesPercent     = Math.round((votes.yes     / activeTotal) * 100)
+  const noPercent      = Math.round((votes.no      / activeTotal) * 100)
+  const abstainPercent = Math.round((votes.abstain / activeTotal) * 100)
+  const notVotedPercent = votes.activeMembers > 0
+    ? Math.max(0, 100 - yesPercent - noPercent - abstainPercent)
+    : 0
+  return { yesPercent, noPercent, abstainPercent, notVotedPercent }
 }
 
 export function getActionTypeLabel(actionType: string): string {

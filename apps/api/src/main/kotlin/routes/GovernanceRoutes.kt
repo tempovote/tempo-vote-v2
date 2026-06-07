@@ -12,6 +12,7 @@ import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.mapOgmiosProposal
 import vote.tempo.cardano.networkFromString
+import vote.tempo.cardano.parseActiveCCMemberCount
 import vote.tempo.cardano.parseDRepStakeContext
 
 fun Route.governanceRoutes() {
@@ -105,19 +106,20 @@ fun Route.governanceRoutes() {
 
 /**
  * Fetch governance proposals — try cache first, fall back to Ogmios.
- * Also fetches the DRep stake context (for voting power JOIN) from drepList cache.
+ * Also fetches DRep stake context and active CC member count for accurate vote display.
  */
 private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> {
     val stakeCtx = getOrFetchDRepStakeContext(network)
+    val ccActiveMembers = getOrFetchCCActiveMembers(network)
 
     CardanoCache.govActions.getIfPresent(network.name)?.let { cached ->
-        return parseProposalsFromCache(cached, stakeCtx)
+        return parseProposalsFromCache(cached, stakeCtx, ccActiveMembers)
     }
 
     return try {
         val raw = OgmiosStateQueries(network).getGovernanceProposals()
         CardanoCache.govActions.put(network.name, raw)
-        parseProposalsFromCache(raw, stakeCtx)
+        parseProposalsFromCache(raw, stakeCtx, ccActiveMembers)
     } catch (e: Exception) {
         emptyList()
     }
@@ -140,7 +142,28 @@ private suspend fun getOrFetchDRepStakeContext(network: Network): DRepStakeConte
     }
 }
 
-private fun parseProposalsFromCache(raw: JsonElement, stakeCtx: DRepStakeContext): List<GovernanceActionDto> {
+/**
+ * Fetch active CC member count from cache; falls back to Ogmios, then 0.
+ * N_Active = how many CC members are currently active (not resigned/expired).
+ */
+private suspend fun getOrFetchCCActiveMembers(network: Network): Int {
+    val cached = CardanoCache.ccCommittee.getIfPresent(network.name)
+    if (cached != null) return parseActiveCCMemberCount(cached)
+
+    return try {
+        val raw = OgmiosStateQueries(network).getConstitutionalCommittee()
+        CardanoCache.ccCommittee.put(network.name, raw)
+        parseActiveCCMemberCount(raw)
+    } catch (e: Exception) {
+        0
+    }
+}
+
+private fun parseProposalsFromCache(
+    raw: JsonElement,
+    stakeCtx: DRepStakeContext,
+    ccActiveMembers: Int = 0,
+): List<GovernanceActionDto> {
     val array = when (raw) {
         is JsonArray  -> raw
         is JsonObject -> raw["governanceProposals"]?.jsonArray
@@ -149,6 +172,6 @@ private fun parseProposalsFromCache(raw: JsonElement, stakeCtx: DRepStakeContext
         else          -> return emptyList()
     }
     return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx) }.getOrNull()
+        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccActiveMembers) }.getOrNull()
     }
 }

@@ -49,6 +49,12 @@ data class VoteCounts(
     val yes: Int,
     val no: Int,
     val abstain: Int,
+    /**
+     * For CC only: total active CC members in the current committee.
+     * Used as denominator (N_Yes / N_Active) instead of votes cast.
+     * 0 = not available; fall back to yes+no+abstain.
+     */
+    val activeMembers: Int = 0,
 ) {
     val total: Int get() = yes + no + abstain
 }
@@ -107,8 +113,25 @@ fun parseDRepStakeContext(raw: JsonElement): DRepStakeContext {
     return DRepStakeContext(stakeMap, autoAbstainStake, autoNoConfidenceStake, totalActiveDRepStake)
 }
 
+/**
+ * Parse active CC member count from `queryLedgerState/constitutionalCommittee` response.
+ * Active = status.type == "active" (not resigned or expired).
+ * Returns 0 if the response is unavailable or unparseable.
+ */
+fun parseActiveCCMemberCount(raw: JsonElement): Int {
+    val obj = raw as? JsonObject ?: return 0
+    val members = obj["members"]?.jsonArray ?: return 0
+    return members.count { entry ->
+        entry.jsonObject["status"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull == "active"
+    }
+}
+
 /** Map one Ogmios `governanceProposals` item → GovernanceActionDto. Returns null on parse error. */
-fun mapOgmiosProposal(obj: JsonObject, stakeCtx: DRepStakeContext = DRepStakeContext.EMPTY): GovernanceActionDto? = runCatching {
+fun mapOgmiosProposal(
+    obj: JsonObject,
+    stakeCtx: DRepStakeContext = DRepStakeContext.EMPTY,
+    ccActiveMembers: Int = 0,
+): GovernanceActionDto? = runCatching {
     val proposal = obj["proposal"]?.jsonObject ?: return null
     val txHash = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return null
     val index = proposal["index"]?.jsonPrimitive?.int ?: 0
@@ -131,7 +154,7 @@ fun mapOgmiosProposal(obj: JsonObject, stakeCtx: DRepStakeContext = DRepStakeCon
 
     val drepVotes = aggregateDRepVotes(votes, stakeCtx)
     val spoVotes  = aggregateVotes(votes, "stakePoolOperator")
-    val ccVotes   = aggregateVotes(votes, "constitutionalCommittee")
+    val ccVotes   = aggregateVotes(votes, "constitutionalCommittee", ccActiveMembers)
 
     GovernanceActionDto(
         txHash = txHash,
@@ -179,7 +202,7 @@ private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DR
     )
 }
 
-private fun aggregateVotes(votes: JsonArray, role: String): VoteCounts {
+private fun aggregateVotes(votes: JsonArray, role: String, activeMemberCount: Int = 0): VoteCounts {
     var yes = 0; var no = 0; var abstain = 0
     for (entry in votes) {
         val obj = entry.jsonObject
@@ -191,7 +214,7 @@ private fun aggregateVotes(votes: JsonArray, role: String): VoteCounts {
             "abstain" -> abstain++
         }
     }
-    return VoteCounts(yes, no, abstain)
+    return VoteCounts(yes, no, abstain, activeMembers = activeMemberCount)
 }
 
 /** Extract lovelace amount — handles { "ada": { "lovelace": N } } and { "lovelace": N } */
