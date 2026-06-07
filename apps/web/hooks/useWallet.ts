@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useCallback, useState } from "react"
+import { useEffect, useCallback } from "react"
 import { useWalletStore } from "@/store/wallet"
 import type { DelegatedDrep } from "@/store/wallet"
 import {
@@ -205,13 +205,6 @@ async function fetchDRepStatus(
 export function useWallet() {
   const store = useWalletStore()
 
-  // True while autoReconnect hasn't finished — prevents "Kết nối ví" guard
-  // from flashing on pages that require an authenticated wallet (update, retire).
-  // Must start as false so SSR and first client render match (no hydration error).
-  // A separate useEffect (below) sets it to true right after mount if a reconnect
-  // is expected, before autoReconnect's async work begins.
-  const [isWalletHydrating, setIsWalletHydrating] = useState(false)
-
   /** Internal: fetch all wallet data after enabling */
   const _populate = useCallback(async (walletName: string) => {
     const api = await connectWallet(walletName)
@@ -287,17 +280,27 @@ export function useWallet() {
       try { savedWallet = localStorage.getItem(STORAGE_KEY) } catch { return }
       if (!savedWallet) return
 
+      store.setWalletHydrating(true)
+
       const enabled = await isWalletEnabled(savedWallet).catch(() => false)
       if (!enabled) return
 
       try {
         await _populate(savedWallet)
-      } catch {
-        try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+      } catch (err: unknown) {
+        // Only remove the saved wallet key when the extension is truly gone.
+        // Transient failures (locked, session expired, user rejected a CIP-95
+        // popup) must NOT clear the key — the user can manually reconnect on
+        // the next visit without having to re-approve from scratch.
+        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+        if (msg.includes("not found") || msg.includes("not installed") || msg.includes("does not exist")) {
+          try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+        }
       }
     } finally {
-      setIsWalletHydrating(false)
+      store.setWalletHydrating(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.isConnected, _populate])
 
   /** Disconnect — cancel in-flight fetches, clear state + persisted key */
@@ -312,13 +315,13 @@ export function useWallet() {
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [store])
 
-  // Must be defined BEFORE the autoReconnect effect so it runs first.
-  // Sets hydrating=true synchronously (after mount) when a reconnect is expected,
-  // so the spinner renders before autoReconnect's async work finishes.
+  // Synchronously mark hydrating so the Navbar shows a spinner immediately
+  // on mount (before autoReconnect's async work even starts).
+  // Must run before the autoReconnect effect — React fires effects top-to-bottom.
   useEffect(() => {
     try {
       if (!store.isConnected && localStorage.getItem(STORAGE_KEY)) {
-        setIsWalletHydrating(true)
+        store.setWalletHydrating(true)
       }
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,7 +337,6 @@ export function useWallet() {
     connect,
     disconnect,
     autoReconnect,
-    isWalletHydrating,
     availableWallets: getAvailableWallets(),
   }
 }

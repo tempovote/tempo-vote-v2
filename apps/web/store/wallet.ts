@@ -23,6 +23,8 @@ interface WalletState {
   hasCip95: boolean
   isConnected: boolean
   isConnecting: boolean
+  // True while autoReconnect is in-flight after page reload (browser only)
+  isWalletHydrating: boolean
   error: string | null
   walletBalance: { lovelace: number; ada: number; utxoCount: number } | null
   jwt: string | null
@@ -32,13 +34,14 @@ interface WalletState {
 }
 
 interface WalletActions {
-  setWallet: (data: Omit<WalletState, "isConnecting" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError" | "walletBalance" | "jwt" | "selectedNetwork" | "walletModalOpen">) => void
+  setWallet: (data: Omit<WalletState, "isConnecting" | "isWalletHydrating" | "error" | "isDrepRegistered" | "drepName" | "delegatedDrep" | "drepStatusLoading" | "drepStatusError" | "walletBalance" | "jwt" | "selectedNetwork" | "walletModalOpen">) => void
   setDRepStatus: (data: { isDrepRegistered: boolean; drepName: string | null; delegatedDrep: DelegatedDrep | null }) => void
   setDRepStatusLoading: (v: boolean) => void
   setDRepStatusError: (kind: "network" | "server") => void
   setWalletBalance: (b: { lovelace: number; ada: number; utxoCount: number } | null) => void
   setJwt: (token: string | null) => void
   setConnecting: (v: boolean) => void
+  setWalletHydrating: (v: boolean) => void
   setError: (msg: string) => void
   clearError: () => void
   reset: () => void
@@ -65,6 +68,7 @@ const initialState: WalletState = {
   hasCip95: false,
   isConnected: false,
   isConnecting: false,
+  isWalletHydrating: false,
   error: null,
   walletBalance: null,
   jwt: null,
@@ -88,6 +92,7 @@ export const useWalletStore = create<WalletState & WalletActions>((set) => ({
   setWalletBalance: (b) => set({ walletBalance: b }),
   setJwt: (token) => set({ jwt: token }),
   setConnecting: (v) => set({ isConnecting: v }),
+  setWalletHydrating: (v) => set({ isWalletHydrating: v }),
   setError: (msg) => set({ error: msg, isConnecting: false }),
   clearError: () => set({ error: null }),
   // On disconnect: keep selectedNetwork so user can keep browsing the same network
