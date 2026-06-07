@@ -361,6 +361,7 @@ export default function GovernanceActionDetailPage({
   useEffect(() => {
     setLoading(true)
     setFetchError(null)
+    setAction(null)
     fetch(`${API_URL}/governance-actions/${txHash}/${index}?network=${network}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)

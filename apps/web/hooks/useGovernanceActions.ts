@@ -25,6 +25,7 @@ export function useGovernanceActions(
     let cancelled = false
     setIsLoading(true)
     setError(null)
+    setActions([])
 
     const params = new URLSearchParams({ network })
     if (typeFilter) params.set("type", typeFilter)
