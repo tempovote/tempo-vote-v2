@@ -122,7 +122,8 @@ fun parseActiveCCMemberCount(raw: JsonElement): Int {
     val obj = raw as? JsonObject ?: return 0
     val members = obj["members"]?.jsonArray ?: return 0
     return members.count { entry ->
-        entry.jsonObject["status"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull == "active"
+        // Ogmios returns status as a plain string: "active" | "expired" | "unrecognized"
+        entry.jsonObject["status"]?.jsonPrimitive?.contentOrNull == "active"
     }
 }
 
