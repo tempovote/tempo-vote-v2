@@ -71,7 +71,7 @@ export default function RetireDRepPage() {
     )
   }
 
-  if (!hasCip95 || isDrepRegistered === false) {
+  if ((!hasCip95 || isDrepRegistered === false) && pageState !== "success") {
     return (
       <main className="page-container py-16 text-center">
         <div className="max-w-md mx-auto space-y-4">
