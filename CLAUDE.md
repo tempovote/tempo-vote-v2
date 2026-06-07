@@ -20,9 +20,21 @@ packages/config        — TS                 — ESLint, TypeScript, Tailwind c
 
 ```bash
 pnpm install && pnpm dev          # TS: cài deps + chạy web :3000
-cd apps/api && ./gradlew run      # Kotlin: chạy Ktor :8080
+./gradlew :apps:api:run           # Kotlin: chạy Ktor :8080 (từ root monorepo)
 ./gradlew build / test / flywayMigrate
 ```
+
+## Khởi động server (thứ tự bắt buộc)
+
+```bash
+colima start                      # 1. Docker runtime (Colima)
+docker start tempo-pg             # 2. PostgreSQL container
+./gradlew :apps:api:run           # 3. API :8080 (Flyway tự migrate)
+pnpm dev                          # 4. Web :3000 (tab khác)
+```
+
+> API phải được khởi động **sau** khi PostgreSQL đã sẵn sàng.  
+> Nếu API start trước DB → auth/challenge trả 500 → vote rationale thất bại.
 
 ## Transaction flow
 
