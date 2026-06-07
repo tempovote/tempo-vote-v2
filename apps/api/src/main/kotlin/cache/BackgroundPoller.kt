@@ -8,20 +8,15 @@ import vote.tempo.cardano.OgmiosStateQueries
 
 private val logger = KotlinLogging.logger("BackgroundPoller")
 
-private const val POLL_INTERVAL_MS = 5 * 60 * 1_000L   // 5 minutes
-private const val STARTUP_DELAY_MS = 3_000L             // wait for server to finish starting
+private const val POLL_INTERVAL_MS = 5 * 60 * 1_000L    // 5 minutes (normal cadence)
+private const val QUERY_TIMEOUT_MS = 60_000L             // 60 s hard cap per network poll
+private const val MAX_BACKOFF_MS   = 30 * 60 * 1_000L   // 30 minutes max backoff
+private const val STARTUP_DELAY_MS = 3_000L
 
-/**
- * Starts a long-running coroutine that periodically queries Ogmios for global
- * Cardano state and writes the results into CardanoCache.
- *
- * - DRep list          → every 5 minutes
- * - Governance actions → every 5 minutes
- *
- * If a network's Ogmios is unreachable the error is logged and the existing
- * cache entry remains valid until its TTL expires (stale-while-revalidate pattern).
- * The poller is cancelled cleanly when the Ktor application stops.
- */
+// Per-network state for exponential backoff
+private val consecutiveFailures = mutableMapOf<Network, Int>()
+private val nextPollTime        = mutableMapOf<Network, Long>()
+
 fun Application.startBackgroundPoller() {
     val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -51,18 +46,34 @@ private suspend fun pollAllNetworks() {
 }
 
 private suspend fun pollNetwork(network: Network) {
+    // Skip if still within backoff window from a previous failure
+    val now = System.currentTimeMillis()
+    val resumeAt = nextPollTime[network] ?: 0L
+    if (resumeAt > now) {
+        logger.debug { "BackgroundPoller [$network] skipped — backoff until ${(resumeAt - now) / 1000}s from now" }
+        return
+    }
+
     runCatching {
-        val q = OgmiosStateQueries(network)
+        withTimeout(QUERY_TIMEOUT_MS) {
+            val q = OgmiosStateQueries(network)
 
-        val dreps = q.getDelegateRepresentatives()
-        CardanoCache.drepList.put(network.name, dreps)
+            val dreps = q.getDelegateRepresentatives()
+            CardanoCache.drepList.put(network.name, dreps)
 
-        val gas = q.getGovernanceProposals()
-        CardanoCache.govActions.put(network.name, gas)
-
+            val gas = q.getGovernanceProposals()
+            CardanoCache.govActions.put(network.name, gas)
+        }
+        // Success — reset backoff
+        consecutiveFailures.remove(network)
+        nextPollTime.remove(network)
         logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions" }
     }.onFailure { e ->
-        // Don't crash — stale cache is better than no cache
-        logger.warn { "BackgroundPoller [$network] failed: ${e.message}" }
+        val failures = (consecutiveFailures[network] ?: 0) + 1
+        consecutiveFailures[network] = failures
+        // Exponential backoff: 5m, 10m, 20m, capped at 30m
+        val backoff = minOf(POLL_INTERVAL_MS * (1L shl (failures - 1).coerceAtMost(3)), MAX_BACKOFF_MS)
+        nextPollTime[network] = System.currentTimeMillis() + backoff
+        logger.warn { "BackgroundPoller [$network] failed ($failures consecutive): ${e.message} — next retry in ${backoff / 60_000}m" }
     }
 }
