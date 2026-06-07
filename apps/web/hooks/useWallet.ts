@@ -45,7 +45,8 @@ let _fetchController: AbortController | null = null
 let _balanceController: AbortController | null = null
 let _authController: AbortController | null = null
 
-// Returns JWT string on success, null on any failure (including user rejecting signing).
+// Runs challenge → signData → verify. Throws on any failure so callers can surface the error.
+// Returns null only when the AbortSignal fires mid-flight.
 async function attemptAuth(
   api: WalletApi,
   rewardAddressHex: string,
@@ -59,12 +60,15 @@ async function attemptAuth(
     `${API_URL}/auth/challenge?stakeAddress=${encodeURIComponent(rewardAddressBech32)}&network=${network}`,
     { signal }
   )
-  if (!challengeRes.ok || signal.aborted) return null
-  const { nonce } = await challengeRes.json()
-  if (!nonce || signal.aborted) return null
+  if (signal.aborted) return null
+  if (!challengeRes.ok) throw new Error(`Challenge thất bại (HTTP ${challengeRes.status})`)
 
-  // Step 2: Sign nonce with wallet stake key
-  // nonce is a 64-char hex string (32 raw bytes); CIP-30 expects hex-encoded payload
+  const body = await challengeRes.json()
+  const nonce: string = body.nonce
+  if (!nonce) throw new Error("Server không trả nonce hợp lệ")
+  if (signal.aborted) return null
+
+  // Step 2: Sign nonce with wallet stake key (CIP-30 expects hex-encoded payload)
   const dataSignature = await signData(api, rewardAddressHex, nonce)
   if (signal.aborted) return null
 
@@ -82,7 +86,13 @@ async function attemptAuth(
     }),
     signal,
   })
-  if (!verifyRes.ok || signal.aborted) return null
+  if (signal.aborted) return null
+  if (!verifyRes.ok) {
+    let msg = `Verify thất bại (HTTP ${verifyRes.status})`
+    try { const e = await verifyRes.json(); if (e.error) msg = e.error } catch { /* no body */ }
+    throw new Error(msg)
+  }
+
   const { jwt } = await verifyRes.json()
   return jwt ?? null
 }
@@ -99,8 +109,9 @@ async function fetchWalletAuth(
   try {
     const jwt = await attemptAuth(api, rewardAddressHex, rewardAddressBech32, network, drepId, signal)
     if (jwt && !signal.aborted) setJwt(jwt)
-  } catch {
-    // auth is optional — silently ignore (user might reject signing)
+  } catch (err) {
+    // Background auth on connect is optional — log but don't surface
+    console.warn("[auth] background auth failed:", err)
   }
 }
 
@@ -322,21 +333,20 @@ export function useWallet() {
    * Returns the new JWT on success, null if the user rejects signing or auth fails.
    * Also persists the new JWT to the store on success.
    */
+  // Throws on auth failure so callers can surface the actual reason to the user.
   const reauthenticate = useCallback(async (): Promise<string | null> => {
     const state = useWalletStore.getState()
     const { api: currentApi, rewardAddressHex: addrHex, rewardAddress: addrBech32, selectedNetwork, drepKey: key } = state
-    if (!currentApi || !addrHex || !addrBech32) return null
+    if (!currentApi) throw new Error("Ví chưa được kết nối")
+    if (!addrHex || !addrBech32) throw new Error("Ví không có stake address — không thể xác thực")
     const ctrl = new AbortController()
-    try {
-      const jwt = await attemptAuth(
-        currentApi, addrHex, addrBech32, selectedNetwork,
-        key?.dRepIDCip105 ?? null, ctrl.signal
-      )
-      if (jwt) store.setJwt(jwt)
-      return jwt
-    } catch {
-      return null
-    }
+    // Errors from attemptAuth propagate directly to the caller
+    const jwt = await attemptAuth(
+      currentApi, addrHex, addrBech32, selectedNetwork,
+      key?.dRepIDCip105 ?? null, ctrl.signal
+    )
+    if (jwt) store.setJwt(jwt)
+    return jwt
   }, [store])
 
   /** Disconnect — cancel in-flight fetches, clear state + persisted key */

@@ -29,6 +29,26 @@ function cardanoscanUrl(txHash: string, network: string) {
   return `${base}/transaction/${txHash}`
 }
 
+// Runs reauthenticate() and converts any error (including CIP-30 DataSignError) to a
+// user-readable Error. Returns the new JWT string (never null) or throws.
+async function doReauth(reauthenticate: () => Promise<string | null>): Promise<string> {
+  let jwt: string | null = null
+  try {
+    jwt = await reauthenticate()
+  } catch (err: unknown) {
+    // CIP-30 DataSignError is a plain object { code: number, info: string }
+    if (err && typeof err === "object" && "code" in err) {
+      const code = (err as { code: number }).code
+      const info = "info" in err ? String((err as { info: unknown }).info) : ""
+      if (code === 2) throw new Error("Bạn đã từ chối ký xác thực trong ví.")
+      throw new Error(`Ví không thể ký (code ${code}${info ? ": " + info : ""})`)
+    }
+    throw err instanceof Error ? err : new Error(String(err))
+  }
+  if (!jwt) throw new Error("Xác thực trả về không có JWT. Vui lòng thử lại.")
+  return jwt
+}
+
 // ── Vote section ──────────────────────────────────────────────────────────────
 function VoteSection({ action, network }: { action: GovernanceAction; network: string }) {
   const { isConnected, isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
@@ -74,10 +94,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
         // JWT absent — run auth flow now (user must approve signing popup in wallet)
         if (!jwt) {
           setSigningPhase("auth")
-          jwt = await reauthenticate()
-          if (!jwt) {
-            throw new Error("Không thể xác thực ví. Vui lòng ký xác thực khi ví hiện popup yêu cầu.")
-          }
+          jwt = await doReauth(reauthenticate)
         }
 
         setSigningPhase("upload")
@@ -98,10 +115,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
         // On 401, try one re-auth and retry (handles token expiry)
         if (metaRes.status === 401) {
           setSigningPhase("auth")
-          jwt = await reauthenticate()
-          if (!jwt) {
-            throw new Error("Xác thực thất bại. Vui lòng ký xác thực khi ví hiện popup yêu cầu.")
-          }
+          jwt = await doReauth(reauthenticate)
           setSigningPhase("upload")
           metaRes = await fetch(`${API_URL}/metadata/vote-rationale`, {
             method: "POST",
