@@ -48,7 +48,7 @@ function extractTitle(data: unknown): string | null {
   // GA anchor: body.title / title
   // DRep CIP-119: body.givenName / givenName
   const val = body?.title ?? d.title ?? body?.givenName ?? d.givenName
-  return (val as string | undefined) ?? null
+  return typeof val === "string" && val.length > 0 ? val : null
 }
 
 async function fetchTitle(anchorUrl: string): Promise<string | null> {

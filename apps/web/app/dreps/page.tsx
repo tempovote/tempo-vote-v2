@@ -304,7 +304,8 @@ export default function DRepsPage() {
                   const name = drep.anchorUrl
                     ? (namesMap.get(drep.anchorUrl) ?? null)
                     : null
-                  const initial = (name ?? drep.id).slice(4, 5).toUpperCase() || "D"
+                  const label = typeof name === "string" ? name : drep.id
+                  const initial = label.charAt(4).toUpperCase() || "D"
                   return (
                     <Link
                       key={drep.id}
