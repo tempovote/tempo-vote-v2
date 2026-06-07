@@ -181,10 +181,13 @@ function ConfirmUpdateStep({
   )
 }
 
-function friendlyError(msg: string): { title: string; detail: string } {
+function friendlyError(msg: string): { title: string; detail: string; requiresReload?: boolean } {
   const m = msg.toLowerCase()
+  if (m.includes("no account found") || m.includes("reconnect")) {
+    return { title: "Kết nối ví bị mất", detail: "Phiên kết nối với dApp đã hết hạn. Tải lại trang và kết nối lại ví.", requiresReload: true }
+  }
   if (m.includes("locked")) {
-    return { title: "Ví đang bị khóa", detail: "Mở ví Eternl, nhập mật khẩu để mở khóa, sau đó nhấn \"Thử lại\"." }
+    return { title: "Ví đang bị khóa", detail: "Mở ví, nhập mật khẩu để mở khóa, sau đó nhấn \"Thử lại\"." }
   }
   if (m.includes("declined") || m.includes("refuse") || m.includes("cancel")) {
     return { title: "Giao dịch bị từ chối", detail: "Bạn đã huỷ ký trong ví. Nhấn \"Thử lại\" để tiếp tục." }
@@ -433,7 +436,7 @@ export default function UpdateDRepPage() {
 
           {wizardStep === "error" && (() => {
             const rawError = error ?? "Đã xảy ra lỗi không xác định"
-            const { title, detail } = friendlyError(rawError)
+            const { title, detail, requiresReload } = friendlyError(rawError)
             const showRaw = detail === rawError
             return (
               <div className="space-y-5">
@@ -455,14 +458,20 @@ export default function UpdateDRepPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <button className="btn-outline flex-1" onClick={() => setWizardStep("confirm")}>
-                    ← Thử lại
+                {requiresReload ? (
+                  <button className="btn-primary w-full" onClick={() => window.location.reload()}>
+                    Tải lại trang ↺
                   </button>
-                  <button className="btn-outline flex-1" onClick={() => { setAnchorCache(null); setWizardStep("step1") }}>
-                    Sửa lại từ đầu
-                  </button>
-                </div>
+                ) : (
+                  <div className="flex gap-3">
+                    <button className="btn-outline flex-1" onClick={() => setWizardStep("confirm")}>
+                      ← Thử lại
+                    </button>
+                    <button className="btn-outline flex-1" onClick={() => { setAnchorCache(null); setWizardStep("step1") }}>
+                      Sửa lại từ đầu
+                    </button>
+                  </div>
+                )}
               </div>
             )
           })()}

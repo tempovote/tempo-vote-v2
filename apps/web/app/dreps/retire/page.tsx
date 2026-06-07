@@ -7,10 +7,13 @@ import { useWalletStore } from "@/store/wallet"
 
 type PageState = "confirm" | "signing" | "success" | "error"
 
-function friendlyError(msg: string): { title: string; detail: string } {
+function friendlyError(msg: string): { title: string; detail: string; requiresReload?: boolean } {
   const m = msg.toLowerCase()
+  if (m.includes("no account found") || m.includes("reconnect")) {
+    return { title: "Kết nối ví bị mất", detail: "Phiên kết nối với dApp đã hết hạn. Tải lại trang và kết nối lại ví.", requiresReload: true }
+  }
   if (m.includes("locked")) {
-    return { title: "Ví đang bị khóa", detail: "Mở ví Eternl, nhập mật khẩu để mở khóa, sau đó nhấn \"Thử lại\"." }
+    return { title: "Ví đang bị khóa", detail: "Mở ví, nhập mật khẩu để mở khóa, sau đó nhấn \"Thử lại\"." }
   }
   if (m.includes("declined") || m.includes("refuse") || m.includes("cancel")) {
     return { title: "Giao dịch bị từ chối", detail: "Bạn đã huỷ ký trong ví. Nhấn \"Thử lại\" để tiếp tục." }
@@ -162,7 +165,7 @@ export default function RetireDRepPage() {
         {/* Error */}
         {pageState === "error" && (() => {
           const rawError = error ?? "Đã xảy ra lỗi không xác định"
-          const { title, detail } = friendlyError(rawError)
+          const { title, detail, requiresReload } = friendlyError(rawError)
           const showRaw = detail === rawError
           return (
             <div className="card-static space-y-5">
@@ -182,9 +185,15 @@ export default function RetireDRepPage() {
                   )}
                 </div>
               </div>
-              <button className="btn-outline w-full" onClick={() => setPageState("confirm")}>
-                ← Thử lại
-              </button>
+              {requiresReload ? (
+                <button className="btn-primary w-full" onClick={() => window.location.reload()}>
+                  Tải lại trang ↺
+                </button>
+              ) : (
+                <button className="btn-outline w-full" onClick={() => setPageState("confirm")}>
+                  ← Thử lại
+                </button>
+              )}
             </div>
           )
         })()}
