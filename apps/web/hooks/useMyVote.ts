@@ -15,6 +15,7 @@ export function useMyVote(
   const [vote, setVote] = useState<MyVote>(null)
 
   useEffect(() => {
+    setVote(null)
     if (!drepId) return
     let cancelled = false
     const url = `${API_URL}/governance-actions/${txHash}/${index}/my-vote?drepId=${encodeURIComponent(drepId)}&network=${network}`

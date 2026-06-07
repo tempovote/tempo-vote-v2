@@ -29,6 +29,8 @@ export function useDRepVotingHistory(
     let cancelled = false
     setIsLoading(true)
     setError(null)
+    setVotes([])
+    setTotal(0)
 
     const url = `${API_URL}/dreps/${encodeURIComponent(drepId)}/votes?network=${network}&page=${page}&limit=${limit}`
 
