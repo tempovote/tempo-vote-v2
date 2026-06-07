@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useCallback } from "react"
+import { use, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
@@ -174,6 +174,26 @@ function Pagination({ page, total, limit, onPage }: {
   )
 }
 
+// ─── Voting type config ───────────────────────────────────────────────────────
+
+const VOTING_TYPES = [
+  {
+    value: "BASIC",
+    label: "Basic voting",
+    description: "Members vote Yes, No, or Abstain.",
+  },
+  {
+    value: "SINGLE_CHOICE",
+    label: "Single choice voting",
+    description: "Members pick exactly one option from a custom list.",
+  },
+  {
+    value: "MULTIPLE_CHOICE",
+    label: "Multiple choice voting",
+    description: "Members can select (approve) many options. Each selected choice will receive equal voting power.",
+  },
+]
+
 // ─── Create poll form (inline) ────────────────────────────────────────────────
 
 function CreatePollForm({
@@ -189,16 +209,98 @@ function CreatePollForm({
   onCancel: () => void
   reauthenticate: () => Promise<string | null>
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const now = new Date()
   const weekLater = new Date(now.getTime() + 7 * 24 * 3600 * 1000)
 
-  const [title, setTitle]         = useState("")
-  const [abstract, setAbstract]   = useState("")
+  const [title, setTitle]           = useState("")
+  const [abstract, setAbstract]     = useState("")
   const [motivation, setMotivation] = useState("")
-  const [startsAt, setStartsAt]   = useState(toDatetimeLocal(now))
-  const [endsAt, setEndsAt]       = useState(toDatetimeLocal(weekLater))
+  const [rationale, setRationale]   = useState("")
+  const [imageUrl, setImageUrl]     = useState("")
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "error">("idle")
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [links, setLinks]           = useState<string[]>([""])
+  const [votingType, setVotingType] = useState<"BASIC" | "SINGLE_CHOICE" | "MULTIPLE_CHOICE">("BASIC")
+  const [options, setOptions]       = useState<string[]>(["", ""])
+  const [startsAt, setStartsAt]     = useState(toDatetimeLocal(now))
+  const [endsAt, setEndsAt]         = useState(toDatetimeLocal(weekLater))
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError]         = useState<string | null>(null)
+  const [error, setError]           = useState<string | null>(null)
+
+  // ── Image upload ────────────────────────────────────────────────────────────
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (imageUrl.startsWith("ipfs://")) {
+      fetch(`${API_URL}/metadata/unpin/${imageUrl.slice(7)}`, { method: "DELETE", headers: authHeader(getJwt()) }).catch(() => {})
+    }
+    const localUrl = URL.createObjectURL(file)
+    setImagePreview(localUrl)
+    setImageUrl("")
+    setUploadError(null)
+    setUploadState("uploading")
+    e.target.value = ""
+    try {
+      let jwt = getJwt()
+      if (!jwt) jwt = await reauthenticate()
+      if (!jwt) throw new Error("auth")
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(((reader.result as string).split(",")[1]) ?? "")
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const res = await fetch(`${API_URL}/metadata/upload-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(jwt) },
+        body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
+      })
+      if (res.status === 401) {
+        const newJwt = await reauthenticate()
+        if (!newJwt) throw new Error("auth")
+        const retry = await fetch(`${API_URL}/metadata/upload-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(newJwt) },
+          body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
+        })
+        if (!retry.ok) throw new Error("Upload thất bại")
+        const { imageUrl: url } = await retry.json()
+        setImageUrl(url)
+      } else if (!res.ok) {
+        throw new Error("Upload thất bại")
+      } else {
+        const { imageUrl: url } = await res.json()
+        setImageUrl(url)
+      }
+      setUploadState("idle")
+    } catch {
+      setUploadState("error")
+      setUploadError("Upload thất bại. Vui lòng thử lại.")
+      URL.revokeObjectURL(localUrl)
+      setImagePreview(null)
+    }
+  }
+
+  // ── Build POST body ─────────────────────────────────────────────────────────
+  function buildBody() {
+    const validLinks = links.map((l) => l.trim()).filter(Boolean)
+    const body: Record<string, unknown> = {
+      network,
+      title: title.trim(),
+      votingType,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+    }
+    if (abstract.trim()) body.abstract = abstract.trim()
+    if (motivation.trim()) body.motivation = motivation.trim()
+    if (rationale.trim()) body.rationale = rationale.trim()
+    if (imageUrl) body.imageUrl = imageUrl
+    if (validLinks.length > 0) body.supportLinks = validLinks
+    if (votingType !== "BASIC") body.options = options.map((o) => o.trim()).filter(Boolean)
+    return body
+  }
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -207,62 +309,48 @@ function CreatePollForm({
       setError("Thời gian kết thúc phải sau thời gian bắt đầu")
       return
     }
+    if (votingType !== "BASIC") {
+      const filled = options.filter((o) => o.trim())
+      if (filled.length < 2) { setError("Cần ít nhất 2 options"); return }
+    }
 
     setIsSubmitting(true)
     setError(null)
 
-    try {
-      let jwt = getJwt()
-      if (!jwt) {
-        jwt = await reauthenticate()
-      }
-      if (!jwt) throw new Error("Cần xác thực ví trước khi tạo poll.")
-
-      const res = await fetch(`${API_URL}/communities/${drepId}/polls`, {
+    const doPost = (jwt: string | null) =>
+      fetch(`${API_URL}/communities/${drepId}/polls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader(jwt) },
-        body: JSON.stringify({
-          network,
-          title: title.trim(),
-          abstract: abstract.trim() || undefined,
-          motivation: motivation.trim() || undefined,
-          startsAt: new Date(startsAt).toISOString(),
-          endsAt: new Date(endsAt).toISOString(),
-        }),
+        body: JSON.stringify(buildBody()),
       })
 
+    try {
+      let jwt = getJwt()
+      if (!jwt) jwt = await reauthenticate()
+      if (!jwt) throw new Error("Cần xác thực ví trước khi tạo poll.")
+
+      let res = await doPost(jwt)
       if (res.status === 401) {
-        // JWT expired — re-auth and retry once
         const newJwt = await reauthenticate()
         if (!newJwt) throw new Error("Xác thực thất bại. Vui lòng thử lại.")
-        const retry = await fetch(`${API_URL}/communities/${drepId}/polls`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeader(newJwt) },
-          body: JSON.stringify({
-            network,
-            title: title.trim(),
-            abstract: abstract.trim() || undefined,
-            motivation: motivation.trim() || undefined,
-            startsAt: new Date(startsAt).toISOString(),
-            endsAt: new Date(endsAt).toISOString(),
-          }),
-        })
-        if (!retry.ok) {
-          const err = await retry.json().catch(() => ({}))
-          throw new Error((err as Record<string, string>).error ?? "Tạo poll thất bại")
-        }
-      } else if (!res.ok) {
+        res = await doPost(newJwt)
+      }
+      if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as Record<string, string>).error ?? "Tạo poll thất bại")
       }
-
       onSuccess()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Đã xảy ra lỗi")
     } finally {
       setIsSubmitting(false)
     }
-  }, [title, abstract, motivation, startsAt, endsAt, drepId, network, reauthenticate, onSuccess])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, abstract, motivation, rationale, imageUrl, links, votingType, options, startsAt, endsAt, drepId, network, reauthenticate, onSuccess])
+
+  const inputCls = "w-full bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-muted outline-none focus:border-accent/50 transition-colors"
+  const labelCls = "text-sm font-medium text-text-secondary"
+  const optionalBadge = <span className="ml-1.5 text-xs text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
 
   return (
     <form onSubmit={handleSubmit} className="border-b border-border-subtle p-5 space-y-5 bg-bg-primary">
@@ -270,89 +358,200 @@ function CreatePollForm({
       {/* Title */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-text-secondary">
-            Title <span className="text-danger">*</span>
-          </label>
+          <label className={labelCls}>Title <span className="text-danger">*</span></label>
           <span className="text-xs text-text-muted">{title.length}/80</span>
         </div>
         <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          type="text" value={title} onChange={(e) => setTitle(e.target.value)}
           placeholder="Type a title for your internal poll"
-          maxLength={80}
-          required
-          className="w-full bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-muted outline-none focus:border-accent/50 transition-colors"
+          maxLength={80} required className={inputCls}
         />
       </div>
 
       {/* Abstract */}
-      <RationaleEditor
-        label="Abstract"
-        placeholder="Describe your internal poll"
-        maxLength={2500}
-        height={180}
-        description=""
-        value={abstract}
-        onChange={setAbstract}
-      />
+      <RationaleEditor label="Abstract" placeholder="Describe your internal poll"
+        maxLength={2500} height={180} description="" value={abstract} onChange={setAbstract} />
 
       {/* Motivation */}
-      <RationaleEditor
-        label="Motivation"
-        placeholder="What problems is your internal poll solving?"
-        maxLength={2500}
-        height={180}
-        description=""
-        optional
-        value={motivation}
-        onChange={setMotivation}
-      />
+      <RationaleEditor label="Motivation" placeholder="What problems is your internal poll solving?"
+        maxLength={2500} height={180} description="" optional value={motivation} onChange={setMotivation} />
 
-      {/* Dates */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-secondary">Bắt đầu</label>
-          <input
-            type="datetime-local"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
-            required
-            className="w-full bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent/50 transition-colors"
-          />
+      {/* Rationale */}
+      <RationaleEditor label="Rationale" placeholder="Explain the reasoning behind this poll..."
+        maxLength={2500} height={180} description="" optional value={rationale} onChange={setRationale} />
+
+      {/* Image upload */}
+      <div className="space-y-2">
+        <label className={labelCls}>Upload image {optionalBadge}</label>
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadState === "uploading"}
+            className={`relative w-16 h-16 rounded-lg border-2 border-dashed flex items-center justify-center shrink-0 transition-colors ${
+              imagePreview || imageUrl
+                ? "border-accent/50"
+                : "border-border-default hover:border-accent/40"
+            }`}
+          >
+            {imagePreview || imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imagePreview ?? imageUrl} alt="" className="w-full h-full object-cover rounded-lg" />
+            ) : uploadState === "uploading" ? (
+              <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            )}
+          </button>
+          <div className="flex-1 space-y-1">
+            {imageUrl && (
+              <p className="text-xs text-text-muted break-all line-clamp-2">{imageUrl}</p>
+            )}
+            {uploadState === "error" && uploadError && (
+              <p className="text-xs text-danger">{uploadError}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadState === "uploading"}
+              className="text-xs text-accent-light hover:underline"
+            >
+              {uploadState === "uploading" ? "Đang upload..." : imageUrl ? "Thay ảnh" : "Chọn ảnh"}
+            </button>
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-text-secondary">Kết thúc</label>
-          <input
-            type="datetime-local"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-            required
-            className="w-full bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent/50 transition-colors"
-          />
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+      </div>
+
+      {/* Support links */}
+      <div className="space-y-2">
+        <label className={labelCls}>Support links {optionalBadge}</label>
+        <div className="space-y-2">
+          {links.map((link, i) => (
+            <div key={i} className="flex gap-2">
+              <input
+                type="url"
+                value={link}
+                onChange={(e) => {
+                  const next = [...links]; next[i] = e.target.value; setLinks(next)
+                }}
+                placeholder="https://website.com/"
+                className={`${inputCls} flex-1`}
+              />
+              {links.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setLinks(links.filter((_, idx) => idx !== i))}
+                  className="px-2 text-text-muted hover:text-danger transition-colors"
+                  aria-label="Remove link"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setLinks([...links, ""])}
+          className="flex items-center gap-1.5 text-sm text-accent-light hover:underline"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Link
+        </button>
+      </div>
+
+      {/* Voting type */}
+      <div className="space-y-2">
+        <label className={labelCls}>Voting type</label>
+        <div className="relative">
+          <select
+            value={votingType}
+            onChange={(e) => setVotingType(e.target.value as typeof votingType)}
+            className={`${inputCls} appearance-none pr-8 cursor-pointer`}
+          >
+            {VOTING_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <svg className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <p className="text-xs text-text-muted">{VOTING_TYPES.find((t) => t.value === votingType)?.description}</p>
+      </div>
+
+      {/* Custom options (SINGLE / MULTIPLE) */}
+      {votingType !== "BASIC" && (
+        <div className="space-y-2">
+          <label className={labelCls}>Options <span className="text-danger">*</span></label>
+          <div className="space-y-2">
+            {options.map((opt, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted shrink-0">
+                  <circle cx="9" cy="5" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="19" r="1" fill="currentColor"/>
+                  <circle cx="15" cy="5" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="19" r="1" fill="currentColor"/>
+                </svg>
+                <input
+                  type="text"
+                  value={opt}
+                  onChange={(e) => {
+                    const next = [...options]; next[i] = e.target.value; setOptions(next)
+                  }}
+                  placeholder="Enter an option"
+                  maxLength={100}
+                  className={`${inputCls} flex-1`}
+                />
+                {options.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setOptions(options.filter((_, idx) => idx !== i))}
+                    className="px-1 text-text-muted hover:text-danger transition-colors shrink-0"
+                    aria-label="Remove option"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setOptions([...options, ""])}
+            className="flex items-center gap-1.5 text-sm text-accent-light hover:underline"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Option
+          </button>
+        </div>
+      )}
+
+      {/* Voting period */}
+      <div className="space-y-1.5">
+        <label className={labelCls}>Voting Period</label>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-xs text-text-muted">Bắt đầu</label>
+            <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)}
+              required className={inputCls} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-text-muted">Kết thúc</label>
+            <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)}
+              required className={inputCls} />
+          </div>
         </div>
       </div>
 
       {/* Error */}
-      {error && (
-        <div className="notice-warning rounded-lg p-3 text-sm">{error}</div>
-      )}
+      {error && <div className="notice-warning rounded-lg p-3 text-sm">{error}</div>}
 
       {/* Actions */}
       <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={isSubmitting}
-          className="btn-outline flex-1"
-        >
+        <button type="button" onClick={onCancel} disabled={isSubmitting} className="btn-outline flex-1">
           Hủy
         </button>
-        <button
-          type="submit"
-          disabled={isSubmitting || !title.trim()}
-          className="btn-primary flex-1"
-        >
+        <button type="submit" disabled={isSubmitting || !title.trim()} className="btn-primary flex-1">
           {isSubmitting ? (
             <span className="flex items-center justify-center gap-2">
               <span className="spinner shrink-0" style={{ width: 16, height: 16, borderWidth: 2 }} />
