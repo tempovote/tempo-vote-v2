@@ -43,14 +43,16 @@ export function RationaleEditor({
     <div className="space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-text-secondary">
-          {label}
-          {optional && (
-            <span className="ml-1.5 text-xs text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">
-              Optional
-            </span>
-          )}
-        </label>
+        {label ? (
+          <label className="text-sm font-medium text-text-secondary">
+            {label}
+            {optional && (
+              <span className="ml-1.5 text-xs text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">
+                Optional
+              </span>
+            )}
+          </label>
+        ) : <span />}
 
         {/* Mode tabs */}
         <div className="flex items-center bg-bg-secondary rounded-lg p-0.5 gap-0.5">

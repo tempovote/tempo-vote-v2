@@ -1,6 +1,7 @@
 "use client"
 
-import { use, useState, useCallback, useRef } from "react"
+import { use, useState, useCallback, useRef, useEffect } from "react"
+import type { ReactNode } from "react"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
@@ -178,23 +179,46 @@ function Pagination({ page, total, limit, onPage }: {
 
 const VOTING_TYPES = [
   {
-    value: "BASIC",
-    label: "Basic voting",
+    value: "BASIC" as const,
+    label: "Basic",
+    sub: "Yes / No / Abstain",
     description: "Members vote Yes, No, or Abstain.",
   },
   {
-    value: "SINGLE_CHOICE",
-    label: "Single choice voting",
+    value: "SINGLE_CHOICE" as const,
+    label: "Single choice",
+    sub: "Pick one option",
     description: "Members pick exactly one option from a custom list.",
   },
   {
-    value: "MULTIPLE_CHOICE",
-    label: "Multiple choice voting",
-    description: "Members can select (approve) many options. Each selected choice will receive equal voting power.",
+    value: "MULTIPLE_CHOICE" as const,
+    label: "Multiple choice",
+    sub: "Pick many options",
+    description: "Members can select many options. Each choice receives equal weight.",
   },
 ]
 
-// ─── Create poll form (inline) ────────────────────────────────────────────────
+// ─── Shared styles ────────────────────────────────────────────────────────────
+
+const INPUT = "w-full bg-bg-elevated border border-border-subtle rounded-xl px-3 py-3 text-sm text-text-primary placeholder-text-muted outline-none focus:border-accent/50 transition-colors"
+const LABEL = "text-sm font-semibold text-text-primary"
+const OPTIONAL = <span className="ml-1.5 text-xs font-normal text-text-muted bg-bg-secondary px-1.5 py-0.5 rounded-md">Optional</span>
+const SECTION_HDR = "flex items-center gap-2 text-xs font-semibold text-text-muted uppercase tracking-wider"
+
+// ─── Section divider ──────────────────────────────────────────────────────────
+
+function SectionDivider({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <div className="pt-2">
+      <div className={SECTION_HDR}>
+        {icon}
+        {label}
+      </div>
+    </div>
+  )
+}
+
+// ─── Create poll form (mobile-first bottom sheet / inline on desktop) ─────────
 
 function CreatePollForm({
   drepId,
@@ -213,21 +237,28 @@ function CreatePollForm({
   const now = new Date()
   const weekLater = new Date(now.getTime() + 7 * 24 * 3600 * 1000)
 
-  const [title, setTitle]           = useState("")
-  const [abstract, setAbstract]     = useState("")
-  const [motivation, setMotivation] = useState("")
-  const [rationale, setRationale]   = useState("")
-  const [imageUrl, setImageUrl]     = useState("")
+  const [title, setTitle]               = useState("")
+  const [abstract, setAbstract]         = useState("")
+  const [motivation, setMotivation]     = useState("")
+  const [rationale, setRationale]       = useState("")
+  const [imageUrl, setImageUrl]         = useState("")
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "error">("idle")
-  const [uploadError, setUploadError] = useState<string | null>(null)
-  const [links, setLinks]           = useState<string[]>([""])
-  const [votingType, setVotingType] = useState<"BASIC" | "SINGLE_CHOICE" | "MULTIPLE_CHOICE">("BASIC")
-  const [options, setOptions]       = useState<string[]>(["", ""])
-  const [startsAt, setStartsAt]     = useState(toDatetimeLocal(now))
-  const [endsAt, setEndsAt]         = useState(toDatetimeLocal(weekLater))
+  const [uploadState, setUploadState]   = useState<"idle" | "uploading" | "error">("idle")
+  const [uploadError, setUploadError]   = useState<string | null>(null)
+  const [links, setLinks]               = useState<string[]>([""])
+  const [votingType, setVotingType]     = useState<"BASIC" | "SINGLE_CHOICE" | "MULTIPLE_CHOICE">("BASIC")
+  const [options, setOptions]           = useState<string[]>(["", ""])
+  const [startsAt, setStartsAt]         = useState(toDatetimeLocal(now))
+  const [endsAt, setEndsAt]             = useState(toDatetimeLocal(weekLater))
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError]           = useState<string | null>(null)
+  const [error, setError]               = useState<string | null>(null)
+
+  // Lock body scroll on mobile when sheet is open
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = prev }
+  }, [])
 
   // ── Image upload ────────────────────────────────────────────────────────────
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -252,28 +283,21 @@ function CreatePollForm({
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
-      const res = await fetch(`${API_URL}/metadata/upload-image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader(jwt) },
-        body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
-      })
+      const doUpload = (token: string) =>
+        fetch(`${API_URL}/metadata/upload-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(token) },
+          body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
+        })
+      let res = await doUpload(jwt)
       if (res.status === 401) {
         const newJwt = await reauthenticate()
         if (!newJwt) throw new Error("auth")
-        const retry = await fetch(`${API_URL}/metadata/upload-image`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeader(newJwt) },
-          body: JSON.stringify({ base64, mimeType: file.type, filename: file.name }),
-        })
-        if (!retry.ok) throw new Error("Upload thất bại")
-        const { imageUrl: url } = await retry.json()
-        setImageUrl(url)
-      } else if (!res.ok) {
-        throw new Error("Upload thất bại")
-      } else {
-        const { imageUrl: url } = await res.json()
-        setImageUrl(url)
+        res = await doUpload(newJwt)
       }
+      if (!res.ok) throw new Error("upload")
+      const { imageUrl: url } = await res.json()
+      setImageUrl(url)
       setUploadState("idle")
     } catch {
       setUploadState("error")
@@ -283,21 +307,29 @@ function CreatePollForm({
     }
   }
 
-  // ── Build POST body ─────────────────────────────────────────────────────────
+  function removeImage() {
+    if (imageUrl.startsWith("ipfs://")) {
+      fetch(`${API_URL}/metadata/unpin/${imageUrl.slice(7)}`, { method: "DELETE", headers: authHeader(getJwt()) }).catch(() => {})
+    }
+    setImageUrl("")
+    setImagePreview(null)
+    setUploadState("idle")
+    setUploadError(null)
+  }
+
+  // ── Build body ──────────────────────────────────────────────────────────────
   function buildBody() {
     const validLinks = links.map((l) => l.trim()).filter(Boolean)
     const body: Record<string, unknown> = {
-      network,
-      title: title.trim(),
-      votingType,
+      network, title: title.trim(), votingType,
       startsAt: new Date(startsAt).toISOString(),
       endsAt: new Date(endsAt).toISOString(),
     }
-    if (abstract.trim()) body.abstract = abstract.trim()
+    if (abstract.trim())   body.abstract   = abstract.trim()
     if (motivation.trim()) body.motivation = motivation.trim()
-    if (rationale.trim()) body.rationale = rationale.trim()
-    if (imageUrl) body.imageUrl = imageUrl
-    if (validLinks.length > 0) body.supportLinks = validLinks
+    if (rationale.trim())  body.rationale  = rationale.trim()
+    if (imageUrl)          body.imageUrl   = imageUrl
+    if (validLinks.length) body.supportLinks = validLinks
     if (votingType !== "BASIC") body.options = options.map((o) => o.trim()).filter(Boolean)
     return body
   }
@@ -309,26 +341,22 @@ function CreatePollForm({
       setError("Thời gian kết thúc phải sau thời gian bắt đầu")
       return
     }
-    if (votingType !== "BASIC") {
-      const filled = options.filter((o) => o.trim())
-      if (filled.length < 2) { setError("Cần ít nhất 2 options"); return }
+    if (votingType !== "BASIC" && options.filter((o) => o.trim()).length < 2) {
+      setError("Cần ít nhất 2 options")
+      return
     }
-
     setIsSubmitting(true)
     setError(null)
-
     const doPost = (jwt: string | null) =>
       fetch(`${API_URL}/communities/${drepId}/polls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader(jwt) },
         body: JSON.stringify(buildBody()),
       })
-
     try {
       let jwt = getJwt()
       if (!jwt) jwt = await reauthenticate()
       if (!jwt) throw new Error("Cần xác thực ví trước khi tạo poll.")
-
       let res = await doPost(jwt)
       if (res.status === 401) {
         const newJwt = await reauthenticate()
@@ -348,219 +376,372 @@ function CreatePollForm({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, abstract, motivation, rationale, imageUrl, links, votingType, options, startsAt, endsAt, drepId, network, reauthenticate, onSuccess])
 
-  const inputCls = "w-full bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-muted outline-none focus:border-accent/50 transition-colors"
-  const labelCls = "text-sm font-medium text-text-secondary"
-  const optionalBadge = <span className="ml-1.5 text-xs text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+  // ── Action buttons (reused in header & inline footer) ──────────────────────
+  const ActionButtons = (
+    <>
+      <button type="button" onClick={onCancel} disabled={isSubmitting} className="btn-outline flex-1 h-11">
+        Hủy
+      </button>
+      <button
+        type="submit" form="create-poll-form"
+        disabled={isSubmitting || !title.trim() || uploadState === "uploading"}
+        className="btn-primary flex-1 h-11"
+      >
+        {isSubmitting ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="spinner shrink-0" style={{ width: 15, height: 15, borderWidth: 2 }} />
+            Đang tạo...
+          </span>
+        ) : "Tạo Poll"}
+      </button>
+    </>
+  )
 
   return (
-    <form onSubmit={handleSubmit} className="border-b border-border-subtle p-5 space-y-5 bg-bg-primary">
+    <>
+      {/* ── Mobile backdrop ── */}
+      <div
+        className="fixed inset-0 bg-black/50 z-40 sm:hidden"
+        onClick={onCancel}
+        aria-hidden
+      />
 
-      {/* Title */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <label className={labelCls}>Title <span className="text-danger">*</span></label>
-          <span className="text-xs text-text-muted">{title.length}/80</span>
-        </div>
-        <input
-          type="text" value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="Type a title for your internal poll"
-          maxLength={80} required className={inputCls}
-        />
-      </div>
+      {/* ── Sheet wrapper ──
+          Mobile: fixed bottom sheet (92svh, rounded-t-2xl)
+          Desktop: inline within card (no fixed, no rounding) */}
+      <div className="
+        fixed inset-x-0 bottom-0 z-50 flex flex-col max-h-[92svh] rounded-t-2xl bg-bg-card
+        sm:static sm:z-auto sm:max-h-none sm:rounded-none sm:bg-transparent sm:border-b sm:border-border-subtle
+      ">
 
-      {/* Abstract */}
-      <RationaleEditor label="Abstract" placeholder="Describe your internal poll"
-        maxLength={2500} height={180} description="" value={abstract} onChange={setAbstract} />
-
-      {/* Motivation */}
-      <RationaleEditor label="Motivation" placeholder="What problems is your internal poll solving?"
-        maxLength={2500} height={180} description="" optional value={motivation} onChange={setMotivation} />
-
-      {/* Rationale */}
-      <RationaleEditor label="Rationale" placeholder="Explain the reasoning behind this poll..."
-        maxLength={2500} height={180} description="" optional value={rationale} onChange={setRationale} />
-
-      {/* Image upload */}
-      <div className="space-y-2">
-        <label className={labelCls}>Upload image {optionalBadge}</label>
-        <div className="flex items-start gap-3">
+        {/* ── Mobile sticky header ── */}
+        <div className="sm:hidden flex items-center justify-between px-4 py-3.5 border-b border-border-subtle shrink-0">
+          <div className="flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-light">
+              <rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/>
+            </svg>
+            <span className="font-semibold text-sm text-text-primary">Create Internal Poll</span>
+          </div>
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadState === "uploading"}
-            className={`relative w-16 h-16 rounded-lg border-2 border-dashed flex items-center justify-center shrink-0 transition-colors ${
-              imagePreview || imageUrl
-                ? "border-accent/50"
-                : "border-border-default hover:border-accent/40"
-            }`}
+            onClick={onCancel}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+            aria-label="Đóng"
           >
-            {imagePreview || imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imagePreview ?? imageUrl} alt="" className="w-full h-full object-cover rounded-lg" />
-            ) : uploadState === "uploading" ? (
-              <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-            )}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
           </button>
-          <div className="flex-1 space-y-1">
-            {imageUrl && (
-              <p className="text-xs text-text-muted break-all line-clamp-2">{imageUrl}</p>
-            )}
-            {uploadState === "error" && uploadError && (
-              <p className="text-xs text-danger">{uploadError}</p>
-            )}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadState === "uploading"}
-              className="text-xs text-accent-light hover:underline"
-            >
-              {uploadState === "uploading" ? "Đang upload..." : imageUrl ? "Thay ảnh" : "Chọn ảnh"}
-            </button>
-          </div>
         </div>
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
-      </div>
 
-      {/* Support links */}
-      <div className="space-y-2">
-        <label className={labelCls}>Support links {optionalBadge}</label>
-        <div className="space-y-2">
-          {links.map((link, i) => (
-            <div key={i} className="flex gap-2">
+        {/* ── Scrollable form body ── */}
+        <div className="overflow-y-auto overscroll-contain flex-1">
+          <form id="create-poll-form" onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-5">
+
+            {/* ── SECTION: Content ── */}
+            <SectionDivider
+              icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>}
+              label="Content"
+            />
+
+            {/* Title */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className={LABEL}>Title <span className="text-danger font-normal">*</span></label>
+                <span className={`text-xs tabular-nums ${title.length >= 70 ? "text-warning" : "text-text-muted"}`}>
+                  {title.length}/80
+                </span>
+              </div>
               <input
-                type="url"
-                value={link}
-                onChange={(e) => {
-                  const next = [...links]; next[i] = e.target.value; setLinks(next)
-                }}
-                placeholder="https://website.com/"
-                className={`${inputCls} flex-1`}
+                type="text" value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Tiêu đề cho internal poll"
+                maxLength={80} required
+                className={INPUT}
               />
-              {links.length > 1 && (
+            </div>
+
+            {/* Abstract */}
+            <div className="space-y-1.5">
+              <label className={LABEL}>Abstract</label>
+              <RationaleEditor
+                label="" placeholder="Mô tả nội dung poll..."
+                maxLength={2500} height={150} description=""
+                value={abstract} onChange={setAbstract}
+              />
+            </div>
+
+            {/* Motivation */}
+            <div className="space-y-1.5">
+              <label className={LABEL}>Motivation {OPTIONAL}</label>
+              <RationaleEditor
+                label="" placeholder="Vấn đề poll này giải quyết?"
+                maxLength={2500} height={150} description=""
+                value={motivation} onChange={setMotivation}
+              />
+            </div>
+
+            {/* Rationale */}
+            <div className="space-y-1.5">
+              <label className={LABEL}>Rationale {OPTIONAL}</label>
+              <RationaleEditor
+                label="" placeholder="Lý do và lập luận cho poll này..."
+                maxLength={2500} height={150} description=""
+                value={rationale} onChange={setRationale}
+              />
+            </div>
+
+            {/* ── SECTION: Media ── */}
+            <SectionDivider
+              icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
+              label="Media"
+            />
+
+            {/* Image upload */}
+            <div className="space-y-2">
+              <label className={LABEL}>Cover image {OPTIONAL}</label>
+              {imagePreview || imageUrl ? (
+                /* Preview */
+                <div className="relative rounded-xl overflow-hidden bg-bg-elevated aspect-video">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imagePreview ?? imageUrl} alt="Cover" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs rounded-lg backdrop-blur-sm transition-colors"
+                    >
+                      Đổi ảnh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="px-3 py-1.5 bg-white/20 hover:bg-danger/60 text-white text-xs rounded-lg backdrop-blur-sm transition-colors"
+                    >
+                      Xóa
+                    </button>
+                  </div>
+                  {uploadState === "uploading" && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <span className="spinner" style={{ width: 28, height: 28, borderWidth: 3, borderColor: "rgba(255,255,255,0.3)", borderTopColor: "#fff" }} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Upload zone */
                 <button
                   type="button"
-                  onClick={() => setLinks(links.filter((_, idx) => idx !== i))}
-                  className="px-2 text-text-muted hover:text-danger transition-colors"
-                  aria-label="Remove link"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadState === "uploading"}
+                  className="w-full rounded-xl border-2 border-dashed border-border-default hover:border-accent/40 transition-colors py-8 flex flex-col items-center gap-2 text-text-muted hover:text-text-secondary group"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  {uploadState === "uploading" ? (
+                    <span className="spinner" style={{ width: 24, height: 24, borderWidth: 2 }} />
+                  ) : (
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="group-hover:scale-110 transition-transform">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                  )}
+                  <span className="text-sm">
+                    {uploadState === "uploading" ? "Đang upload lên IPFS..." : "Chọn ảnh bìa"}
+                  </span>
+                  <span className="text-xs opacity-60">PNG, JPG, GIF • Tối đa 5MB</span>
                 </button>
               )}
+              {uploadState === "error" && uploadError && (
+                <p className="text-xs text-danger flex items-center gap-1">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  {uploadError}
+                </p>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
             </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => setLinks([...links, ""])}
-          className="flex items-center gap-1.5 text-sm text-accent-light hover:underline"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Link
-        </button>
-      </div>
 
-      {/* Voting type */}
-      <div className="space-y-2">
-        <label className={labelCls}>Voting type</label>
-        <div className="relative">
-          <select
-            value={votingType}
-            onChange={(e) => setVotingType(e.target.value as typeof votingType)}
-            className={`${inputCls} appearance-none pr-8 cursor-pointer`}
-          >
-            {VOTING_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>{t.label}</option>
-            ))}
-          </select>
-          <svg className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <p className="text-xs text-text-muted">{VOTING_TYPES.find((t) => t.value === votingType)?.description}</p>
-      </div>
-
-      {/* Custom options (SINGLE / MULTIPLE) */}
-      {votingType !== "BASIC" && (
-        <div className="space-y-2">
-          <label className={labelCls}>Options <span className="text-danger">*</span></label>
-          <div className="space-y-2">
-            {options.map((opt, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted shrink-0">
-                  <circle cx="9" cy="5" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="19" r="1" fill="currentColor"/>
-                  <circle cx="15" cy="5" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="19" r="1" fill="currentColor"/>
-                </svg>
-                <input
-                  type="text"
-                  value={opt}
-                  onChange={(e) => {
-                    const next = [...options]; next[i] = e.target.value; setOptions(next)
-                  }}
-                  placeholder="Enter an option"
-                  maxLength={100}
-                  className={`${inputCls} flex-1`}
-                />
-                {options.length > 2 && (
-                  <button
-                    type="button"
-                    onClick={() => setOptions(options.filter((_, idx) => idx !== i))}
-                    className="px-1 text-text-muted hover:text-danger transition-colors shrink-0"
-                    aria-label="Remove option"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                )}
+            {/* Support links */}
+            <div className="space-y-2">
+              <label className={LABEL}>Support links {OPTIONAL}</label>
+              <div className="space-y-2">
+                {links.map((link, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <div className="flex-1 flex items-center gap-2 bg-bg-elevated border border-border-subtle rounded-xl px-3 focus-within:border-accent/50 transition-colors">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-muted shrink-0">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                      </svg>
+                      <input
+                        type="url" value={link}
+                        onChange={(e) => { const n = [...links]; n[i] = e.target.value; setLinks(n) }}
+                        placeholder="https://website.com/"
+                        className="flex-1 bg-transparent py-3 text-sm text-text-primary placeholder-text-muted outline-none"
+                      />
+                    </div>
+                    {links.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setLinks(links.filter((_, idx) => idx !== i))}
+                        className="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
+                        aria-label="Xóa link"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => setOptions([...options, ""])}
-            className="flex items-center gap-1.5 text-sm text-accent-light hover:underline"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Option
-          </button>
-        </div>
-      )}
+              <button
+                type="button"
+                onClick={() => setLinks([...links, ""])}
+                className="flex items-center gap-1.5 text-sm text-accent-light font-medium hover:underline"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Link
+              </button>
+            </div>
 
-      {/* Voting period */}
-      <div className="space-y-1.5">
-        <label className={labelCls}>Voting Period</label>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-xs text-text-muted">Bắt đầu</label>
-            <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)}
-              required className={inputCls} />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-text-muted">Kết thúc</label>
-            <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)}
-              required className={inputCls} />
-          </div>
+            {/* ── SECTION: Voting ── */}
+            <SectionDivider
+              icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
+              label="Voting"
+            />
+
+            {/* Voting type — radio cards */}
+            <div className="space-y-2">
+              <label className={LABEL}>Voting type</label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {VOTING_TYPES.map((t) => {
+                  const active = votingType === t.value
+                  return (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => {
+                        setVotingType(t.value)
+                        if (t.value === "BASIC") setOptions(["", ""])
+                      }}
+                      className={`text-left rounded-xl border px-4 py-3 transition-all ${
+                        active
+                          ? "border-accent bg-accent/10 text-text-primary"
+                          : "border-border-subtle bg-bg-elevated text-text-secondary hover:border-accent/40"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 transition-colors ${
+                          active ? "border-accent bg-accent" : "border-border-default"
+                        }`} />
+                        <span className="font-medium text-sm">{t.label}</span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-text-muted pl-5">{t.sub}</p>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-text-muted px-1">
+                {VOTING_TYPES.find((t) => t.value === votingType)?.description}
+              </p>
+            </div>
+
+            {/* Custom options */}
+            {votingType !== "BASIC" && (
+              <div className="space-y-2">
+                <label className={LABEL}>Options <span className="text-danger font-normal">*</span></label>
+                <div className="space-y-2">
+                  {options.map((opt, i) => (
+                    <div key={i} className="flex gap-2 items-center">
+                      <div className="flex-1 flex items-center gap-2 bg-bg-elevated border border-border-subtle rounded-xl px-3 focus-within:border-accent/50 transition-colors">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-text-muted/50 shrink-0 select-none">
+                          <circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/>
+                          <circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                        </svg>
+                        <input
+                          type="text" value={opt}
+                          onChange={(e) => { const n = [...options]; n[i] = e.target.value; setOptions(n) }}
+                          placeholder={`Option ${i + 1}`}
+                          maxLength={100}
+                          className="flex-1 bg-transparent py-3 text-sm text-text-primary placeholder-text-muted outline-none"
+                        />
+                      </div>
+                      {options.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => setOptions(options.filter((_, idx) => idx !== i))}
+                          className="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
+                          aria-label="Xóa option"
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOptions([...options, ""])}
+                  className="flex items-center gap-1.5 text-sm text-accent-light font-medium hover:underline"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add Option
+                </button>
+              </div>
+            )}
+
+            {/* ── SECTION: Period ── */}
+            <SectionDivider
+              icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>}
+              label="Voting Period"
+            />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-text-muted">Bắt đầu</label>
+                <input
+                  type="datetime-local" value={startsAt}
+                  onChange={(e) => setStartsAt(e.target.value)}
+                  required className={INPUT}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-text-muted">Kết thúc</label>
+                <input
+                  type="datetime-local" value={endsAt}
+                  onChange={(e) => setEndsAt(e.target.value)}
+                  required className={INPUT}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2 rounded-xl bg-accent/8 border border-accent/20 px-3 py-2.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <p className="text-xs text-accent-light leading-relaxed">
+                Voting power được tính tại epoch bắt đầu của voting period.
+              </p>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div className="notice-warning rounded-xl p-3 text-sm flex items-start gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                {error}
+              </div>
+            )}
+
+            {/* Desktop action buttons (inside form) */}
+            <div className="hidden sm:flex gap-3 pt-1">
+              {ActionButtons}
+            </div>
+
+          </form>
+        </div>
+
+        {/* ── Mobile sticky footer ── */}
+        <div
+          className="sm:hidden flex gap-3 px-4 py-3 border-t border-border-subtle bg-bg-card shrink-0"
+          style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+        >
+          {ActionButtons}
         </div>
       </div>
-
-      {/* Error */}
-      {error && <div className="notice-warning rounded-lg p-3 text-sm">{error}</div>}
-
-      {/* Actions */}
-      <div className="flex gap-3">
-        <button type="button" onClick={onCancel} disabled={isSubmitting} className="btn-outline flex-1">
-          Hủy
-        </button>
-        <button type="submit" disabled={isSubmitting || !title.trim()} className="btn-primary flex-1">
-          {isSubmitting ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="spinner shrink-0" style={{ width: 16, height: 16, borderWidth: 2 }} />
-              Đang tạo...
-            </span>
-          ) : "Tạo Poll"}
-        </button>
-      </div>
-    </form>
+    </>
   )
 }
 
