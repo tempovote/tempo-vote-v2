@@ -26,6 +26,9 @@ import java.util.UUID
 // ─── Response DTOs ────────────────────────────────────────────────────────────
 
 @Serializable
+data class CreatePollResponse(val id: String)
+
+@Serializable
 data class CommunityResponse(
     val id: String,
     val drepId: String,
@@ -329,35 +332,44 @@ fun Route.communityRoutes() {
                     return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "At least 2 options required for ${votingType}"))
                 }
 
-                val pollId = transaction {
-                    val id = InternalPolls.insert {
-                        it[InternalPolls.communityId] = communityId
-                        it[InternalPolls.title] = req.title.trim()
-                        it[InternalPolls.abstract] = req.abstract?.trim()
-                        it[InternalPolls.motivation] = req.motivation?.trim()
-                        it[InternalPolls.imageUrl] = req.imageUrl?.trim()
-                        it[InternalPolls.supportLinks] = if (req.supportLinks.isEmpty()) null
-                            else Json.encodeToString(req.supportLinks.filter { l -> l.isNotBlank() })
-                        it[InternalPolls.rationale] = req.rationale?.trim()
-                        it[InternalPolls.votingType] = votingType
-                        it[InternalPolls.startEpoch] = 0
-                        it[InternalPolls.startsAt] = startsAt
-                        it[InternalPolls.endsAt] = endsAt
-                    }[InternalPolls.id]
+                val pollResult = runCatching {
+                    transaction {
+                        val id = InternalPolls.insert {
+                            it[InternalPolls.communityId] = communityId
+                            it[InternalPolls.title] = req.title.trim()
+                            it[InternalPolls.abstract] = req.abstract?.trim()
+                            it[InternalPolls.motivation] = req.motivation?.trim()
+                            it[InternalPolls.imageUrl] = req.imageUrl?.trim()
+                            it[InternalPolls.supportLinks] = if (req.supportLinks.isEmpty()) null
+                                else Json.encodeToString(req.supportLinks.filter { l -> l.isNotBlank() })
+                            it[InternalPolls.rationale] = req.rationale?.trim()
+                            it[InternalPolls.votingType] = votingType
+                            it[InternalPolls.startEpoch] = 0
+                            it[InternalPolls.startsAt] = startsAt
+                            it[InternalPolls.endsAt] = endsAt
+                        }[InternalPolls.id]
 
-                    val optionTexts = if (votingType == "BASIC") BASIC_OPTIONS else req.options.filter { it.isNotBlank() }
-                    optionTexts.forEachIndexed { idx, text ->
-                        PollOptions.insert {
-                            it[PollOptions.pollId] = id
-                            it[PollOptions.text] = text.trim()
-                            it[PollOptions.order] = idx
+                        val optionTexts = if (votingType == "BASIC") BASIC_OPTIONS else req.options.filter { it.isNotBlank() }
+                        optionTexts.forEachIndexed { idx, text ->
+                            PollOptions.insert {
+                                it[PollOptions.pollId] = id
+                                it[PollOptions.text] = text.trim()
+                                it[PollOptions.order] = idx
+                            }
                         }
-                    }
 
-                    id.toString()
+                        id.toString()
+                    }
                 }
 
-                call.respond(HttpStatusCode.Created, mapOf("id" to pollId))
+                pollResult.fold(
+                    onSuccess = { pollId ->
+                        call.respond(HttpStatusCode.Created, CreatePollResponse(id = pollId))
+                    },
+                    onFailure = { e ->
+                        call.respond(HttpStatusCode.InternalServerError, vote.tempo.plugins.ApiError(e.message ?: "Failed to create poll"))
+                    }
+                )
             }
         }
 

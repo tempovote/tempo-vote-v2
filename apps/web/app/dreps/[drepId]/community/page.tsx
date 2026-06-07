@@ -8,6 +8,7 @@ import { useWallet } from "@/hooks/useWallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { useCommunity, useCommunityPolls } from "@/hooks/useCommunity"
 import { RationaleEditor } from "@/components/governance/RationaleEditor"
+import { AlertModal } from "@/components/ui/AlertModal"
 import { authHeader, getJwt } from "@/lib/api"
 import type { InternalPoll } from "@tempo/types"
 
@@ -225,12 +226,14 @@ function CreatePollForm({
   network,
   onSuccess,
   onCancel,
+  onError,
   reauthenticate,
 }: {
   drepId: string
   network: string
-  onSuccess: () => void
+  onSuccess: (title: string) => void
   onCancel: () => void
+  onError: (msg: string) => void
   reauthenticate: () => Promise<string | null>
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -318,46 +321,57 @@ function CreatePollForm({
     setUploadError(null)
   }
 
-  // ── Build body ──────────────────────────────────────────────────────────────
-  function buildBody() {
-    const validLinks = links.map((l) => l.trim()).filter(Boolean)
-    const body: Record<string, unknown> = {
-      network, title: title.trim(), votingType,
-      startsAt: new Date(startsAt).toISOString(),
-      endsAt: new Date(endsAt).toISOString(),
-    }
-    if (abstract.trim())   body.abstract   = abstract.trim()
-    if (motivation.trim()) body.motivation = motivation.trim()
-    if (rationale.trim())  body.rationale  = rationale.trim()
-    if (imageUrl)          body.imageUrl   = imageUrl
-    if (validLinks.length) body.supportLinks = validLinks
-    if (votingType !== "BASIC") body.options = options.map((o) => o.trim()).filter(Boolean)
-    return body
-  }
-
+  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!title.trim()) return
+
+    // Read all current state values inside the callback to avoid stale closures
+    const currentTitle      = title.trim()
+    const currentAbstract   = abstract.trim()
+    const currentMotivation = motivation.trim()
+    const currentRationale  = rationale.trim()
+    const currentImageUrl   = imageUrl
+    const currentLinks      = links.map((l) => l.trim()).filter(Boolean)
+    const currentOptions    = options.map((o) => o.trim()).filter(Boolean)
+    const currentStartsAt   = new Date(startsAt).toISOString()
+    const currentEndsAt     = new Date(endsAt).toISOString()
+
+    if (!currentTitle) return
     if (new Date(endsAt) <= new Date(startsAt)) {
       setError("Thời gian kết thúc phải sau thời gian bắt đầu")
       return
     }
-    if (votingType !== "BASIC" && options.filter((o) => o.trim()).length < 2) {
+    if (votingType !== "BASIC" && currentOptions.length < 2) {
       setError("Cần ít nhất 2 options")
       return
     }
+
     setIsSubmitting(true)
     setError(null)
+
+    const body: Record<string, unknown> = {
+      network, title: currentTitle, votingType,
+      startsAt: currentStartsAt, endsAt: currentEndsAt,
+    }
+    if (currentAbstract)   body.abstract      = currentAbstract
+    if (currentMotivation) body.motivation    = currentMotivation
+    if (currentRationale)  body.rationale     = currentRationale
+    if (currentImageUrl)   body.imageUrl      = currentImageUrl
+    if (currentLinks.length) body.supportLinks = currentLinks
+    if (votingType !== "BASIC") body.options  = currentOptions
+
     const doPost = (jwt: string | null) =>
       fetch(`${API_URL}/communities/${drepId}/polls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader(jwt) },
-        body: JSON.stringify(buildBody()),
+        body: JSON.stringify(body),
       })
+
     try {
       let jwt = getJwt()
       if (!jwt) jwt = await reauthenticate()
       if (!jwt) throw new Error("Cần xác thực ví trước khi tạo poll.")
+
       let res = await doPost(jwt)
       if (res.status === 401) {
         const newJwt = await reauthenticate()
@@ -365,17 +379,19 @@ function CreatePollForm({
         res = await doPost(newJwt)
       }
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error((err as Record<string, string>).error ?? "Tạo poll thất bại")
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error((errBody as Record<string, string>).error ?? `Tạo poll thất bại (${res.status})`)
       }
-      onSuccess()
+
+      onSuccess(currentTitle)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Đã xảy ra lỗi")
+      const msg = err instanceof Error ? err.message : "Đã xảy ra lỗi"
+      setError(msg)
+      onError(msg)
     } finally {
       setIsSubmitting(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, abstract, motivation, rationale, imageUrl, links, votingType, options, startsAt, endsAt, drepId, network, reauthenticate, onSuccess])
+  }, [title, abstract, motivation, rationale, imageUrl, links, votingType, options, startsAt, endsAt, drepId, network, reauthenticate, onSuccess, onError])
 
   // ── Action buttons (reused in header & inline footer) ──────────────────────
   const ActionButtons = (
@@ -759,6 +775,7 @@ export default function CommunityPage({
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState("")
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [alertModal, setAlertModal] = useState<{ type: "success" | "error"; title: string; message: string } | null>(null)
 
   const { profile, isLoading: profileLoading } = useDRepProfile(drepId, network)
   const { isActive, isLoading: communityLoading } = useCommunity(drepId, network)
@@ -777,10 +794,11 @@ export default function CommunityPage({
 
   const isLoading = profileLoading || communityLoading
 
-  const handleFormSuccess = useCallback(() => {
+  const handleFormSuccess = useCallback((pollTitle: string) => {
     setIsFormOpen(false)
     setPage(1)
     refetch()
+    setAlertModal({ type: "success", title: "Poll tạo thành công!", message: `"${pollTitle}" đã được tạo.` })
   }, [refetch])
 
   // ── Guards ──────────────────────────────────────────────────────────────────
@@ -894,6 +912,7 @@ export default function CommunityPage({
               network={network}
               onSuccess={handleFormSuccess}
               onCancel={() => setIsFormOpen(false)}
+              onError={(msg) => setAlertModal({ type: "error", title: "Tạo poll thất bại", message: msg })}
               reauthenticate={reauthenticate}
             />
           ) : (
@@ -946,6 +965,15 @@ export default function CommunityPage({
           </>
         )}
       </div>
+
+      {alertModal && (
+        <AlertModal
+          type={alertModal.type}
+          title={alertModal.title}
+          message={alertModal.message}
+          onClose={() => setAlertModal(null)}
+        />
+      )}
     </div>
   )
 }
