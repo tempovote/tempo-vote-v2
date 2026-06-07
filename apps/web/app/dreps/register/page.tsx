@@ -7,6 +7,7 @@ import { useWalletStore } from "@/store/wallet"
 import RegisterDRepForm, { type DRepFormData } from "@/components/drep/RegisterDRepForm"
 import RegisterDRepSuccess from "@/components/drep/RegisterDRepSuccess"
 import { authHeader, getJwt } from "@/lib/api"
+import { resolveAnchorUrl } from "@/lib/governance"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -69,8 +70,7 @@ function StepIndicator({ current }: { current: number }) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function toDisplayUrl(url: string): string {
-  if (url.startsWith("ipfs://")) return `https://ipfs.io/ipfs/${url.slice(7)}`
-  return url
+  return resolveAnchorUrl(url) ?? url
 }
 
 // ─── Confirm step ────────────────────────────────────────────────────────────
