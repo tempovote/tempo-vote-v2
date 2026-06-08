@@ -664,33 +664,43 @@ function ProtocolParamChangeFields({
         <label className={LABEL}>Thêm thông số</label>
         <div className="flex gap-2 flex-wrap items-center">
           {/* Group dropdown */}
-          <select
-            value={selGroup}
-            onChange={(e) => { setSelGroup(e.target.value); setSelParam("") }}
-            className={`${INPUT_SM} flex-1 min-w-[150px] cursor-pointer`}
-          >
-            <option value="">── Chọn Group ──</option>
-            {CIP1694_GROUPS.map((g) => (
-              <option key={g.id} value={g.id}>{g.label}</option>
-            ))}
-            <option value="governance">{GOVERNANCE_GROUP_META.label}</option>
-          </select>
+          <div className="relative flex-1 min-w-[150px]">
+            <select
+              value={selGroup}
+              onChange={(e) => { setSelGroup(e.target.value); setSelParam("") }}
+              className={`${INPUT_SM} w-full pr-8 appearance-none cursor-pointer`}
+            >
+              <option value="">── Chọn Group ──</option>
+              {CIP1694_GROUPS.map((g) => (
+                <option key={g.id} value={g.id}>{g.label}</option>
+              ))}
+              <option value="governance">{GOVERNANCE_GROUP_META.label}</option>
+            </select>
+            <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
 
           {/* Param dropdown — only for non-governance groups */}
           {selGroup && !isGovGroup && (
-            <select
-              value={selParam}
-              onChange={(e) => setSelParam(e.target.value)}
-              className={`${INPUT_SM} flex-1 min-w-[220px] cursor-pointer`}
-              disabled={availableForSel.length === 0}
-            >
-              <option value="">
-                {availableForSel.length === 0 ? "Tất cả đã được thêm" : "── Chọn Tham số ──"}
-              </option>
-              {availableForSel.map((p) => (
-                <option key={p.key} value={p.key}>{p.label} ({p.unit})</option>
-              ))}
-            </select>
+            <div className="relative flex-1 min-w-[220px]">
+              <select
+                value={selParam}
+                onChange={(e) => setSelParam(e.target.value)}
+                className={`${INPUT_SM} w-full pr-8 appearance-none cursor-pointer disabled:opacity-50`}
+                disabled={availableForSel.length === 0}
+              >
+                <option value="">
+                  {availableForSel.length === 0 ? "Tất cả đã được thêm" : "── Chọn Tham số ──"}
+                </option>
+                {availableForSel.map((p) => (
+                  <option key={p.key} value={p.key}>{p.label} ({p.unit})</option>
+                ))}
+              </select>
+              <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </div>
           )}
 
           {/* Add button */}
@@ -761,8 +771,10 @@ function ProtocolParamChangeFields({
                   value={params[entry.paramKey]}
                   onChange={(e) => onChange({ [entry.paramKey]: e.target.value } as Partial<TypeParams>)}
                   placeholder="Giá trị đề xuất..."
-                  className={`${INPUT_SM} w-40 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                    hasValue ? "border-accent/60" : ""
+                  className={`w-40 text-right tabular-nums text-sm rounded-xl px-3 py-2 bg-bg-secondary placeholder-text-muted focus:outline-none transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    hasValue
+                      ? "border border-accent/60 text-text-primary focus:border-accent"
+                      : "border border-border-default text-text-primary focus:border-accent/60"
                   }`}
                 />
                 <button
