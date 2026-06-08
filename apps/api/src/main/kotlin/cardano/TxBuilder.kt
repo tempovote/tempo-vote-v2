@@ -4,8 +4,11 @@ import com.bloxbean.cardano.client.address.Credential
 import com.bloxbean.cardano.client.api.model.Amount
 import com.bloxbean.cardano.client.common.model.Networks
 import com.bloxbean.cardano.client.governance.LegacyDRepId
+import com.bloxbean.cardano.client.plutus.spec.PlutusV3Script
+import com.bloxbean.cardano.client.quicktx.AbstractTx
 import com.bloxbean.cardano.client.quicktx.QuickTxBuilder
 import com.bloxbean.cardano.client.quicktx.Tx
+import com.bloxbean.cardano.client.transaction.spec.TransactionWitnessSet
 import com.bloxbean.cardano.client.transaction.spec.governance.Anchor
 import com.bloxbean.cardano.client.transaction.spec.governance.DRep
 import com.bloxbean.cardano.client.transaction.spec.governance.DRepType
@@ -18,7 +21,11 @@ import com.bloxbean.cardano.client.transaction.spec.governance.actions.HardForkI
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.InfoAction
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.NewConstitution
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.NoConfidence
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.TreasuryWithdrawalsAction
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.UpdateCommittee
 import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
+import com.bloxbean.cardano.client.transaction.spec.Withdrawal
+import com.bloxbean.cardano.client.spec.UnitInterval
 import com.bloxbean.cardano.client.util.HexUtil
 import java.math.BigInteger
 
@@ -252,6 +259,122 @@ class TxBuilder(private val network: Network) {
         return buildUnsigned(tx, changeAddress)
     }
 
+    /**
+     * Build an unsigned Treasury Withdrawal governance proposal.
+     * @param withdrawals list of (bech32 stake address, lovelace amount) pairs
+     */
+    suspend fun buildTreasuryWithdrawal(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        withdrawals: List<Pair<String, BigInteger>>,
+    ): String {
+        require(withdrawals.isNotEmpty()) { "treasuryWithdrawals must not be empty" }
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val ogmios = OgmiosStateQueries(network)
+        // Constitution guardrails hash is required by ledger (error 3163 if missing/wrong).
+        val guardrailsHash = ogmios.getConstitutionGuardrailsHash()
+        val action = TreasuryWithdrawalsAction.builder()
+            .withdrawals(withdrawals.map { (addr, lovelace) ->
+                Withdrawal.builder().rewardAddress(addr).coin(lovelace).build()
+            })
+            .policyHash(guardrailsHash)
+            .build()
+
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+
+        if (guardrailsHash != null) {
+            // Conway rule: guardrails script must be PRESENT in witness set at submission time
+            // but is NOT executed (no redeemer, no scriptDataHash). Execution happens at ratification.
+            val scriptHex = ogmios.getConstitutionScriptHex()
+            if (scriptHex != null) {
+                return buildUnsignedWithGuardrailsScript(tx, changeAddress, scriptHex)
+            }
+        }
+
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    private fun buildUnsignedWithGuardrailsScript(tx: Tx, changeAddress: String, scriptHex: String): String {
+        val quickTxBuilder = QuickTxBuilder(backendService)
+        val transaction = quickTxBuilder
+            .compose(tx)
+            .feePayer(changeAddress)
+            .build()
+
+        println("[TxBuilder] scriptHex length=${scriptHex.length}, prefix=${scriptHex.take(12)}")
+
+        // Add guardrails script to witness set — no redeemer, no script integrity hash.
+        // The script is validated at ratification time, not at submission.
+        //
+        // Double-encoding: Kupo returns scriptHex as Level-2 CBOR (590851...flat_bytes).
+        // The ledger hashes the CONTENT of the bytes item in the witness, so the bytes item
+        // must contain `590851flat_bytes` (Level-2) as its content for the hash to equal
+        // fa24fb... = blake2b-224(0x03 || 590851flat_bytes).
+        //
+        // PlutusV3Script.serializeAsDataItem() CBOR-decodes cborHex → inner ByteString →
+        // serialises it back as a CBOR bytes item. So we wrap scriptHex in one more
+        // CBOR bytestring header so the final witness item carries the Level-2 bytes.
+        val scriptBytesLen = scriptHex.length / 2          // 2132 bytes
+        val lenHex = "%04x".format(scriptBytesLen)         // "0854"
+        val doubleCborHex = "59$lenHex$scriptHex"          // bytes(2132, 590851flat_bytes)
+        val plutusScript = PlutusV3Script.builder().cborHex(doubleCborHex).build()
+        val ws = transaction.witnessSet ?: TransactionWitnessSet()
+        ws.plutusV3Scripts = (ws.plutusV3Scripts ?: emptyList()) + listOf(plutusScript)
+        transaction.witnessSet = ws
+
+        // Pad fee: base governance padding + 2135 bytes of double-encoded script witness at ~44 lovelace/byte
+        val padding = BigInteger.valueOf(10_000L + 44L * 2135L)  // ≈ 103,940
+        val body = transaction.body
+        body.fee = body.fee.add(padding)
+        body.outputs.firstOrNull { it.address == changeAddress }?.let { changeOut ->
+            if (changeOut.value.coin >= padding) {
+                changeOut.value.coin = changeOut.value.coin.subtract(padding)
+            }
+        }
+
+        val certCount = transaction.body.certs?.size ?: 0
+        println("[TxBuilder] TreasuryWithdrawal TX with guardrails script: certs=$certCount fee=${transaction.body.fee}")
+        return transaction.serializeToHex()
+    }
+
+    /**
+     * Build an unsigned Update Committee governance proposal.
+     * @param membersToRemove  bech32 cc_cold / cc_cold_test credentials (or raw hex) to remove
+     * @param membersToAdd     list of (credential, termEpoch) pairs for new members
+     * @param quorumNumerator  numerator of the new quorum threshold
+     * @param quorumDenominator denominator of the new quorum threshold (e.g. 2/3 = 67%)
+     */
+    fun buildUpdateCommittee(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        membersToRemove: List<String>,
+        membersToAdd: List<Pair<String, Int>>,
+        quorumNumerator: Long,
+        quorumDenominator: Long,
+        prevGovActionTxHash: String? = null,
+        prevGovActionIdx: Int? = null,
+    ): String {
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val prevId = buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx)
+        val removeSet = LinkedHashSet(membersToRemove.map { parseCcCredential(it) })
+        val addMap = LinkedHashMap<Credential, Int>().apply {
+            membersToAdd.forEach { (cred, epoch) -> put(parseCcCredential(cred), epoch) }
+        }
+        val quorum = UnitInterval(BigInteger.valueOf(quorumNumerator), BigInteger.valueOf(quorumDenominator))
+        val action = UpdateCommittee.builder()
+            .prevGovActionId(prevId)
+            .membersForRemoval(removeSet)
+            .newMembersAndTerms(addMap)
+            .quorumThreshold(quorum)
+            .build()
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
@@ -274,6 +397,25 @@ class TxBuilder(private val network: Network) {
     }
 
     /**
+     * Parse a CC cold credential from bech32 (cc_cold1..., cc_cold_test1...,
+     * cc_cold_script1..., cc_cold_script_test1...) or raw hex key hash.
+     */
+    private fun parseCcCredential(credential: String): Credential {
+        val trimmed = credential.trim()
+        return when {
+            trimmed.startsWith("cc_cold_script") -> {
+                val hash = com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data
+                Credential.fromScript(hash)
+            }
+            trimmed.startsWith("cc_cold") -> {
+                val hash = com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data
+                Credential.fromKey(hash)
+            }
+            else -> Credential.fromKey(HexUtil.decodeHexString(trimmed))
+        }
+    }
+
+    /**
      * Build a simple ADA payment transaction (e.g. platform fee).
      */
     fun buildPayment(
@@ -291,7 +433,8 @@ class TxBuilder(private val network: Network) {
      * Complete the transaction WITHOUT signing — returns unsigned CBOR hex.
      * The frontend is responsible for signing via wallet.signTx().
      */
-    private fun buildUnsigned(tx: Tx, changeAddress: String): String {
+    @Suppress("UNCHECKED_CAST")
+    private fun buildUnsigned(tx: AbstractTx<*>, changeAddress: String): String {
         val quickTxBuilder = QuickTxBuilder(backendService)
         val transaction = quickTxBuilder
             .compose(tx)

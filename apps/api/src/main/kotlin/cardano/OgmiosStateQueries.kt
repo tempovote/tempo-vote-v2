@@ -151,6 +151,11 @@ class OgmiosStateQueries(private val network: Network) {
         Network.MAINNET -> System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")
     }
 
+    private val kupoUrl = when (network) {
+        Network.PREPROD -> System.getenv("KUPO_PREPROD_URL") ?: "http://localhost:1442"
+        Network.MAINNET -> System.getenv("KUPO_MAINNET_URL") ?: error("KUPO_MAINNET_URL not set")
+    }
+
     companion object {
         private val client = HttpClient(CIO) {
             install(ContentNegotiation) { json() }
@@ -168,6 +173,38 @@ class OgmiosStateQueries(private val network: Network) {
 
     suspend fun getConstitutionalCommittee(): JsonElement {
         return queryRaw("queryLedgerState/constitutionalCommittee", buildJsonObject {})
+    }
+
+    /**
+     * Returns the current constitution's guardrails script hash as raw bytes (28 bytes),
+     * or null if the constitution has no guardrails script.
+     * Treasury Withdrawals and ParameterChange proposals must include this hash when non-null.
+     */
+    suspend fun getConstitutionGuardrailsHash(): ByteArray? {
+        val constitution = queryRaw("queryLedgerState/constitution", buildJsonObject {}).jsonObject
+        val guardrails = constitution["guardrails"]
+        if (guardrails == null || guardrails is JsonNull) return null
+        val hashHex = guardrails.jsonObject["hash"]?.jsonPrimitive?.contentOrNull ?: return null
+        return ByteArray(hashHex.length / 2) { i ->
+            hashHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+        }
+    }
+
+    /**
+     * Returns the CBOR hex of the current constitution's guardrails script (Plutus v3),
+     * or null if there is no guardrails script or it cannot be fetched from Kupo.
+     * Required as a witness when submitting TreasuryWithdrawal or ParameterChange proposals.
+     */
+    suspend fun getConstitutionScriptHex(): String? {
+        val constitution = queryRaw("queryLedgerState/constitution", buildJsonObject {}).jsonObject
+        val guardrails = constitution["guardrails"]
+        if (guardrails == null || guardrails is JsonNull) return null
+        val hashHex = guardrails.jsonObject["hash"]?.jsonPrimitive?.contentOrNull ?: return null
+        return withTimeout(HTTP_TIMEOUT_MS) {
+            val response = client.get("$kupoUrl/scripts/$hashHex")
+            val text = response.bodyAsText()
+            json.parseToJsonElement(text).jsonObject["script"]?.jsonPrimitive?.contentOrNull
+        }
     }
 
     suspend fun getTreasury(): JsonObject {

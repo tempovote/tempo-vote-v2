@@ -2,6 +2,8 @@
 
 import { use, useState, useRef, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { marked } from "marked"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { usePollDetail, usePollComments } from "@/hooks/useCommunity"
@@ -374,6 +376,87 @@ function CommentItem({ comment, network, myStakeAddress, pollId, onDeleted }: {
   )
 }
 
+// ─── GA type list (mirrors community page) ───────────────────────────────────
+
+const GA_TYPES = [
+  { value: "infoAction",               label: "Info Action",               desc: "Đề xuất tư vấn, không ràng buộc" },
+  { value: "treasuryWithdrawals",      label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury" },
+  { value: "protocolParametersUpdate", label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức" },
+  { value: "hardForkInitiation",       label: "Hard Fork Initiation",      desc: "Nâng cấp phiên bản giao thức" },
+  { value: "noConfidence",             label: "No Confidence",             desc: "Bất tín nhiệm Constitutional Committee" },
+  { value: "updateCommittee",          label: "Update Committee",          desc: "Thêm/xóa thành viên CC" },
+  { value: "newConstitution",          label: "New Constitution",          desc: "Thay đổi Hiến pháp Cardano" },
+]
+
+// ─── Propose Action dropdown ──────────────────────────────────────────────────
+
+function ProposeDropdown({ pollId, network }: { pollId: string; network: string }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const np = network !== "mainnet" ? `&network=${network}` : ""
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border-default text-text-secondary hover:border-accent/50 hover:text-accent-light transition-colors"
+        title="Đề xuất thành Governance Action"
+      >
+        Propose Action
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-50 w-64 bg-bg-card border border-border-default rounded-xl shadow-2xl overflow-hidden animate-fade-in">
+          <p className="px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-b border-border-subtle">
+            Chọn loại Governance Action
+          </p>
+          {GA_TYPES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                router.push(`/governance-actions/new?source=${pollId}&type=${t.value}${np}`)
+              }}
+              className="w-full text-left px-3 py-2.5 hover:bg-bg-elevated transition-colors border-b border-border-subtle last:border-0"
+            >
+              <p className="text-sm font-medium text-text-primary leading-tight">{t.label}</p>
+              <p className="text-[11px] text-text-muted mt-0.5 leading-tight">{t.desc}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+
+function MarkdownBody({ value }: { value: string }) {
+  const html = marked.parse(value, { async: false }) as string
+  return (
+    // eslint-disable-next-line react/no-danger
+    <div
+      className="text-sm text-text-secondary leading-relaxed markdown-preview"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PollDetailPage({
@@ -490,6 +573,9 @@ export default function PollDetailPage({
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={poll.status} />
             <span className="text-xs text-text-muted">{timeLabel(poll.status, poll.endsAt, poll.startsAt)}</span>
+            <div className="ml-auto">
+              <ProposeDropdown pollId={poll.id} network={network} />
+            </div>
           </div>
           <h1 className="text-xl font-bold text-text-primary leading-snug">{poll.title}</h1>
         </div>
@@ -510,7 +596,7 @@ export default function PollDetailPage({
         {poll.abstract && (
           <div className="space-y-1">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tóm tắt</h3>
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.abstract}</p>
+            <MarkdownBody value={poll.abstract} />
           </div>
         )}
 
@@ -518,7 +604,7 @@ export default function PollDetailPage({
         {poll.motivation && (
           <div className="space-y-1">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Động lực</h3>
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.motivation}</p>
+            <MarkdownBody value={poll.motivation} />
           </div>
         )}
 
@@ -526,7 +612,7 @@ export default function PollDetailPage({
         {poll.rationale && (
           <div className="space-y-1">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Cơ sở lý luận</h3>
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.rationale}</p>
+            <MarkdownBody value={poll.rationale} />
           </div>
         )}
 

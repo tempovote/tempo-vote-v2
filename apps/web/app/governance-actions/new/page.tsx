@@ -27,8 +27,8 @@ const GA_TYPES: Record<string, GaTypeMeta> = {
   noConfidence:             { label: "No Confidence",             desc: "Bất tín nhiệm Constitutional Committee hiện tại",    txType: "PROPOSE_NO_CONFIDENCE" },
   hardForkInitiation:       { label: "Hard Fork Initiation",      desc: "Đề xuất nâng cấp phiên bản giao thức Cardano",      txType: "PROPOSE_HARD_FORK" },
   newConstitution:          { label: "New Constitution",          desc: "Đề xuất thay đổi Hiến pháp Cardano on-chain",       txType: "PROPOSE_NEW_CONSTITUTION" },
-  treasuryWithdrawals:      { label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury",                   txType: null },
-  updateCommittee:          { label: "Update Committee",          desc: "Thêm/xóa thành viên Constitutional Committee",      txType: null },
+  treasuryWithdrawals:      { label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury",                   txType: "PROPOSE_TREASURY_WITHDRAWAL" },
+  updateCommittee:          { label: "Update Committee",          desc: "Thêm/xóa thành viên Constitutional Committee",      txType: "PROPOSE_UPDATE_COMMITTEE" },
   protocolParametersUpdate: { label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức (phức tạp)",            txType: null },
 }
 
@@ -62,6 +62,8 @@ type TypeParams = {
   constitutionAnchorUrl: string
   constitutionAnchorHash: string
   constitutionScriptHash: string
+  quorumNumerator: string
+  quorumDenominator: string
 }
 
 const EMPTY_TYPE_PARAMS: TypeParams = {
@@ -72,7 +74,17 @@ const EMPTY_TYPE_PARAMS: TypeParams = {
   constitutionAnchorUrl: "",
   constitutionAnchorHash: "",
   constitutionScriptHash: "",
+  quorumNumerator: "",
+  quorumDenominator: "",
 }
+
+// ─── Row types for dynamic lists ─────────────────────────────────────────────
+
+type WithdrawalRow = { stakeAddress: string; adaAmount: string }
+const EMPTY_WITHDRAWAL_ROW: WithdrawalRow = { stakeAddress: "", adaAmount: "" }
+
+type CommitteeAddRow = { credential: string; termEpoch: string }
+const EMPTY_COMMITTEE_ADD_ROW: CommitteeAddRow = { credential: "", termEpoch: "" }
 
 // ─── Type-specific field components ──────────────────────────────────────────
 
@@ -238,9 +250,274 @@ function NewConstitutionFields({ params, onChange }: { params: TypeParams; onCha
   )
 }
 
+// ─── Treasury Withdrawal UI ───────────────────────────────────────────────────
+
+function TreasuryWithdrawalFields({
+  rows,
+  onChange,
+  network,
+}: {
+  rows: WithdrawalRow[]
+  onChange: (rows: WithdrawalRow[]) => void
+  network: string
+}) {
+  const totalAda = rows.reduce((sum, r) => sum + (parseFloat(r.adaAmount) || 0), 0)
+  const stakeHint = network === "mainnet" ? "stake1..." : "stake_test1..."
+
+  const patchRow = (i: number, patch: Partial<WithdrawalRow>) => {
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+
+  return (
+    <>
+      <div className="p-3 bg-warning/8 border border-warning/20 rounded-xl text-xs text-text-secondary space-y-1">
+        <p className="font-semibold text-warning">Treasury Withdrawals — Lưu ý</p>
+        <p>Yêu cầu DRep threshold <strong>67%</strong> + CC threshold <strong>60%</strong> để được ratified.</p>
+        <p>ADA được rút trực tiếp từ Cardano treasury vào reward address của recipient.</p>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className={LABEL}>Recipients <span className="text-danger font-normal normal-case">*</span></label>
+        <div className="space-y-2">
+          {rows.map((row, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <input
+                type="text"
+                value={row.stakeAddress}
+                onChange={(e) => patchRow(i, { stakeAddress: e.target.value })}
+                placeholder={`Stake address (${stakeHint})`}
+                className={INPUT_SM + " flex-1 min-w-0 font-mono text-xs"}
+              />
+              <div className="relative shrink-0 w-44">
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={row.adaAmount}
+                  onChange={(e) => patchRow(i, { adaAmount: e.target.value })}
+                  placeholder="0"
+                  className={INPUT_SM + " w-full text-right pr-9 tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-text-muted pointer-events-none select-none">₳</span>
+              </div>
+              {rows.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
+                  className="w-8 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange([...rows, { ...EMPTY_WITHDRAWAL_ROW }])}
+          className="flex items-center gap-1.5 text-sm text-accent-light font-medium hover:underline mt-1"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Recipient
+        </button>
+      </div>
+
+      {totalAda > 0 && (
+        <div className="flex items-center justify-between px-4 py-3 bg-bg-elevated rounded-xl border border-border-subtle">
+          <span className="text-xs text-text-muted uppercase tracking-wider">Total Withdrawal</span>
+          <span className="font-bold text-text-primary tabular-nums">
+            {totalAda.toLocaleString("en-US", { maximumFractionDigits: 6 })} <span className="text-text-muted font-normal">₳</span>
+          </span>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ─── Update Committee UI ──────────────────────────────────────────────────────
+
+function UpdateCommitteeFields({
+  params,
+  onParamChange,
+  removeRows,
+  onRemoveChange,
+  addRows,
+  onAddChange,
+}: {
+  params: TypeParams
+  onParamChange: (patch: Partial<TypeParams>) => void
+  removeRows: string[]
+  onRemoveChange: (rows: string[]) => void
+  addRows: CommitteeAddRow[]
+  onAddChange: (rows: CommitteeAddRow[]) => void
+}) {
+  const num = parseInt(params.quorumNumerator)
+  const den = parseInt(params.quorumDenominator)
+  const quorumPct = num > 0 && den > 0 ? ((num / den) * 100).toFixed(1) : null
+
+  const patchAddRow = (i: number, patch: Partial<CommitteeAddRow>) => {
+    onAddChange(addRows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+
+  return (
+    <>
+      <div className="p-3 bg-warning/8 border border-warning/20 rounded-xl text-xs text-text-secondary space-y-1">
+        <p className="font-semibold text-warning">Update Committee — Lưu ý</p>
+        <p>Yêu cầu DRep 60% + SPO 51% để ratified (hoặc CC 51% nếu chỉ thay quorum).</p>
+        <p>Cold credential: bech32 <span className="font-mono">cc_cold1...</span> (mainnet) / <span className="font-mono">cc_cold_test1...</span> (testnet).</p>
+      </div>
+
+      {/* Remove Members */}
+      <div className="space-y-1.5">
+        <label className={LABEL}>
+          Members to Remove
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+        </label>
+        <p className="text-xs text-text-muted">Cold credentials của CC members cần xóa khỏi committee.</p>
+        <div className="space-y-2">
+          {removeRows.map((cred, i) => (
+            <div key={i} className="flex gap-2">
+              <input
+                type="text"
+                value={cred}
+                onChange={(e) => {
+                  const next = [...removeRows]
+                  next[i] = e.target.value
+                  onRemoveChange(next)
+                }}
+                placeholder="cc_cold1... hoặc cc_cold_test1..."
+                className={INPUT_SM + " flex-1 font-mono text-xs"}
+              />
+              {removeRows.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveChange(removeRows.filter((_, idx) => idx !== i))}
+                  className="w-8 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => onRemoveChange([...removeRows, ""])}
+          className="flex items-center gap-1.5 text-sm text-accent-light font-medium hover:underline mt-1"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Credential
+        </button>
+      </div>
+
+      {/* Add Members */}
+      <div className="space-y-1.5">
+        <label className={LABEL}>
+          Members to Add
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+        </label>
+        <p className="text-xs text-text-muted">Cold credential và epoch (cuối nhiệm kỳ) của CC members mới.</p>
+        <div className="space-y-2">
+          {addRows.map((row, i) => (
+            <div key={i} className="flex gap-2 items-start">
+              <input
+                type="text"
+                value={row.credential}
+                onChange={(e) => patchAddRow(i, { credential: e.target.value })}
+                placeholder="cc_cold1..."
+                className={INPUT_SM + " flex-1 font-mono text-xs"}
+              />
+              <div className="flex items-center gap-1 shrink-0">
+                <input
+                  type="number"
+                  min={0}
+                  value={row.termEpoch}
+                  onChange={(e) => patchAddRow(i, { termEpoch: e.target.value })}
+                  placeholder="Epoch"
+                  className={INPUT_SM + " w-24 text-center tabular-nums"}
+                />
+              </div>
+              {addRows.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onAddChange(addRows.filter((_, idx) => idx !== i))}
+                  className="w-8 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => onAddChange([...addRows, { ...EMPTY_COMMITTEE_ADD_ROW }])}
+          className="flex items-center gap-1.5 text-sm text-accent-light font-medium hover:underline mt-1"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Member
+        </button>
+      </div>
+
+      {/* Quorum Threshold */}
+      <div className="space-y-1.5">
+        <label className={LABEL}>Quorum Threshold <span className="text-danger font-normal normal-case">*</span></label>
+        <p className="text-xs text-text-muted">Tỷ lệ tối thiểu CC members phải đồng ý để vote passed (e.g. 2/3 = 66.7%).</p>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min={1}
+            value={params.quorumNumerator}
+            onChange={(e) => onParamChange({ quorumNumerator: e.target.value })}
+            placeholder="2"
+            className={INPUT_SM + " w-24 text-center tabular-nums"}
+          />
+          <span className="text-text-muted text-lg">/</span>
+          <input
+            type="number"
+            min={1}
+            value={params.quorumDenominator}
+            onChange={(e) => onParamChange({ quorumDenominator: e.target.value })}
+            placeholder="3"
+            className={INPUT_SM + " w-24 text-center tabular-nums"}
+          />
+          {quorumPct && (
+            <span className="text-sm font-semibold text-accent-light tabular-nums">= {quorumPct}%</span>
+          )}
+        </div>
+      </div>
+
+      <PrevGovActionFields
+        params={params}
+        onChange={onParamChange}
+        label="Previous Committee Action"
+        hint="GA UpdateCommittee hoặc NoConfidence cuối cùng đã được enacted. Để trống nếu đây là lần đầu."
+      />
+    </>
+  )
+}
+
 // ─── Validation per type ─────────────────────────────────────────────────────
 
-function validateTypeParams(gaType: string, params: TypeParams): string | null {
+function validateTypeParams(
+  gaType: string,
+  params: TypeParams,
+  withdrawalRows: WithdrawalRow[],
+  committeeRemoveRows: string[],
+  committeeAddRows: CommitteeAddRow[],
+): string | null {
   if (gaType === "hardForkInitiation") {
     const major = parseInt(params.protocolVersionMajor)
     if (!params.protocolVersionMajor || isNaN(major) || major < 0)
@@ -252,12 +529,54 @@ function validateTypeParams(gaType: string, params: TypeParams): string | null {
     if (!params.constitutionAnchorHash.trim() || params.constitutionAnchorHash.length !== 64)
       return "Constitution Hash phải là 64 hex chars (blake2b-256)."
   }
+  if (gaType === "treasuryWithdrawals") {
+    const valid = withdrawalRows.filter(
+      (r) => r.stakeAddress.trim().startsWith("stake") && parseFloat(r.adaAmount) > 0,
+    )
+    if (valid.length === 0)
+      return "Cần ít nhất 1 recipient hợp lệ (stake address + ADA > 0)."
+    const bad = withdrawalRows.find(
+      (r) => r.stakeAddress.trim() && !r.stakeAddress.trim().startsWith("stake"),
+    )
+    if (bad) return `Stake address không hợp lệ: "${bad.stakeAddress}". Phải bắt đầu bằng "stake".`
+  }
+  if (gaType === "updateCommittee") {
+    const num = parseInt(params.quorumNumerator)
+    const den = parseInt(params.quorumDenominator)
+    if (!params.quorumNumerator || !params.quorumDenominator || isNaN(num) || isNaN(den))
+      return "Vui lòng nhập Quorum Threshold (numerator/denominator)."
+    if (num <= 0 || den <= 0)
+      return "Numerator và denominator phải > 0."
+    if (num > den)
+      return "Numerator không được lớn hơn denominator (quorum ≤ 100%)."
+    const badRemove = committeeRemoveRows.find(
+      (c) => c.trim() && !c.trim().startsWith("cc_cold"),
+    )
+    if (badRemove)
+      return `Credential không hợp lệ: "${badRemove}". Phải là bech32 cc_cold1... hoặc cc_cold_test1...`
+    const badAdd = committeeAddRows.find(
+      (r) => r.credential.trim() && !r.credential.trim().startsWith("cc_cold"),
+    )
+    if (badAdd)
+      return `Credential không hợp lệ: "${badAdd.credential}". Phải là bech32 cc_cold1...`
+    const badEpoch = committeeAddRows.find(
+      (r) => r.credential.trim() && (!r.termEpoch || parseInt(r.termEpoch) <= 0),
+    )
+    if (badEpoch)
+      return `Vui lòng nhập term epoch cho credential "${badEpoch.credential}".`
+  }
   return null
 }
 
 // ─── Resolve type-specific submitTx params ───────────────────────────────────
 
-function buildTypeParams(gaType: string, params: TypeParams): Partial<BuildTxRequest> {
+function buildTypeParams(
+  gaType: string,
+  params: TypeParams,
+  withdrawalRows: WithdrawalRow[],
+  committeeRemoveRows: string[],
+  committeeAddRows: CommitteeAddRow[],
+): Partial<BuildTxRequest> {
   const prevGovActionTxHash = params.prevGovActionTxHash.trim() || undefined
   const prevGovActionIdx = params.prevGovActionIdx.trim()
     ? parseInt(params.prevGovActionIdx)
@@ -278,6 +597,27 @@ function buildTypeParams(gaType: string, params: TypeParams): Partial<BuildTxReq
         constitutionAnchorUrl: params.constitutionAnchorUrl.trim(),
         constitutionAnchorHash: params.constitutionAnchorHash.trim(),
         constitutionScriptHash: params.constitutionScriptHash.trim() || undefined,
+        prevGovActionTxHash,
+        prevGovActionIdx,
+      }
+    case "treasuryWithdrawals":
+      return {
+        treasuryWithdrawals: withdrawalRows
+          .filter((r) => r.stakeAddress.trim().startsWith("stake") && parseFloat(r.adaAmount) > 0)
+          .map((r) => ({
+            stakeAddress: r.stakeAddress.trim(),
+            // Convert ADA → lovelace as string to preserve precision
+            lovelace: String(Math.round(parseFloat(r.adaAmount) * 1_000_000)),
+          })),
+      }
+    case "updateCommittee":
+      return {
+        committeeRemove: committeeRemoveRows.filter((c) => c.trim()).map((c) => c.trim()),
+        committeeAdd: committeeAddRows
+          .filter((r) => r.credential.trim() && parseInt(r.termEpoch) > 0)
+          .map((r) => ({ credential: r.credential.trim(), termEpoch: parseInt(r.termEpoch) })),
+        quorumNumerator: parseInt(params.quorumNumerator),
+        quorumDenominator: parseInt(params.quorumDenominator),
         prevGovActionTxHash,
         prevGovActionIdx,
       }
@@ -315,11 +655,18 @@ export default function NewGovernanceActionPage({
   const [rationale, setRationale] = useState("")
   const [links, setLinks] = useState<string[]>([""])
 
-  // Type-specific params
+  // Type-specific params (flat fields)
   const [typeParams, setTypeParams] = useState<TypeParams>(EMPTY_TYPE_PARAMS)
   const patchTypeParams = useCallback((patch: Partial<TypeParams>) => {
     setTypeParams((prev) => ({ ...prev, ...patch }))
   }, [])
+
+  // Treasury Withdrawal recipient rows
+  const [withdrawalRows, setWithdrawalRows] = useState<WithdrawalRow[]>([{ ...EMPTY_WITHDRAWAL_ROW }])
+
+  // Update Committee member rows
+  const [committeeRemoveRows, setCommitteeRemoveRows] = useState<string[]>([""])
+  const [committeeAddRows, setCommitteeAddRows] = useState<CommitteeAddRow[]>([{ ...EMPTY_COMMITTEE_ADD_ROW }])
 
   // Pre-fill from poll (only if sourcePollId present)
   const [prefilled, setPrefilled] = useState(false)
@@ -358,7 +705,7 @@ export default function NewGovernanceActionPage({
       return
     }
 
-    const typeError = validateTypeParams(gaType, typeParams)
+    const typeError = validateTypeParams(gaType, typeParams, withdrawalRows, committeeRemoveRows, committeeAddRows)
     if (typeError) {
       setAlert({ type: "error", title: "Thiếu thông tin", message: typeError })
       return
@@ -414,7 +761,7 @@ export default function NewGovernanceActionPage({
       const hash = await submitTx(gaInfo.txType!, {
         anchorUrl: anchorCache.current!.anchorUrl,
         anchorDataHash: anchorCache.current!.anchorDataHash,
-        ...buildTypeParams(gaType, typeParams),
+        ...buildTypeParams(gaType, typeParams, withdrawalRows, committeeRemoveRows, committeeAddRows),
       })
 
       setTxHash(hash)
@@ -432,7 +779,7 @@ export default function NewGovernanceActionPage({
     } finally {
       setSubmitting(false)
     }
-  }, [drepId, gaInfo, gaType, typeParams, title, abstract, motivation, rationale, validLinks, isTypeSupported, reauthenticate, submitTx])
+  }, [drepId, gaInfo, gaType, typeParams, withdrawalRows, committeeRemoveRows, committeeAddRows, title, abstract, motivation, rationale, validLinks, isTypeSupported, reauthenticate, submitTx])
 
   // ─── Guards ───────────────────────────────────────────────────────────────
 
@@ -561,7 +908,7 @@ export default function NewGovernanceActionPage({
             </label>
             <RationaleEditor
               label="" description="" placeholder="Vấn đề nào đề xuất này giải quyết?"
-              maxLength={2500} height={150}
+              maxLength={15000} height={150}
               value={motivation} onChange={setMotivation}
             />
           </div>
@@ -573,7 +920,7 @@ export default function NewGovernanceActionPage({
             </label>
             <RationaleEditor
               label="" description="" placeholder="Lập luận và bằng chứng cho đề xuất..."
-              maxLength={2500} height={150}
+              maxLength={15000} height={150}
               value={rationale} onChange={setRationale}
             />
           </div>
@@ -591,6 +938,23 @@ export default function NewGovernanceActionPage({
                 )}
                 {gaType === "newConstitution" && (
                   <NewConstitutionFields params={typeParams} onChange={patchTypeParams} />
+                )}
+                {gaType === "treasuryWithdrawals" && (
+                  <TreasuryWithdrawalFields
+                    rows={withdrawalRows}
+                    onChange={setWithdrawalRows}
+                    network={network}
+                  />
+                )}
+                {gaType === "updateCommittee" && (
+                  <UpdateCommitteeFields
+                    params={typeParams}
+                    onParamChange={patchTypeParams}
+                    removeRows={committeeRemoveRows}
+                    onRemoveChange={setCommitteeRemoveRows}
+                    addRows={committeeAddRows}
+                    onAddChange={setCommitteeAddRows}
+                  />
                 )}
               </div>
             </>

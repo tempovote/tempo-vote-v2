@@ -60,10 +60,10 @@ export function AlertModal({ type, title, message, children, onClose }: Props) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       {/* Card */}
-      <div className="relative w-full max-w-sm bg-bg-card rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+      <div className="relative w-full max-w-sm bg-bg-card rounded-2xl shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[85vh]">
 
-        {/* Icon header */}
-        <div className="flex flex-col items-center gap-3 px-6 pt-7 pb-4">
+        {/* Icon + title (fixed) */}
+        <div className="flex flex-col items-center gap-3 px-6 pt-7 pb-4 shrink-0">
           <span className={`w-14 h-14 rounded-full flex items-center justify-center ${cfg.iconCls}`}>
             <svg
               width="26" height="26" viewBox="0 0 24 24"
@@ -76,21 +76,27 @@ export function AlertModal({ type, title, message, children, onClose }: Props) {
           <h2 id="alert-title" className="text-lg font-bold text-text-primary text-center leading-snug">
             {title}
           </h2>
-          {message && (
-            <p className="text-sm text-text-secondary text-center leading-relaxed">
-              {message}
-            </p>
-          )}
-          {children && (
-            <div className="w-full mt-1">{children}</div>
-          )}
         </div>
 
-        {/* Divider */}
-        <div className="h-px bg-border-subtle mx-0" />
+        {/* Scrollable message body */}
+        {(message || children) && (
+          <div className="px-6 pb-4 overflow-y-auto flex-1 min-h-0">
+            {message && (
+              <p className="text-sm text-text-secondary text-center leading-relaxed break-all">
+                {message}
+              </p>
+            )}
+            {children && (
+              <div className="w-full mt-1">{children}</div>
+            )}
+          </div>
+        )}
 
-        {/* Actions */}
-        <div className="px-6 py-4">
+        {/* Divider */}
+        <div className="h-px bg-border-subtle shrink-0" />
+
+        {/* Actions (fixed at bottom) */}
+        <div className="px-6 py-4 shrink-0">
           <button
             ref={btnRef}
             onClick={onClose}

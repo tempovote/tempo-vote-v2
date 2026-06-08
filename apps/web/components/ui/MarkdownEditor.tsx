@@ -9,10 +9,13 @@ interface Props {
   placeholder?: string
   rows?: number
   id?: string
+  maxLength?: number
 }
 
-export default function MarkdownEditor({ value, onChange, placeholder, rows = 5, id }: Props) {
+export default function MarkdownEditor({ value, onChange, placeholder, rows = 5, id, maxLength }: Props) {
   const [tab, setTab] = useState<"write" | "preview">("write")
+  const remaining = maxLength !== undefined ? maxLength - value.length : null
+  const isOver = remaining !== null && remaining < 0
 
   const html = useCallback(() => {
     if (!value.trim()) return ""
@@ -55,7 +58,11 @@ export default function MarkdownEditor({ value, onChange, placeholder, rows = 5,
           id={id}
           rows={rows}
           value={value}
-          onChange={e => onChange(e.target.value)}
+          onChange={e => {
+            const v = e.target.value
+            if (maxLength !== undefined && v.length > maxLength + 50) return
+            onChange(v)
+          }}
           placeholder={placeholder}
           className="w-full bg-transparent px-4 py-3 text-sm text-text-primary placeholder:text-text-muted resize-none outline-none leading-relaxed"
         />
@@ -74,6 +81,13 @@ export default function MarkdownEditor({ value, onChange, placeholder, rows = 5,
           ) : (
             <span className="text-text-muted italic">Chưa có nội dung...</span>
           )}
+        </div>
+      )}
+
+      {/* Character counter */}
+      {remaining !== null && (
+        <div className={`px-4 pb-2 text-xs text-right ${isOver ? "text-danger font-medium" : "text-text-muted"}`}>
+          {remaining.toLocaleString()} ký tự còn lại
         </div>
       )}
     </div>

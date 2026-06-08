@@ -137,9 +137,14 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
       <div className="space-y-5">
         {/* givenName */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">
-            Tên DRep <span className="text-danger">*</span>
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-text-secondary">
+              Tên DRep <span className="text-danger">*</span>
+            </label>
+            <span className={`text-xs tabular-nums ${data.givenName.length >= 70 ? "text-warning" : "text-text-muted"}`}>
+              {data.givenName.length}/80
+            </span>
+          </div>
           <input
             className="input w-full"
             placeholder="Ví dụ: Tempo.Vote"
@@ -148,7 +153,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
             onChange={e => set({ givenName: e.target.value })}
           />
           <p className="text-text-muted text-xs mt-1">
-            Tên hiển thị trong ví và các công cụ quản trị Cardano. Tối đa 80 ký tự.
+            Tên hiển thị trong ví và các công cụ quản trị Cardano.
           </p>
         </div>
 
@@ -287,6 +292,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
           onChange={v => set({ motivations: v })}
           placeholder="Tại sao bạn muốn trở thành DRep?"
           rows={4}
+          maxLength={1000}
         />
       </div>
 
@@ -300,6 +306,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
           onChange={v => set({ objectives: v })}
           placeholder="Bạn muốn đạt được gì khi là DRep?"
           rows={4}
+          maxLength={1000}
         />
       </div>
 
@@ -313,6 +320,7 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
           onChange={v => set({ qualifications: v })}
           placeholder="Kinh nghiệm, kỹ năng hoặc chuyên môn liên quan..."
           rows={4}
+          maxLength={1000}
         />
       </div>
 
