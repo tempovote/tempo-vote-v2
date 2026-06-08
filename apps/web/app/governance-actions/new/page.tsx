@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useRef, useCallback, useEffect } from "react"
+import { use, useState, useRef, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
@@ -544,46 +544,11 @@ function UpdateCommitteeFields({
   )
 }
 
-// ─── Protocol Parameter Change — chain-info hook ─────────────────────────────
+// ─── Protocol Parameter Change — types & data ────────────────────────────────
 
-type ChainProtocolParams = {
-  minFeeA?: number; minFeeB?: number
-  maxTxSize?: number; maxBlockSize?: number; maxBlockHeaderSize?: number
-  maxValSize?: number; maxCollateralInputs?: number
-  keyDeposit?: number; poolDeposit?: number
-  expansionRate?: number; treasuryGrowthRate?: number
-  minPoolCost?: number; adaPerUtxoByte?: number; collateralPercent?: number
-  nOpt?: number; maxEpoch?: number; poolPledgeInfluence?: number
-}
+type PpActiveParam = { id: string; groupId: string; paramKey: keyof TypeParams }
 
-type ChainInfo = { guardrailsHash?: string; protocolParams: ChainProtocolParams }
-
-function useChainInfo(network: string, enabled: boolean) {
-  const [data, setData] = useState<ChainInfo | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (!enabled) return
-    setLoading(true)
-    fetch(`${API_URL}/governance/chain-info?network=${network}`)
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [network, enabled])
-
-  return { data, loading }
-}
-
-// ─── Protocol Parameter Change — display helpers ──────────────────────────────
-
-function fmtLovelace(v?: number) {
-  if (v === undefined || v === null) return null
-  const ada = v / 1_000_000
-  return `${v.toLocaleString()} (${ada % 1 === 0 ? ada.toFixed(0) : ada.toFixed(2)} ₳)`
-}
-
-function fmtInt(v?: number)  { return v !== undefined && v !== null ? v.toLocaleString() : null }
-function fmtRate(v?: number) { return v !== undefined && v !== null ? v.toPrecision(4).replace(/\.?0+$/, "") : null }
+const GOVERNANCE_GROUP_META = { id: "governance", label: "Governance Group", threshold: "CC + 67% DRep" }
 
 // ─── Protocol Parameter Change — 4 CIP-1694 parameter groups ─────────────────
 
@@ -591,11 +556,9 @@ type PpParamDef = {
   key: keyof TypeParams
   label: string
   unit: string
-  chainKey: keyof ChainProtocolParams
   step: string
   min: number
   max?: number
-  format: (v?: number) => string | null
 }
 
 type PpCIP1694Group = {
@@ -613,11 +576,11 @@ const CIP1694_GROUPS: PpCIP1694Group[] = [
     threshold: "CC + 60% DRep + 51% SPO",
     color: "text-accent-light",
     params: [
-      { key: "ppMaxTxSize",         label: "Max Transaction Size",    unit: "bytes",    chainKey: "maxTxSize",         step: "1",     min: 0, format: fmtInt },
-      { key: "ppMaxBlockSize",      label: "Max Block Body Size",     unit: "bytes",    chainKey: "maxBlockSize",      step: "1",     min: 0, format: fmtInt },
-      { key: "ppMaxBlockHeaderSize",label: "Max Block Header Size",   unit: "bytes",    chainKey: "maxBlockHeaderSize",step: "1",     min: 0, format: fmtInt },
-      { key: "ppMaxValSize",        label: "Max Value Size",          unit: "bytes",    chainKey: "maxValSize",        step: "1",     min: 0, format: fmtInt },
-      { key: "ppMaxCollateralInputs",label:"Max Collateral Inputs",   unit: "inputs",   chainKey: "maxCollateralInputs",step:"1",     min: 0, format: fmtInt },
+      { key: "ppMaxTxSize",          label: "Max Transaction Size",     unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxBlockSize",       label: "Max Block Body Size",      unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxBlockHeaderSize", label: "Max Block Header Size",    unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxValSize",         label: "Max Value Size",           unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxCollateralInputs",label: "Max Collateral Inputs",    unit: "inputs",   step: "1",     min: 0 },
     ],
   },
   {
@@ -626,15 +589,15 @@ const CIP1694_GROUPS: PpCIP1694Group[] = [
     threshold: "CC + 67% DRep",
     color: "text-success",
     params: [
-      { key: "ppMinFeeA",           label: "Min Fee Coefficient (A)", unit: "lov/byte", chainKey: "minFeeA",          step: "1",     min: 0, format: fmtInt },
-      { key: "ppMinFeeB",           label: "Min Fee Constant (B)",    unit: "lovelace", chainKey: "minFeeB",          step: "1",     min: 0, format: fmtLovelace },
-      { key: "ppKeyDeposit",        label: "Stake Key Deposit",       unit: "lovelace", chainKey: "keyDeposit",       step: "1",     min: 0, format: fmtLovelace },
-      { key: "ppPoolDeposit",       label: "Pool Registration Deposit",unit:"lovelace", chainKey: "poolDeposit",      step: "1",     min: 0, format: fmtLovelace },
-      { key: "ppExpansionRate",     label: "Monetary Expansion (ρ)",  unit: "0–1",      chainKey: "expansionRate",    step: "0.001", min: 0, max: 1, format: fmtRate },
-      { key: "ppTreasuryGrowthRate",label: "Treasury Growth Rate (τ)",unit: "0–1",      chainKey: "treasuryGrowthRate",step:"0.001", min: 0, max: 1, format: fmtRate },
-      { key: "ppMinPoolCost",       label: "Min Pool Cost",           unit: "lovelace", chainKey: "minPoolCost",      step: "1",     min: 0, format: fmtLovelace },
-      { key: "ppAdaPerUtxoByte",    label: "ADA per UTxO Byte",       unit: "lovelace", chainKey: "adaPerUtxoByte",   step: "1",     min: 0, format: fmtInt },
-      { key: "ppCollateralPercent", label: "Collateral Percentage",   unit: "%",        chainKey: "collateralPercent",step: "1",     min: 0, format: fmtInt },
+      { key: "ppMinFeeA",            label: "Min Fee Coefficient (A)",  unit: "lov/byte", step: "1",     min: 0 },
+      { key: "ppMinFeeB",            label: "Min Fee Constant (B)",     unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppKeyDeposit",         label: "Stake Key Deposit",        unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppPoolDeposit",        label: "Pool Registration Deposit",unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppExpansionRate",      label: "Monetary Expansion (ρ)",   unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppTreasuryGrowthRate", label: "Treasury Growth Rate (τ)", unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppMinPoolCost",        label: "Min Pool Cost",            unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppAdaPerUtxoByte",     label: "ADA per UTxO Byte",        unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppCollateralPercent",  label: "Collateral Percentage",    unit: "%",        step: "1",     min: 0 },
     ],
   },
   {
@@ -643,9 +606,9 @@ const CIP1694_GROUPS: PpCIP1694Group[] = [
     threshold: "CC + 67% DRep",
     color: "text-warning",
     params: [
-      { key: "ppNOpt",              label: "Desired Pool Count (k)",  unit: "pools",    chainKey: "nOpt",             step: "1",     min: 0, format: fmtInt },
-      { key: "ppMaxEpoch",          label: "Pool Retirement Window",  unit: "epochs",   chainKey: "maxEpoch",         step: "1",     min: 0, format: fmtInt },
-      { key: "ppPoolPledgeInfluence",label:"Pool Pledge Influence (a₀)",unit:"0–2",     chainKey: "poolPledgeInfluence",step:"0.001",min: 0, max: 2, format: fmtRate },
+      { key: "ppNOpt",               label: "Desired Pool Count (k)",   unit: "pools",    step: "1",     min: 0 },
+      { key: "ppMaxEpoch",           label: "Pool Retirement Window",   unit: "epochs",   step: "1",     min: 0 },
+      { key: "ppPoolPledgeInfluence",label: "Pool Pledge Influence (a₀)",unit: "0–2",     step: "0.001", min: 0, max: 2 },
     ],
   },
 ]
@@ -653,166 +616,169 @@ const CIP1694_GROUPS: PpCIP1694Group[] = [
 function ProtocolParamChangeFields({
   params,
   onChange,
-  network,
+  network: _network,
 }: {
   params: TypeParams
   onChange: (patch: Partial<TypeParams>) => void
   network: string
 }) {
-  const { data: chainInfo, loading } = useChainInfo(network, true)
-  const [copied, setCopied] = useState(false)
+  const [activeParams, setActiveParams] = useState<PpActiveParam[]>([])
+  const [selGroup, setSelGroup] = useState("")
+  const [selParam, setSelParam] = useState("")
 
-  const pp = chainInfo?.protocolParams ?? {}
-  const guardrailsHash = chainInfo?.guardrailsHash
+  const addedKeys = new Set(activeParams.map((p) => p.paramKey))
+  const selGroupDef = CIP1694_GROUPS.find((g) => g.id === selGroup)
+  const availableForSel = (selGroupDef?.params ?? []).filter((p) => !addedKeys.has(p.key))
+  const isGovGroup = selGroup === "governance"
+  const allParamDefs = CIP1694_GROUPS.flatMap((g) => g.params)
 
-  const filledCount = CIP1694_GROUPS.flatMap((g) => g.params)
-    .filter((p) => params[p.key].trim() !== "").length
+  const handleAdd = () => {
+    if (!selParam) return
+    setActiveParams((prev) => [
+      ...prev,
+      { id: `${selParam}-${Date.now()}`, groupId: selGroup, paramKey: selParam as keyof TypeParams },
+    ])
+    setSelParam("")
+  }
 
-  const numInput = "w-full tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+  const handleRemove = (id: string, paramKey: keyof TypeParams) => {
+    setActiveParams((prev) => prev.filter((p) => p.id !== id))
+    onChange({ [paramKey]: "" } as Partial<TypeParams>)
+  }
+
+  const filledCount = activeParams.filter((p) => params[p.paramKey].trim() !== "").length
 
   return (
     <>
-      {/* Guardrails Hash Script */}
-      <div className="space-y-1.5">
-        <label className={LABEL}>Guardrails Script Hash</label>
-        <p className="text-xs text-text-muted">
-          Hash script guardrails của Constitution hiện tại. Được gắn tự động vào TX khi submit.
-        </p>
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-bg-elevated border border-border-subtle rounded-xl">
-          {loading ? (
-            <span className="text-xs text-text-muted animate-pulse">Đang tải...</span>
-          ) : guardrailsHash ? (
-            <>
-              <span className="font-mono text-xs text-text-secondary flex-1 truncate">{guardrailsHash}</span>
-              <button
-                type="button"
-                onClick={() => { navigator.clipboard.writeText(guardrailsHash); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-                className="shrink-0 text-text-muted hover:text-accent-light transition-colors"
-                title="Copy"
-              >
-                {copied ? (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                ) : (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                )}
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-text-muted italic">Không có guardrails script</span>
-          )}
-        </div>
-      </div>
-
-      {/* Previous Governance Action Id */}
-      <PrevGovActionFields
-        params={params}
-        onChange={onChange}
-        label="Previous Protocol Parameter Change Action Id"
-        hint="Governance Action Id của lần ParameterChange cuối cùng đã được enacted. Để trống nếu đây là lần đầu tiên."
-      />
-
-      {/* Intro notice */}
+      {/* Intro */}
       <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
         <p className="font-semibold text-accent-light">Hướng dẫn</p>
-        <p>Chỉ điền các thông số muốn <strong>thay đổi</strong>. Thông số để trống sẽ không bị ảnh hưởng.</p>
-        <p className="text-warning">Governance Group (govActionDeposit, dRepDeposit…) sẽ được hỗ trợ trong phiên bản tiếp theo.</p>
+        <p>
+          Chọn Group, thêm từng thông số muốn <strong>thay đổi</strong> và điền giá trị đề xuất.
+          Thông số không được chọn sẽ giữ nguyên giá trị on-chain.
+        </p>
       </div>
 
-      {/* Counter */}
-      {filledCount > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-success/8 border border-success/20 rounded-xl">
-          <span className="text-xs text-success font-semibold">{filledCount} thông số sẽ được thay đổi</span>
+      {/* Selector */}
+      <div className="space-y-2">
+        <label className={LABEL}>Thêm thông số</label>
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* Group dropdown */}
+          <select
+            value={selGroup}
+            onChange={(e) => { setSelGroup(e.target.value); setSelParam("") }}
+            className={`${INPUT_SM} flex-1 min-w-[150px] cursor-pointer`}
+          >
+            <option value="">── Chọn Group ──</option>
+            {CIP1694_GROUPS.map((g) => (
+              <option key={g.id} value={g.id}>{g.label}</option>
+            ))}
+            <option value="governance">{GOVERNANCE_GROUP_META.label}</option>
+          </select>
+
+          {/* Param dropdown — only for non-governance groups */}
+          {selGroup && !isGovGroup && (
+            <select
+              value={selParam}
+              onChange={(e) => setSelParam(e.target.value)}
+              className={`${INPUT_SM} flex-1 min-w-[220px] cursor-pointer`}
+              disabled={availableForSel.length === 0}
+            >
+              <option value="">
+                {availableForSel.length === 0 ? "Tất cả đã được thêm" : "── Chọn Tham số ──"}
+              </option>
+              {availableForSel.map((p) => (
+                <option key={p.key} value={p.key}>{p.label} ({p.unit})</option>
+              ))}
+            </select>
+          )}
+
+          {/* Add button */}
+          {selGroup && !isGovGroup && (
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!selParam || availableForSel.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-accent/10 text-accent-light border border-accent/20 hover:bg-accent/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Thêm
+            </button>
+          )}
+        </div>
+
+        {/* Governance Group notice */}
+        {isGovGroup && (
+          <div className="px-3 py-2.5 bg-bg-elevated border border-border-subtle rounded-xl text-xs text-text-muted space-y-1">
+            <p className="font-semibold text-text-secondary">Governance Group — Chưa hỗ trợ</p>
+            <p>govActionDeposit · dRepDeposit · dRepActivity · committeeMinSize · committeeMaxTermLength · poolVotingThresholds · dRepVotingThresholds</p>
+            <p className="text-warning mt-1">
+              Các thông số này (Conway CDDL keys 25+) chưa được hỗ trợ trong Bloxbean 0.7.0-beta1. Sẽ có trong phiên bản tiếp theo.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Active params list */}
+      {activeParams.length === 0 ? (
+        <div className="text-center py-6 text-sm text-text-muted border border-dashed border-border-subtle rounded-xl">
+          Chưa có thông số nào. Dùng selector bên trên để thêm.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filledCount > 0 && (
+            <p className="text-xs text-success font-semibold">
+              {filledCount} / {activeParams.length} thông số đã có giá trị đề xuất
+            </p>
+          )}
+          {activeParams.map((entry) => {
+            const groupDef = CIP1694_GROUPS.find((g) => g.id === entry.groupId)
+            const paramDef = allParamDefs.find((p) => p.key === entry.paramKey)
+            if (!paramDef) return null
+            const hasValue = params[entry.paramKey].trim() !== ""
+
+            return (
+              <div
+                key={entry.id}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
+                  hasValue ? "bg-accent/5 border-accent/20" : "bg-bg-elevated border-border-subtle"
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider leading-none mb-0.5">
+                    {groupDef?.label}
+                  </p>
+                  <p className="text-sm font-medium text-text-primary leading-tight">{paramDef.label}</p>
+                  <p className="text-[10px] text-text-muted">{paramDef.unit}</p>
+                </div>
+                <input
+                  type="number"
+                  min={paramDef.min}
+                  max={paramDef.max}
+                  step={paramDef.step}
+                  value={params[entry.paramKey]}
+                  onChange={(e) => onChange({ [entry.paramKey]: e.target.value } as Partial<TypeParams>)}
+                  placeholder="Giá trị đề xuất..."
+                  className={`${INPUT_SM} w-40 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    hasValue ? "border-accent/60" : ""
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemove(entry.id, entry.paramKey)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
-
-      {/* 4 CIP-1694 groups */}
-      <div className="space-y-5">
-        {CIP1694_GROUPS.map((group) => (
-          <div key={group.id} className="space-y-2">
-            {/* Group header */}
-            <div className="flex items-baseline justify-between border-b border-border-subtle pb-1">
-              <span className={`text-[11px] font-bold uppercase tracking-widest ${group.color}`}>
-                {group.label}
-              </span>
-              <span className="text-[10px] text-text-muted">{group.threshold}</span>
-            </div>
-
-            {/* Column headers */}
-            <div className="grid grid-cols-[1fr_28px_1fr] gap-x-2 px-0.5">
-              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider text-center">Existing</span>
-              <span />
-              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider text-center">Proposed</span>
-            </div>
-
-            {/* Param rows */}
-            <div className="space-y-2.5">
-              {group.params.map((p) => {
-                const existingVal = pp[p.chainKey]
-                const existingFmt = p.format(existingVal as number | undefined)
-                const hasProposed = params[p.key].trim() !== ""
-
-                return (
-                  <div key={p.key} className="space-y-1">
-                    <div className="text-[11px] font-medium text-text-secondary leading-none">
-                      {p.label}
-                      <span className="ml-1.5 text-[10px] text-text-muted font-normal">({p.unit})</span>
-                    </div>
-                    <div className="grid grid-cols-[1fr_28px_1fr] gap-x-2 items-center">
-                      {/* Existing */}
-                      <div className={`px-3 py-2 rounded-xl border text-xs font-mono leading-tight ${
-                        loading
-                          ? "bg-bg-elevated border-border-subtle text-text-muted animate-pulse"
-                          : existingFmt
-                            ? "bg-bg-elevated border-border-subtle text-text-secondary"
-                            : "bg-bg-elevated border-border-subtle text-text-muted italic"
-                      }`}>
-                        {loading ? "…" : (existingFmt ?? "–")}
-                      </div>
-
-                      {/* Arrow */}
-                      <div className="flex items-center justify-center">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                          strokeWidth="2" strokeLinecap="round"
-                          className={hasProposed ? "text-accent-light" : "text-border-default"}>
-                          <line x1="5" y1="12" x2="19" y2="12"/>
-                          <polyline points="12 5 19 12 12 19"/>
-                        </svg>
-                      </div>
-
-                      {/* Proposed input */}
-                      <input
-                        type="number"
-                        min={p.min}
-                        max={p.max}
-                        step={p.step}
-                        value={params[p.key]}
-                        onChange={(e) => onChange({ [p.key]: e.target.value } as Partial<TypeParams>)}
-                        placeholder={existingFmt ?? "–"}
-                        className={`${INPUT_SM} ${numInput} ${hasProposed ? "border-accent/60" : ""}`}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-
-        {/* Governance Group — display-only notice */}
-        <div className="space-y-2">
-          <div className="flex items-baseline justify-between border-b border-border-subtle pb-1">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-text-muted">
-              Governance Group
-            </span>
-            <span className="text-[10px] text-text-muted">CC + 67% DRep</span>
-          </div>
-          <div className="px-3 py-2.5 bg-bg-elevated border border-border-subtle rounded-xl text-xs text-text-muted space-y-1">
-            <p className="font-semibold text-text-secondary">Các thông số Governance Group</p>
-            <p>govActionDeposit · dRepDeposit · dRepActivity · committeeMinSize · committeeMaxTermLength · các voting thresholds</p>
-            <p className="text-warning mt-1">Các thông số này (Conway keys 25+) chưa được hỗ trợ trong phiên bản hiện tại của thư viện Bloxbean. Sẽ có trong phiên bản tiếp theo.</p>
-          </div>
-        </div>
-      </div>
     </>
   )
 }
