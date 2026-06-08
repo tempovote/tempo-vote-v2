@@ -56,6 +56,8 @@ export const BuildTxRequestSchema = z.object({
     stakeAddress: z.string(),
     lovelace: z.string(),
   })).optional(),
+  // Collateral inputs — required when the TX executes Plutus scripts (e.g. guardrails)
+  collateral: z.array(z.string()).optional(),
   // PROPOSE_UPDATE_COMMITTEE: members to remove/add and new quorum threshold
   committeeRemove: z.array(z.string()).optional(),
   committeeAdd: z.array(z.object({

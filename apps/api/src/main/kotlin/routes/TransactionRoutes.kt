@@ -56,6 +56,8 @@ data class BuildTxRequest(
     val committeeAdd: List<CommitteeAddItem>? = null,
     val quorumNumerator: Long? = null,
     val quorumDenominator: Long? = null,
+    // Collateral inputs — required when the TX executes Plutus scripts (e.g. guardrails)
+    val collateral: List<String>? = null,
 )
 
 @Serializable
@@ -176,6 +178,7 @@ fun Route.transactionRoutes() {
                         anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
                         withdrawals = (req.treasuryWithdrawals ?: error("treasuryWithdrawals required"))
                             .map { it.stakeAddress to it.lovelace.toBigInteger() },
+                        collateral = req.collateral ?: emptyList(),
                     )
                     "PROPOSE_UPDATE_COMMITTEE" -> builder.buildUpdateCommittee(
                         changeAddress = req.changeAddress,
@@ -242,6 +245,11 @@ fun Route.transactionRoutes() {
                         if (preWitnesses?.plutusV1Scripts != null) {
                             walletWitnesses.plutusV1Scripts =
                                 (walletWitnesses.plutusV1Scripts ?: emptyList()) + preWitnesses.plutusV1Scripts
+                        }
+                        if (preWitnesses?.redeemers != null && preWitnesses.redeemers.isNotEmpty()) {
+                            println("[Submit] merging ${preWitnesses.redeemers.size} redeemer(s) from unsigned TX")
+                            walletWitnesses.redeemers =
+                                (walletWitnesses.redeemers ?: emptyList()) + preWitnesses.redeemers
                         }
                         unsignedTx.witnessSet = walletWitnesses
                         unsignedTx.serialize()
