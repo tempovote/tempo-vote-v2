@@ -70,6 +70,7 @@ object PollComments : Table("poll_comments") {
     val id           = uuid("id").autoGenerate()
     val pollId       = uuid("poll_id").references(InternalPolls.id)
     val stakeAddress = varchar("stake_address", 128)
+    val drepId       = varchar("drep_id", 128).nullable()
     val content      = text("content")
     val createdAt    = datetime("created_at").defaultExpression(CurrentDateTime)
 

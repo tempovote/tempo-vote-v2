@@ -30,6 +30,11 @@ fun Application.module() {
 }
 
 fun Application.startVoteIndexers() {
+    if (System.getenv("VOTE_INDEXER_ENABLED") != "true") {
+        log.info("VoteIndexer disabled — set VOTE_INDEXER_ENABLED=true to enable")
+        return
+    }
+
     val scope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
     )

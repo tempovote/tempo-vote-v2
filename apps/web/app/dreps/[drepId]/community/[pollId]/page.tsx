@@ -5,7 +5,9 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { usePollDetail, usePollComments } from "@/hooks/useCommunity"
+import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { authHeader, getJwt } from "@/lib/api"
+import { resolveAnchorUrl } from "@/lib/governance"
 import type { PollOptionWithCount, PollComment } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -234,19 +236,137 @@ function VotingSection({
   )
 }
 
+// ─── Comment helpers ──────────────────────────────────────────────────────────
+
+function hashToColors(str: string): [string, string] {
+  let h = 0
+  for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0
+  const hue1 = (h >>> 0) % 360
+  const hue2 = (hue1 + 137) % 360
+  return [`hsl(${hue1},65%,55%)`, `hsl(${hue2},65%,45%)`]
+}
+
+function DRepCommentAvatar({ drepId, drepName, network }: {
+  drepId: string
+  drepName: string | null | undefined
+  network: string
+}) {
+  const { profile } = useDRepProfile(drepId, network)
+  const [imgError, setImgError] = useState(false)
+  const [c1, c2] = hashToColors(drepId)
+  const initial = (drepName ?? drepId).charAt(0).toUpperCase()
+
+  if (profile?.imageUrl && !imgError) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={profile.imageUrl}
+        alt={drepName ?? drepId}
+        className="w-8 h-8 rounded-full object-cover shrink-0"
+        onError={() => setImgError(true)}
+      />
+    )
+  }
+  return (
+    <div
+      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 select-none"
+      style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
+    >
+      {initial}
+    </div>
+  )
+}
+
 // ─── Comment item ─────────────────────────────────────────────────────────────
 
-function CommentItem({ comment }: { comment: PollComment }) {
+function CommentItem({ comment, network, myStakeAddress, pollId, onDeleted }: {
+  comment: PollComment
+  network: string
+  myStakeAddress: string | null | undefined
+  pollId: string
+  onDeleted: () => void
+}) {
+  const { reauthenticate } = useWallet()
+  const [deleting, setDeleting] = useState(false)
+  const isDRep = !!comment.drepId
+  const isOwn = !!myStakeAddress && comment.stakeAddress === myStakeAddress
+  const networkParam = network !== "mainnet" ? `?network=${network}` : ""
+
+  const [c1, c2] = hashToColors(comment.stakeAddress)
+  const stakeInitial = comment.stakeAddress.slice(-2).toUpperCase()
+
+  async function handleDelete() {
+    if (deleting) return
+    setDeleting(true)
+    try {
+      let jwt = getJwt()
+      if (!jwt) jwt = await reauthenticate()
+      if (!jwt) return
+      const res = await fetch(`${API_URL}/communities/polls/${pollId}/comments/${comment.id}`, {
+        method: "DELETE",
+        headers: authHeader(jwt),
+      })
+      if (res.status === 401) {
+        const newJwt = await reauthenticate()
+        if (!newJwt) return
+        await fetch(`${API_URL}/communities/polls/${pollId}/comments/${comment.id}`, {
+          method: "DELETE",
+          headers: authHeader(newJwt),
+        })
+      }
+      onDeleted()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const avatar = isDRep ? (
+    <Link href={`/dreps/${comment.drepId}${networkParam}`}>
+      <DRepCommentAvatar drepId={comment.drepId!} drepName={comment.drepName} network={network} />
+    </Link>
+  ) : (
+    <div
+      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-white select-none"
+      style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
+    >
+      {stakeInitial}
+    </div>
+  )
+
+  const nameEl = isDRep ? (
+    <Link
+      href={`/dreps/${comment.drepId}${networkParam}`}
+      className="text-xs font-medium text-accent-light hover:underline"
+    >
+      {comment.drepName ?? `${comment.drepId!.slice(0, 12)}…${comment.drepId!.slice(-6)}`}
+    </Link>
+  ) : (
+    <span className="font-mono text-xs text-text-muted">{shortAddress(comment.stakeAddress)}</span>
+  )
+
   return (
-    <div className="flex gap-3 py-4 border-b border-border-subtle last:border-0">
-      <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center shrink-0 text-xs font-bold text-accent-light">
-        {comment.stakeAddress.slice(-2).toUpperCase()}
-      </div>
+    <div className="flex gap-3 py-4 border-b border-border-subtle last:border-0 group">
+      {avatar}
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-text-muted">{shortAddress(comment.stakeAddress)}</span>
+          {nameEl}
           <span className="text-xs text-text-muted">·</span>
           <span className="text-xs text-text-muted">{relativeTime(comment.createdAt)}</span>
+          {isOwn && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity p-1 text-text-muted hover:text-danger disabled:opacity-30"
+              title="Xóa comment"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4h6v2" />
+              </svg>
+            </button>
+          )}
         </div>
         <p className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">{comment.content}</p>
       </div>
@@ -263,6 +383,7 @@ export default function PollDetailPage({
 }) {
   const { drepId, pollId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
+  const connectedDrepId = useWalletStore((s) => s.drepKey?.dRepIDCip105 ?? null)
   const { isConnected, rewardAddress: stakeAddress, reauthenticate } = useWallet()
   const commentRef = useRef<HTMLDivElement>(null)
 
@@ -294,7 +415,7 @@ export default function PollDetailPage({
         fetch(`${API_URL}/communities/polls/${pollId}/comments`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader(token) },
-          body: JSON.stringify({ content: content.trim() }),
+          body: JSON.stringify({ content: content.trim(), ...(connectedDrepId ? { drepId: connectedDrepId } : {}) }),
         })
       let res = await doPost(jwt)
       if (res.status === 401) {
@@ -371,10 +492,64 @@ export default function PollDetailPage({
             <span className="text-xs text-text-muted">{timeLabel(poll.status, poll.endsAt, poll.startsAt)}</span>
           </div>
           <h1 className="text-xl font-bold text-text-primary leading-snug">{poll.title}</h1>
-          {poll.abstract && (
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.abstract}</p>
-          )}
         </div>
+
+        {/* Cover image */}
+        {poll.imageUrl && resolveAnchorUrl(poll.imageUrl) && (
+          <div className="rounded-xl overflow-hidden border border-border-subtle">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={resolveAnchorUrl(poll.imageUrl)!}
+              alt="Poll cover"
+              className="w-full max-h-72 object-cover"
+            />
+          </div>
+        )}
+
+        {/* Abstract */}
+        {poll.abstract && (
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tóm tắt</h3>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.abstract}</p>
+          </div>
+        )}
+
+        {/* Motivation */}
+        {poll.motivation && (
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Động lực</h3>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.motivation}</p>
+          </div>
+        )}
+
+        {/* Rationale */}
+        {poll.rationale && (
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Cơ sở lý luận</h3>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.rationale}</p>
+          </div>
+        )}
+
+        {/* Support links */}
+        {poll.supportLinks && poll.supportLinks.length > 0 && (
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tài liệu tham khảo</h3>
+            <ul className="space-y-1">
+              {poll.supportLinks.map((link, i) => (
+                <li key={i}>
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-accent-light hover:underline break-all"
+                  >
+                    {link}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Divider */}
         <hr className="border-border-subtle" />
@@ -458,7 +633,16 @@ export default function PollDetailPage({
 
         {!commentsLoading && !commentsError && comments.length > 0 && (
           <div className="px-5 divide-y divide-border-subtle">
-            {comments.map((c) => <CommentItem key={c.id} comment={c} />)}
+            {comments.map((c) => (
+              <CommentItem
+                key={c.id}
+                comment={c}
+                network={network}
+                myStakeAddress={stakeAddress}
+                pollId={pollId}
+                onDeleted={refetchComments}
+              />
+            ))}
           </div>
         )}
       </div>

@@ -104,6 +104,31 @@ fun credentialHexToStakeAddress(credentialHex: String, network: Network): String
 }
 
 /**
+ * Reverse of credentialHexToStakeAddress: decode a bech32 stake address back to its
+ * 28-byte credential hex.  The first byte after bech32 decode is the network header
+ * (0xE0 testnet / 0xE1 mainnet) — we strip it to return the raw 28-byte credential.
+ * Returns null if the input is not a valid stake address.
+ */
+fun stakeAddressToCredentialHex(stakeAddress: String): String? = runCatching {
+    val lower = stakeAddress.lowercase()
+    val sep   = lower.lastIndexOf('1')
+    val dataChars = lower.substring(sep + 1).dropLast(6)   // strip 6-char checksum
+
+    val fiveBits = dataChars.map { c ->
+        BECH32_ALPHABET.indexOf(c).also { check(it >= 0) }
+    }
+    val bytes = mutableListOf<Int>()
+    var acc = 0; var bits = 0
+    for (v in fiveBits) {
+        acc = (acc shl 5) or v; bits += 5
+        if (bits >= 8) { bits -= 8; bytes.add((acc shr bits) and 0xff) }
+    }
+    // bytes[0] is the network header; drop it to get the 28-byte credential
+    check(bytes.size == 29)
+    bytes.drop(1).joinToString("") { "%02x".format(it) }
+}.getOrNull()
+
+/**
  * Convert a 28-byte credential hex to a CIP-105 bech32 DRep ID (drep1...).
  * This is the canonical display format — no type-header byte, just the raw credential.
  * Returns null if the hex is malformed.
