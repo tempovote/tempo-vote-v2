@@ -220,18 +220,42 @@ fun Route.transactionRoutes() {
             runCatching {
                 val txBytes = when {
                     req.unsignedTxCbor != null && req.witnessSetCbor != null -> {
-                        // Assemble full signed TX: merge body from unsigned TX with wallet witness set
+                        // Assemble: wallet's witness set (VKey) + any pre-attached scripts from unsigned TX
                         val unsignedTx = Transaction.deserialize(HexUtil.decodeHexString(req.unsignedTxCbor))
+                        val preWitnesses = unsignedTx.witnessSet  // may contain PlutusV3Scripts etc.
                         val witnessBytes = HexUtil.decodeHexString(req.witnessSetCbor)
                         val witnessMap = CborDecoder(ByteArrayInputStream(witnessBytes)).decode().first() as CborMap
-                        val witnessSet = TransactionWitnessSet.deserialize(witnessMap)
-                        unsignedTx.witnessSet = witnessSet
+                        val walletWitnesses = TransactionWitnessSet.deserialize(witnessMap)
+                        // Merge: wallet's VKey witnesses + pre-attached scripts (guardrails etc.)
+                        if (preWitnesses?.plutusV3Scripts != null) {
+                            println("[Submit] preWitnesses.plutusV3Scripts count=${preWitnesses.plutusV3Scripts.size}")
+                            preWitnesses.plutusV3Scripts.forEachIndexed { i, s ->
+                                println("[Submit] V3Script[$i] cborHex.length=${s.cborHex?.length} prefix=${s.cborHex?.take(12)}")
+                            }
+                            walletWitnesses.plutusV3Scripts =
+                                (walletWitnesses.plutusV3Scripts ?: emptyList()) + preWitnesses.plutusV3Scripts
+                        }
+                        if (preWitnesses?.plutusV2Scripts != null) {
+                            walletWitnesses.plutusV2Scripts =
+                                (walletWitnesses.plutusV2Scripts ?: emptyList()) + preWitnesses.plutusV2Scripts
+                        }
+                        if (preWitnesses?.plutusV1Scripts != null) {
+                            walletWitnesses.plutusV1Scripts =
+                                (walletWitnesses.plutusV1Scripts ?: emptyList()) + preWitnesses.plutusV1Scripts
+                        }
+                        unsignedTx.witnessSet = walletWitnesses
                         unsignedTx.serialize()
                     }
                     req.signedTx != null -> req.signedTx.hexToByteArray()
                     else -> error("Provide either signedTx or both unsignedTxCbor + witnessSetCbor")
                 }
 
+                val txHex = HexUtil.encodeHexString(txBytes)
+                println("[Submit] Final TX hex length=${txHex.length}")
+                // Print in 500-char chunks to avoid log truncation
+                txHex.chunked(500).forEachIndexed { i, chunk ->
+                    println("[Submit] TX[$i]: $chunk")
+                }
                 val result = backendService.transactionService.submitTransaction(txBytes)
                 if (!result.isSuccessful) {
                     error(result.response ?: "Ogmios submit failed (no response body)")

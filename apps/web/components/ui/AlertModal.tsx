@@ -82,7 +82,7 @@ export function AlertModal({ type, title, message, children, onClose }: Props) {
         {(message || children) && (
           <div className="px-6 pb-4 overflow-y-auto flex-1 min-h-0">
             {message && (
-              <p className="text-sm text-text-secondary text-center leading-relaxed break-words">
+              <p className="text-sm text-text-secondary text-center leading-relaxed break-all">
                 {message}
               </p>
             )}
