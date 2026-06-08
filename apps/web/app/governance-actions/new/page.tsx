@@ -10,25 +10,33 @@ import { useTx } from "@/hooks/useTx"
 import { RationaleEditor } from "@/components/governance/RationaleEditor"
 import { AlertModal } from "@/components/ui/AlertModal"
 import { authHeader, getJwt } from "@/lib/api"
+import type { BuildTxRequest } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
-// ─── GA type definitions ─────────────────────────────────────────────────────
+// ─── GA type registry ────────────────────────────────────────────────────────
 
-const GA_TYPES: Record<string, { label: string; desc: string; txSupported: boolean }> = {
-  infoAction:               { label: "Info Action",               desc: "Đề xuất tư vấn, không ràng buộc on-chain", txSupported: true },
-  treasuryWithdrawals:      { label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury", txSupported: false },
-  protocolParametersUpdate: { label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức", txSupported: false },
-  hardForkInitiation:       { label: "Hard Fork Initiation",      desc: "Nâng cấp phiên bản giao thức", txSupported: false },
-  noConfidence:             { label: "No Confidence",             desc: "Bất tín nhiệm Constitutional Committee", txSupported: false },
-  updateCommittee:          { label: "Update Committee",          desc: "Thêm/xóa thành viên CC", txSupported: false },
-  newConstitution:          { label: "New Constitution",          desc: "Thay đổi Hiến pháp Cardano", txSupported: false },
+type GaTypeMeta = {
+  label: string
+  desc: string
+  txType: BuildTxRequest["txType"] | null
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const GA_TYPES: Record<string, GaTypeMeta> = {
+  infoAction:               { label: "Info Action",               desc: "Đề xuất tư vấn, không ràng buộc on-chain",           txType: "PROPOSE_INFO_ACTION" },
+  noConfidence:             { label: "No Confidence",             desc: "Bất tín nhiệm Constitutional Committee hiện tại",    txType: "PROPOSE_NO_CONFIDENCE" },
+  hardForkInitiation:       { label: "Hard Fork Initiation",      desc: "Đề xuất nâng cấp phiên bản giao thức Cardano",      txType: "PROPOSE_HARD_FORK" },
+  newConstitution:          { label: "New Constitution",          desc: "Đề xuất thay đổi Hiến pháp Cardano on-chain",       txType: "PROPOSE_NEW_CONSTITUTION" },
+  treasuryWithdrawals:      { label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury",                   txType: null },
+  updateCommittee:          { label: "Update Committee",          desc: "Thêm/xóa thành viên Constitutional Committee",      txType: null },
+  protocolParametersUpdate: { label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức (phức tạp)",            txType: null },
+}
+
+// ─── Shared style constants ──────────────────────────────────────────────────
 
 const LABEL = "text-xs font-semibold text-text-secondary uppercase tracking-wider"
 const INPUT = "w-full bg-bg-elevated border border-border-subtle rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent/60 transition-colors"
+const INPUT_SM = "bg-bg-elevated border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent/60 transition-colors"
 
 function SectionDivider({ label }: { label: string }) {
   return (
@@ -42,6 +50,240 @@ function SectionDivider({ label }: { label: string }) {
 function explorerTxUrl(txHash: string, network: string) {
   const base = network === "mainnet" ? "https://cardanoscan.io" : "https://preprod.cardanoscan.io"
   return `${base}/transaction/${txHash}`
+}
+
+// ─── Type-specific param state ────────────────────────────────────────────────
+
+type TypeParams = {
+  prevGovActionTxHash: string
+  prevGovActionIdx: string
+  protocolVersionMajor: string
+  protocolVersionMinor: string
+  constitutionAnchorUrl: string
+  constitutionAnchorHash: string
+  constitutionScriptHash: string
+}
+
+const EMPTY_TYPE_PARAMS: TypeParams = {
+  prevGovActionTxHash: "",
+  prevGovActionIdx: "",
+  protocolVersionMajor: "",
+  protocolVersionMinor: "0",
+  constitutionAnchorUrl: "",
+  constitutionAnchorHash: "",
+  constitutionScriptHash: "",
+}
+
+// ─── Type-specific field components ──────────────────────────────────────────
+
+function PrevGovActionFields({
+  params,
+  onChange,
+  label = "Previous Governance Action",
+  hint = "ID của GA cùng loại đã được enacted trước đó. Để trống nếu đây là lần đầu.",
+}: {
+  params: TypeParams
+  onChange: (patch: Partial<TypeParams>) => void
+  label?: string
+  hint?: string
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className={LABEL}>
+          {label}
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+        </label>
+      </div>
+      <p className="text-xs text-text-muted">{hint}</p>
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <input
+          type="text"
+          value={params.prevGovActionTxHash}
+          onChange={(e) => onChange({ prevGovActionTxHash: e.target.value })}
+          placeholder="TX Hash (64 hex chars)..."
+          className={INPUT_SM + " font-mono text-xs"}
+        />
+        <input
+          type="number"
+          min={0}
+          value={params.prevGovActionIdx}
+          onChange={(e) => onChange({ prevGovActionIdx: e.target.value })}
+          placeholder="Idx"
+          className={INPUT_SM + " w-20 text-center"}
+        />
+      </div>
+    </div>
+  )
+}
+
+function NoConfidenceFields({ params, onChange }: { params: TypeParams; onChange: (p: Partial<TypeParams>) => void }) {
+  return (
+    <>
+      <div className="p-3 bg-warning/8 border border-warning/20 rounded-xl text-xs text-text-secondary space-y-1">
+        <p className="font-semibold text-warning">No Confidence — Lưu ý</p>
+        <p>Đề xuất này yêu cầu DRep threshold 60% + SPO threshold 51% để được ratified.</p>
+        <p>Khi được enacted, Constitutional Committee hiện tại sẽ bị giải tán.</p>
+      </div>
+      <PrevGovActionFields
+        params={params}
+        onChange={onChange}
+        label="Previous Committee Action"
+        hint="GA committee action cuối cùng đã được enacted (UpdateCommittee hoặc NoConfidence trước đó)."
+      />
+    </>
+  )
+}
+
+function HardForkFields({ params, onChange }: { params: TypeParams; onChange: (p: Partial<TypeParams>) => void }) {
+  return (
+    <>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1">
+          <label className={LABEL}>Target Protocol Version <span className="text-danger font-normal normal-case">*</span></label>
+        </div>
+        <p className="text-xs text-text-muted">Phiên bản giao thức sau khi hard fork (Conway era hiện tại: 9.x).</p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-1">
+            <span className="text-xs text-text-muted w-12 shrink-0">Major</span>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              value={params.protocolVersionMajor}
+              onChange={(e) => onChange({ protocolVersionMajor: e.target.value })}
+              placeholder="10"
+              className={INPUT_SM + " w-full text-center tabular-nums"}
+            />
+          </div>
+          <span className="text-text-muted text-lg font-light">.</span>
+          <div className="flex items-center gap-2 flex-1">
+            <span className="text-xs text-text-muted w-12 shrink-0">Minor</span>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              value={params.protocolVersionMinor}
+              onChange={(e) => onChange({ protocolVersionMinor: e.target.value })}
+              placeholder="0"
+              className={INPUT_SM + " w-full text-center tabular-nums"}
+            />
+          </div>
+        </div>
+      </div>
+      <PrevGovActionFields
+        params={params}
+        onChange={onChange}
+        label="Previous Hard Fork Action"
+        hint="GA hard fork cuối cùng đã được enacted. Để trống nếu không có."
+      />
+    </>
+  )
+}
+
+function NewConstitutionFields({ params, onChange }: { params: TypeParams; onChange: (p: Partial<TypeParams>) => void }) {
+  return (
+    <>
+      <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
+        <p className="font-semibold text-accent-light">Constitution Anchor — Tài liệu Hiến pháp</p>
+        <p>URL và hash dưới đây trỏ đến <strong>nội dung Hiến pháp mới</strong>, khác với metadata của proposal này.</p>
+        <p>Hash phải là blake2b-256 hex của file tại URL đó.</p>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className={LABEL}>Constitution URL <span className="text-danger font-normal normal-case">*</span></label>
+        <input
+          type="url"
+          value={params.constitutionAnchorUrl}
+          onChange={(e) => onChange({ constitutionAnchorUrl: e.target.value })}
+          placeholder="https://ipfs.io/ipfs/... hoặc https://..."
+          className={INPUT}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className={LABEL}>Constitution Hash (blake2b-256 hex) <span className="text-danger font-normal normal-case">*</span></label>
+        <input
+          type="text"
+          value={params.constitutionAnchorHash}
+          onChange={(e) => onChange({ constitutionAnchorHash: e.target.value })}
+          placeholder="64 hex chars..."
+          className={INPUT + " font-mono text-xs"}
+          maxLength={64}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className={LABEL}>
+          Guardrails Script Hash
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+        </label>
+        <input
+          type="text"
+          value={params.constitutionScriptHash}
+          onChange={(e) => onChange({ constitutionScriptHash: e.target.value })}
+          placeholder="56 hex chars (28 bytes)..."
+          className={INPUT + " font-mono text-xs"}
+          maxLength={56}
+        />
+      </div>
+
+      <PrevGovActionFields
+        params={params}
+        onChange={onChange}
+        label="Previous Constitution Action"
+        hint="GA NewConstitution cuối cùng đã được enacted. Để trống nếu đây là lần đầu."
+      />
+    </>
+  )
+}
+
+// ─── Validation per type ─────────────────────────────────────────────────────
+
+function validateTypeParams(gaType: string, params: TypeParams): string | null {
+  if (gaType === "hardForkInitiation") {
+    const major = parseInt(params.protocolVersionMajor)
+    if (!params.protocolVersionMajor || isNaN(major) || major < 0)
+      return "Vui lòng nhập target protocol version (Major)."
+  }
+  if (gaType === "newConstitution") {
+    if (!params.constitutionAnchorUrl.trim())
+      return "Vui lòng nhập Constitution URL."
+    if (!params.constitutionAnchorHash.trim() || params.constitutionAnchorHash.length !== 64)
+      return "Constitution Hash phải là 64 hex chars (blake2b-256)."
+  }
+  return null
+}
+
+// ─── Resolve type-specific submitTx params ───────────────────────────────────
+
+function buildTypeParams(gaType: string, params: TypeParams): Partial<BuildTxRequest> {
+  const prevGovActionTxHash = params.prevGovActionTxHash.trim() || undefined
+  const prevGovActionIdx = params.prevGovActionIdx.trim()
+    ? parseInt(params.prevGovActionIdx)
+    : undefined
+
+  switch (gaType) {
+    case "noConfidence":
+      return { prevGovActionTxHash, prevGovActionIdx }
+    case "hardForkInitiation":
+      return {
+        protocolVersionMajor: parseInt(params.protocolVersionMajor),
+        protocolVersionMinor: parseInt(params.protocolVersionMinor) || 0,
+        prevGovActionTxHash,
+        prevGovActionIdx,
+      }
+    case "newConstitution":
+      return {
+        constitutionAnchorUrl: params.constitutionAnchorUrl.trim(),
+        constitutionAnchorHash: params.constitutionAnchorHash.trim(),
+        constitutionScriptHash: params.constitutionScriptHash.trim() || undefined,
+        prevGovActionTxHash,
+        prevGovActionIdx,
+      }
+    default:
+      return {}
+  }
 }
 
 // ─── Main page ───────────────────────────────────────────────────────────────
@@ -66,14 +308,20 @@ export default function NewGovernanceActionPage({
   const { poll, isLoading: pollLoading } = usePollDetail(sourcePollId)
   const { submitTx } = useTx()
 
-  // Form state
+  // Common CIP-108 fields
   const [title, setTitle] = useState("")
   const [abstract, setAbstract] = useState("")
   const [motivation, setMotivation] = useState("")
   const [rationale, setRationale] = useState("")
   const [links, setLinks] = useState<string[]>([""])
 
-  // Pre-fill from poll
+  // Type-specific params
+  const [typeParams, setTypeParams] = useState<TypeParams>(EMPTY_TYPE_PARAMS)
+  const patchTypeParams = useCallback((patch: Partial<TypeParams>) => {
+    setTypeParams((prev) => ({ ...prev, ...patch }))
+  }, [])
+
+  // Pre-fill from poll (only if sourcePollId present)
   const [prefilled, setPrefilled] = useState(false)
   if (poll && !prefilled) {
     setTitle(poll.title ?? "")
@@ -92,28 +340,34 @@ export default function NewGovernanceActionPage({
   const [txHash, setTxHash] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  // Anchor cache — avoid re-uploading on retry
   const anchorCache = useRef<{ anchorUrl: string; anchorDataHash: string } | null>(null)
 
   const validLinks = links.filter((l) => l.trim().startsWith("http"))
 
+  const isTypeSupported = gaInfo.txType !== null
+
   const handleSubmit = useCallback(async () => {
     if (!drepId || !title.trim() || !abstract.trim()) return
 
-    // Non-Info Action types: not yet TX-buildable — show notice
-    if (!gaInfo.txSupported) {
+    if (!isTypeSupported) {
       setAlert({
-        type: "info" as any,
+        type: "error",
         title: `${gaInfo.label} — Coming Soon`,
         message: `Loại "${gaInfo.label}" yêu cầu tham số on-chain bổ sung. Tính năng này sẽ được hỗ trợ trong phiên bản tiếp theo.`,
-      } as any)
+      })
+      return
+    }
+
+    const typeError = validateTypeParams(gaType, typeParams)
+    if (typeError) {
+      setAlert({ type: "error", title: "Thiếu thông tin", message: typeError })
       return
     }
 
     setSubmitting(true)
 
     try {
-      // Step 1: Upload CIP-108 metadata to IPFS (skip if cached)
+      // Step 1: Upload CIP-108 metadata (proposal anchor) to IPFS
       if (!anchorCache.current) {
         setStatusLabel("Đang upload CIP-108 metadata lên IPFS...")
 
@@ -121,17 +375,19 @@ export default function NewGovernanceActionPage({
         if (!jwt) jwt = await reauthenticate()
         if (!jwt) throw new Error("Xác thực thất bại")
 
+        const metaBody = JSON.stringify({
+          drepId,
+          title: title.trim(),
+          abstract: abstract.trim(),
+          motivation: motivation.trim() || undefined,
+          rationale: rationale.trim() || undefined,
+          supportLinks: validLinks,
+        })
+
         let res = await fetch(`${API_URL}/metadata/upload-proposal`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader(jwt) },
-          body: JSON.stringify({
-            drepId,
-            title: title.trim(),
-            abstract: abstract.trim(),
-            motivation: motivation.trim() || undefined,
-            rationale: rationale.trim() || undefined,
-            supportLinks: validLinks,
-          }),
+          body: metaBody,
         })
 
         if (res.status === 401) {
@@ -140,14 +396,7 @@ export default function NewGovernanceActionPage({
           res = await fetch(`${API_URL}/metadata/upload-proposal`, {
             method: "POST",
             headers: { "Content-Type": "application/json", ...authHeader(newJwt) },
-            body: JSON.stringify({
-              drepId,
-              title: title.trim(),
-              abstract: abstract.trim(),
-              motivation: motivation.trim() || undefined,
-              rationale: rationale.trim() || undefined,
-              supportLinks: validLinks,
-            }),
+            body: metaBody,
           })
         }
 
@@ -162,9 +411,10 @@ export default function NewGovernanceActionPage({
 
       // Step 2: Build + Sign + Submit TX
       setStatusLabel("Vui lòng ký transaction trong ví...")
-      const hash = await submitTx("PROPOSE_INFO_ACTION", {
+      const hash = await submitTx(gaInfo.txType!, {
         anchorUrl: anchorCache.current!.anchorUrl,
         anchorDataHash: anchorCache.current!.anchorDataHash,
+        ...buildTypeParams(gaType, typeParams),
       })
 
       setTxHash(hash)
@@ -182,25 +432,11 @@ export default function NewGovernanceActionPage({
     } finally {
       setSubmitting(false)
     }
-  }, [drepId, gaInfo, title, abstract, motivation, rationale, validLinks, reauthenticate, submitTx])
+  }, [drepId, gaInfo, gaType, typeParams, title, abstract, motivation, rationale, validLinks, isTypeSupported, reauthenticate, submitTx])
 
   // ─── Guards ───────────────────────────────────────────────────────────────
 
-  if (!sourcePollId) {
-    return (
-      <main className="page-container py-12 max-w-2xl mx-auto">
-        <div className="notice-warning rounded-xl p-6 text-center space-y-3">
-          <p className="font-semibold">Thiếu Poll nguồn</p>
-          <p className="text-sm text-text-secondary">Trang này chỉ hỗ trợ tạo Governance Action từ Internal Poll.</p>
-          <Link href={`/governance-actions${networkParam}`} className="inline-block btn-primary px-4 py-2 text-sm rounded-lg mt-1">
-            Về Governance Actions
-          </Link>
-        </div>
-      </main>
-    )
-  }
-
-  if (pollLoading) {
+  if (sourcePollId && pollLoading) {
     return (
       <main className="page-container py-10 max-w-2xl mx-auto animate-pulse space-y-4">
         <div className="h-8 bg-bg-elevated rounded w-1/2" />
@@ -223,6 +459,12 @@ export default function NewGovernanceActionPage({
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
+
+  const canSubmit =
+    !submitting &&
+    title.trim().length > 0 &&
+    abstract.trim().length > 0 &&
+    isTypeSupported
 
   return (
     <main className="page-container py-10 max-w-2xl mx-auto space-y-6">
@@ -260,12 +502,22 @@ export default function NewGovernanceActionPage({
         </button>
       </div>
 
+      {/* Coming soon notice for unsupported types */}
+      {!isTypeSupported && (
+        <div className="notice-warning rounded-xl p-4 text-sm">
+          <span className="font-semibold">{gaInfo.label}</span> — Loại này chưa được hỗ trợ submit on-chain.
+          Tính năng sẽ có trong phiên bản tiếp theo.
+        </div>
+      )}
+
       {/* Deposit warning */}
-      <div className="notice-warning rounded-xl p-4 text-sm">
-        <span className="font-semibold">Deposit: </span>
-        Ví sẽ bị khóa <span className="font-bold">{network === "mainnet" ? "100,000 ADA" : "~500 ADA"}</span> khi submit.
-        Số ADA này được hoàn trả về reward address sau khi action hết hiệu lực.
-      </div>
+      {isTypeSupported && (
+        <div className="notice-warning rounded-xl p-4 text-sm">
+          <span className="font-semibold">Deposit: </span>
+          Ví sẽ bị khóa <span className="font-bold">100,000 ADA</span> khi submit.
+          Số ADA này được hoàn trả về reward address sau khi action hết hiệu lực.
+        </div>
+      )}
 
       {/* Form */}
       <div className="card-static rounded-2xl overflow-hidden">
@@ -325,6 +577,24 @@ export default function NewGovernanceActionPage({
               value={rationale} onChange={setRationale}
             />
           </div>
+
+          {/* Type-specific fields */}
+          {gaType !== "infoAction" && isTypeSupported && (
+            <>
+              <SectionDivider label="On-chain Parameters" />
+              <div className="space-y-5">
+                {gaType === "noConfidence" && (
+                  <NoConfidenceFields params={typeParams} onChange={patchTypeParams} />
+                )}
+                {gaType === "hardForkInitiation" && (
+                  <HardForkFields params={typeParams} onChange={patchTypeParams} />
+                )}
+                {gaType === "newConstitution" && (
+                  <NewConstitutionFields params={typeParams} onChange={patchTypeParams} />
+                )}
+              </div>
+            </>
+          )}
 
           <SectionDivider label="References" />
 
@@ -396,7 +666,7 @@ export default function NewGovernanceActionPage({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || !title.trim() || !abstract.trim()}
+            disabled={!canSubmit}
             className="btn-primary px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {submitting ? (
@@ -426,7 +696,6 @@ export default function NewGovernanceActionPage({
         >
           {alert.type === "success" && txHash && (
             <div className="w-full bg-bg-elevated rounded-xl px-3 py-2.5 space-y-2">
-              {/* Hash row with copy button */}
               <div className="flex items-center gap-2">
                 <p className="font-mono text-[11px] text-text-secondary break-all flex-1 leading-relaxed">
                   {txHash}
@@ -453,7 +722,6 @@ export default function NewGovernanceActionPage({
                   )}
                 </button>
               </div>
-              {/* Cardanoscan link */}
               <a
                 href={explorerTxUrl(txHash, network)}
                 target="_blank"
