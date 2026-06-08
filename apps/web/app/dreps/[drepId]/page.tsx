@@ -6,13 +6,13 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { useDRepVotingHistory } from "@/hooks/useDRepVotingHistory"
-import { useCommunity, useCommunityPolls } from "@/hooks/useCommunity"
+import { useCommunity } from "@/hooks/useCommunity"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { resolveAnchorUrls } from "@/lib/governance"
 import { authHeader, getJwt } from "@/lib/api"
-import type { DRepVote, InternalPoll, PollStatus } from "@tempo/types"
+import type { DRepVote } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -236,21 +236,6 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// ─── Poll status badge ────────────────────────────────────────────────────────
-
-function PollStatusBadge({ status }: { status: PollStatus }) {
-  const cfg = {
-    active:  { cls: "bg-success/15 text-success border-success/30",   label: "Active" },
-    pending: { cls: "bg-warning/15 text-warning border-warning/30",   label: "Sắp diễn ra" },
-    closed:  { cls: "bg-bg-elevated text-text-muted border-border-subtle", label: "Đã đóng" },
-  }[status]
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${cfg.cls}`}>
-      {cfg.label}
-    </span>
-  )
-}
-
 // ─── Delegate Modal ───────────────────────────────────────────────────────────
 
 function DelegateModal({
@@ -417,109 +402,6 @@ function DelegateModal({
   )
 }
 
-// ─── Community Modal ──────────────────────────────────────────────────────────
-
-function CommunityModal({
-  drepId,
-  network,
-  onClose,
-}: {
-  drepId: string
-  network: string
-  onClose: () => void
-}) {
-  const { polls, total, isLoading } = useCommunityPolls(drepId, network, 1)
-  const networkParam = network !== "mainnet" ? `?network=${network}` : ""
-
-  useEffect(() => {
-    document.body.style.overflow = "hidden"
-    return () => { document.body.style.overflow = "" }
-  }, [])
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div className="relative bg-bg-card rounded-2xl w-full max-w-md max-h-[75vh] flex flex-col shadow-2xl border border-border-subtle">
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle shrink-0">
-          <h2 className="text-sm font-bold">DRep Community</h2>
-          <button
-            onClick={onClose}
-            className="p-1 text-text-muted hover:text-text-primary transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Poll list */}
-        <div className="overflow-y-auto flex-1">
-          {isLoading && (
-            <div className="divide-y divide-border-subtle">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="px-5 py-4 space-y-2 animate-pulse">
-                  <div className="h-3 w-20 bg-bg-elevated rounded-full" />
-                  <div className="h-4 bg-bg-elevated rounded w-4/5" />
-                  <div className="h-3 bg-bg-elevated rounded w-1/3" />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {!isLoading && polls.length === 0 && (
-            <div className="px-5 py-12 text-center space-y-2">
-              <p className="text-3xl">📋</p>
-              <p className="text-sm text-text-muted">Chưa có poll nào</p>
-            </div>
-          )}
-
-          {!isLoading && polls.map((poll: InternalPoll) => (
-            <Link
-              key={poll.id}
-              href={`/dreps/${drepId}/community/${poll.id}${networkParam}`}
-              onClick={onClose}
-              className="flex items-start gap-3 px-5 py-4 border-b border-border-subtle hover:bg-white/5 transition-colors last:border-0"
-            >
-              <div className="flex-1 min-w-0 space-y-1.5">
-                <PollStatusBadge status={poll.status} />
-                <p className="text-sm font-medium text-text-primary leading-snug line-clamp-2">
-                  {poll.title}
-                </p>
-                <p className="text-xs text-text-muted">
-                  {poll.commentCount} bình luận · kết thúc {new Date(poll.endsAt).toLocaleDateString("vi-VN")}
-                </p>
-              </div>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-muted shrink-0 mt-1">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </Link>
-          ))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-border-subtle shrink-0">
-          <Link
-            href={`/dreps/${drepId}/community${networkParam}`}
-            onClick={onClose}
-            className="block text-center text-sm text-accent-light hover:underline"
-          >
-            Xem tất cả{total > 0 ? ` (${total} polls)` : ""}
-          </Link>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function DRepProfilePage({
@@ -543,7 +425,6 @@ export default function DRepProfilePage({
   const { isActive, isLoading: communityLoading, refetch: refetchCommunity } = useCommunity(drepId, network)
   const [activating, setActivating] = useState(false)
   const [activateError, setActivateError] = useState<string | null>(null)
-  const [communityModalOpen, setCommunityModalOpen] = useState(false)
   const [delegateModalOpen, setDelegateModalOpen] = useState(false)
 
   // Redirect to canonical CIP-105 URL if user landed on a CIP-129 URL
@@ -729,12 +610,12 @@ export default function DRepProfilePage({
           {communityLoading ? (
             <div className="h-10 flex-1 bg-bg-elevated rounded-xl animate-pulse" />
           ) : isActive ? (
-            <button
-              onClick={() => setCommunityModalOpen(true)}
-              className={`${isOwner ? "btn-primary" : "btn-outline"} flex-1 text-sm`}
+            <Link
+              href={`/dreps/${profile.id}/community${networkParam}`}
+              className={`${isOwner ? "btn-primary" : "btn-outline"} flex-1 text-sm text-center`}
             >
               Your DRep Community
-            </button>
+            </Link>
           ) : isOwner ? (
             <button
               onClick={handleActivateCommunity}
@@ -746,15 +627,6 @@ export default function DRepProfilePage({
           ) : null}
         </div>
 
-        {/* Community link when active (for non-owners — full page link) */}
-        {!communityLoading && isActive && !isOwner && (
-          <Link
-            href={`/dreps/${profile.id}/community${networkParam}`}
-            className="text-xs text-text-muted hover:text-accent-light transition-colors text-center block"
-          >
-            Xem trang Community →
-          </Link>
-        )}
       </div>
 
       {/* ── About (CIP-119 metadata) ──────────────────────────────────────── */}
@@ -853,15 +725,6 @@ export default function DRepProfilePage({
           drepName={profile.givenName ?? profile.name}
           network={network}
           onClose={() => setDelegateModalOpen(false)}
-        />
-      )}
-
-      {/* ── Community Modal ───────────────────────────────────────────────── */}
-      {communityModalOpen && (
-        <CommunityModal
-          drepId={profile.id}
-          network={network}
-          onClose={() => setCommunityModalOpen(false)}
         />
       )}
 

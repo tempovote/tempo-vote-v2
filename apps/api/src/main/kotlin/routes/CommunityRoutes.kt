@@ -16,11 +16,14 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
+import vote.tempo.cache.CardanoCache
+import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.db.Communities
 import vote.tempo.db.InternalPolls
 import vote.tempo.db.PollComments
 import vote.tempo.db.PollOptions
 import vote.tempo.db.PollVotes
+import kotlinx.serialization.json.*
 import java.util.UUID
 
 // ─── Response DTOs ────────────────────────────────────────────────────────────
@@ -95,6 +98,8 @@ data class PollCommentItem(
     val stakeAddress: String,
     val content: String,
     val createdAt: String,
+    val drepId: String? = null,
+    val drepName: String? = null,
 )
 
 @Serializable
@@ -129,6 +134,7 @@ data class CreatePollRequest(
 @Serializable
 data class AddCommentRequest(
     val content: String,
+    val drepId: String? = null,
 )
 
 @Serializable
@@ -522,11 +528,20 @@ fun Route.communityRoutes() {
                     .where { PollComments.pollId eq pollId }
                     .orderBy(PollComments.createdAt, SortOrder.ASC)
                     .map { row ->
+                        val storedDrepId = row[PollComments.drepId]
+                        val drepName = storedDrepId?.let { id ->
+                            val networkName = if (id.startsWith("drep1")) "PREPROD" else "MAINNET"
+                            val credHex = runCatching { drepIdToCredentialHex(id) }.getOrNull()
+                            credHex?.let { CardanoCache.drepInfo.getIfPresent("$networkName:$credHex") }
+                                ?.get("name")?.jsonPrimitive?.contentOrNull
+                        }
                         PollCommentItem(
                             id = row[PollComments.id].toString(),
                             stakeAddress = row[PollComments.stakeAddress],
                             content = row[PollComments.content],
                             createdAt = row[PollComments.createdAt].toString(),
+                            drepId   = storedDrepId,
+                            drepName = drepName,
                         )
                     }
             }
@@ -559,15 +574,68 @@ fun Route.communityRoutes() {
                     return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Poll not found"))
                 }
 
+                // Validate drepId if provided — must be a registered DRep in the cache
+                val verifiedDrepId = req.drepId?.trim()?.takeIf { drepId ->
+                    val networkName = if (stakeAddress.startsWith("stake_test")) "PREPROD" else "MAINNET"
+                    val credHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull() ?: return@takeIf false
+                    val listRaw = CardanoCache.drepList.getIfPresent(networkName) ?: return@takeIf false
+                    val dreps: JsonArray = when {
+                        listRaw is JsonArray -> listRaw
+                        listRaw is JsonObject && listRaw["delegateRepresentatives"] is JsonArray ->
+                            listRaw["delegateRepresentatives"]!!.jsonArray
+                        else -> return@takeIf false
+                    }
+                    dreps.mapNotNull { runCatching { it.jsonObject }.getOrNull() }
+                        .any { entry ->
+                            if (entry["type"]?.jsonPrimitive?.contentOrNull != "registered") return@any false
+                            val id = entry["id"]?.jsonPrimitive?.contentOrNull ?: return@any false
+                            id == credHex || id == drepId ||
+                                (id.startsWith("drep") && runCatching { drepIdToCredentialHex(id) }.getOrNull() == credHex)
+                        }
+                }
+
                 val commentId = transaction {
                     PollComments.insert {
                         it[PollComments.pollId]       = pollId
                         it[PollComments.stakeAddress] = stakeAddress
+                        it[PollComments.drepId]       = verifiedDrepId
                         it[PollComments.content]      = req.content.trim()
                     }[PollComments.id].toString()
                 }
 
                 call.respond(HttpStatusCode.Created, mapOf("id" to commentId))
+            }
+
+            // DELETE /communities/polls/{pollId}/comments/{commentId}  [requires JWT]
+            delete("/polls/{pollId}/comments/{commentId}") {
+                val principal    = call.principal<JWTPrincipal>()!!
+                val stakeAddress = principal.payload.subject
+
+                val commentIdStr = call.parameters["commentId"]
+                    ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "commentId required"))
+                val commentId = runCatching { UUID.fromString(commentIdStr) }.getOrElse {
+                    return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid commentId"))
+                }
+
+                val deleteCondition = with(SqlExpressionBuilder) { PollComments.id eq commentId }
+
+                val deleted = transaction {
+                    val row = PollComments.selectAll()
+                        .where { PollComments.id eq commentId }
+                        .firstOrNull()
+                        ?: return@transaction false
+
+                    if (row[PollComments.stakeAddress] != stakeAddress) return@transaction null
+
+                    PollComments.deleteWhere { deleteCondition }
+                    true
+                }
+
+                when (deleted) {
+                    null  -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Không thể xóa comment của người khác"))
+                    false -> call.respond(HttpStatusCode.NotFound,   mapOf("error" to "Comment không tồn tại"))
+                    true  -> call.respond(HttpStatusCode.OK,         mapOf("success" to true))
+                }
             }
         }
     }

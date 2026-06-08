@@ -58,6 +58,8 @@ export const PollCommentSchema = z.object({
   stakeAddress: z.string(),
   content: z.string(),
   createdAt: z.string(),
+  drepId: z.string().nullable().optional(),
+  drepName: z.string().nullable().optional(),
 })
 export type PollComment = z.infer<typeof PollCommentSchema>
 
