@@ -39,7 +39,11 @@ import com.bloxbean.cardano.client.transaction.spec.governance.actions.InfoActio
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.NewConstitution
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.NoConfidence
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.TreasuryWithdrawalsAction
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.ParameterChangeAction
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.UpdateCommittee
+import com.bloxbean.cardano.client.transaction.spec.ProtocolParamUpdate
+import com.bloxbean.cardano.client.spec.Rational
+import vote.tempo.routes.ProtocolParamUpdateItem
 import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
 import com.bloxbean.cardano.client.transaction.spec.Withdrawal
 import com.bloxbean.cardano.client.spec.UnitInterval
@@ -301,6 +305,76 @@ class TxBuilder(private val network: Network) {
             .build()
 
         val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+
+        if (guardrailsHash != null) {
+            val scriptHex = ogmios.getConstitutionScriptHex()
+            if (scriptHex != null) {
+                return buildUnsignedWithGuardrailsScript(tx, changeAddress, scriptHex, collateral)
+            }
+        }
+
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned Protocol Parameter Change governance proposal.
+     * Like TreasuryWithdrawal, this requires the constitution guardrails script
+     * (Plutus V3, tag 5 / Proposing redeemer) to be executed at submission time.
+     *
+     * Rate fields (expansionRate, treasuryGrowthRate, poolPledgeInfluence) are passed
+     * as parts-per-million integers: 0.003 → 3000 → UnitInterval(3000, 1_000_000).
+     *
+     * Only the fields present in `paramUpdate` are included in the on-chain update.
+     * The ledger applies only the supplied subset — other params are unchanged.
+     */
+    suspend fun buildProtocolParamChange(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        paramUpdate: ProtocolParamUpdateItem,
+        collateral: List<String> = emptyList(),
+        prevGovActionTxHash: String? = null,
+        prevGovActionIdx: Int? = null,
+    ): String {
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val ogmios = OgmiosStateQueries(network)
+        val guardrailsHash = ogmios.getConstitutionGuardrailsHash()
+
+        val ppUpdate = ProtocolParamUpdate.builder().apply {
+            paramUpdate.minFeeA?.let { minFeeA(BigInteger.valueOf(it)) }
+            paramUpdate.minFeeB?.let { minFeeB(BigInteger.valueOf(it)) }
+            paramUpdate.maxTxSize?.let { maxTxSize(it) }
+            paramUpdate.maxBlockSize?.let { maxBlockSize(it) }
+            paramUpdate.maxBlockHeaderSize?.let { maxBlockHeaderSize(it) }
+            paramUpdate.keyDeposit?.let { keyDeposit(BigInteger.valueOf(it)) }
+            paramUpdate.poolDeposit?.let { poolDeposit(BigInteger.valueOf(it)) }
+            paramUpdate.nOpt?.let { nOpt(it) }
+            paramUpdate.maxEpoch?.let { maxEpoch(it) }
+            paramUpdate.minPoolCost?.let { minPoolCost(BigInteger.valueOf(it)) }
+            paramUpdate.adaPerUtxoByte?.let { adaPerUtxoByte(BigInteger.valueOf(it)) }
+            paramUpdate.maxValSize?.let { maxValSize(it) }
+            paramUpdate.collateralPercent?.let { collateralPercent(it) }
+            paramUpdate.maxCollateralInputs?.let { maxCollateralInputs(it) }
+            paramUpdate.poolPledgeInfluencePerMillion?.let {
+                poolPledgeInfluence(Rational(BigInteger.valueOf(it), BigInteger.valueOf(1_000_000L)))
+            }
+            paramUpdate.expansionRatePerMillion?.let {
+                expansionRate(UnitInterval(BigInteger.valueOf(it), BigInteger.valueOf(1_000_000L)))
+            }
+            paramUpdate.treasuryGrowthRatePerMillion?.let {
+                treasuryGrowthRate(UnitInterval(BigInteger.valueOf(it), BigInteger.valueOf(1_000_000L)))
+            }
+        }.build()
+
+        val action = ParameterChangeAction.builder()
+            .prevGovActionId(buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx))
+            .protocolParamUpdate(ppUpdate)
+            .policyHash(guardrailsHash)
+            .build()
+
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+        println("[TxBuilder] ProtocolParamChange: guardrailsHash=${guardrailsHash?.let { HexUtil.encodeHexString(it) }}")
 
         if (guardrailsHash != null) {
             val scriptHex = ogmios.getConstitutionScriptHex()

@@ -29,7 +29,7 @@ const GA_TYPES: Record<string, GaTypeMeta> = {
   newConstitution:          { label: "New Constitution",          desc: "Đề xuất thay đổi Hiến pháp Cardano on-chain",       txType: "PROPOSE_NEW_CONSTITUTION" },
   treasuryWithdrawals:      { label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury",                   txType: "PROPOSE_TREASURY_WITHDRAWAL" },
   updateCommittee:          { label: "Update Committee",          desc: "Thêm/xóa thành viên Constitutional Committee",      txType: "PROPOSE_UPDATE_COMMITTEE" },
-  protocolParametersUpdate: { label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức (phức tạp)",            txType: null },
+  protocolParametersUpdate: { label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức Cardano on-chain",      txType: "PROPOSE_PROTOCOL_PARAM_CHANGE" },
 }
 
 // ─── Shared style constants ──────────────────────────────────────────────────
@@ -64,6 +64,24 @@ type TypeParams = {
   constitutionScriptHash: string
   quorumNumerator: string
   quorumDenominator: string
+  // Protocol Parameter Change — only filled fields are included in the on-chain update
+  ppMinFeeA: string
+  ppMinFeeB: string
+  ppMaxTxSize: string
+  ppMaxBlockSize: string
+  ppMaxBlockHeaderSize: string
+  ppKeyDeposit: string
+  ppPoolDeposit: string
+  ppNOpt: string
+  ppMaxEpoch: string
+  ppMinPoolCost: string
+  ppPoolPledgeInfluence: string   // decimal e.g. "0.3"
+  ppAdaPerUtxoByte: string
+  ppExpansionRate: string         // decimal e.g. "0.003"
+  ppTreasuryGrowthRate: string    // decimal e.g. "0.2"
+  ppMaxValSize: string
+  ppCollateralPercent: string
+  ppMaxCollateralInputs: string
 }
 
 const EMPTY_TYPE_PARAMS: TypeParams = {
@@ -76,6 +94,23 @@ const EMPTY_TYPE_PARAMS: TypeParams = {
   constitutionScriptHash: "",
   quorumNumerator: "",
   quorumDenominator: "",
+  ppMinFeeA: "",
+  ppMinFeeB: "",
+  ppMaxTxSize: "",
+  ppMaxBlockSize: "",
+  ppMaxBlockHeaderSize: "",
+  ppKeyDeposit: "",
+  ppPoolDeposit: "",
+  ppNOpt: "",
+  ppMaxEpoch: "",
+  ppMinPoolCost: "",
+  ppPoolPledgeInfluence: "",
+  ppAdaPerUtxoByte: "",
+  ppExpansionRate: "",
+  ppTreasuryGrowthRate: "",
+  ppMaxValSize: "",
+  ppCollateralPercent: "",
+  ppMaxCollateralInputs: "",
 }
 
 // ─── Row types for dynamic lists ─────────────────────────────────────────────
@@ -509,6 +544,137 @@ function UpdateCommitteeFields({
   )
 }
 
+// ─── Protocol Parameter Change UI ────────────────────────────────────────────
+
+type PpGroup = { label: string; fields: PpFieldDef[] }
+type PpFieldDef = {
+  key: keyof TypeParams
+  label: string
+  hint: string
+  placeholder: string
+  step?: string
+  min?: number
+  max?: number
+  isDecimal?: boolean
+}
+
+const PP_GROUPS: PpGroup[] = [
+  {
+    label: "Fees",
+    fields: [
+      { key: "ppMinFeeA", label: "Min Fee A (lovelace/byte)", hint: "Hệ số fee tuyến tính theo kích thước TX. Hiện tại: 44", placeholder: "44" },
+      { key: "ppMinFeeB", label: "Min Fee B (lovelace)", hint: "Fee cố định cho mỗi transaction. Hiện tại: 155381", placeholder: "155381" },
+    ],
+  },
+  {
+    label: "Transaction & Block Limits",
+    fields: [
+      { key: "ppMaxTxSize", label: "Max TX Size (bytes)", hint: "Kích thước tối đa của một transaction. Hiện tại: 16384", placeholder: "16384" },
+      { key: "ppMaxBlockSize", label: "Max Block Size (bytes)", hint: "Kích thước tối đa của block body. Hiện tại: 90112", placeholder: "90112" },
+      { key: "ppMaxBlockHeaderSize", label: "Max Block Header Size (bytes)", hint: "Kích thước tối đa của block header. Hiện tại: 1100", placeholder: "1100" },
+    ],
+  },
+  {
+    label: "Deposits (lovelace)",
+    fields: [
+      { key: "ppKeyDeposit", label: "Stake Key Deposit", hint: "Deposit khi đăng ký stake key. Hiện tại: 2,000,000 (2 ADA)", placeholder: "2000000" },
+      { key: "ppPoolDeposit", label: "Pool Registration Deposit", hint: "Deposit khi đăng ký stake pool. Hiện tại: 500,000,000 (500 ADA)", placeholder: "500000000" },
+    ],
+  },
+  {
+    label: "Pool Parameters",
+    fields: [
+      { key: "ppNOpt", label: "Desired Pool Count (k)", hint: "Số lượng pools tối ưu (k parameter). Hiện tại: 500", placeholder: "500" },
+      { key: "ppMaxEpoch", label: "Pool Retirement Window (epochs)", hint: "Thời gian tối đa để retire pool sau khi thông báo. Hiện tại: 18", placeholder: "18" },
+      { key: "ppMinPoolCost", label: "Min Pool Cost (lovelace)", hint: "Chi phí cố định tối thiểu của pool. Hiện tại: 170,000,000 (170 ADA)", placeholder: "170000000" },
+      { key: "ppPoolPledgeInfluence", label: "Pool Pledge Influence (a0)", hint: "Ảnh hưởng của pledge lên rewards (0 đến 1+). Hiện tại: 0.3", placeholder: "0.3", isDecimal: true, min: 0, max: 2, step: "0.001" },
+    ],
+  },
+  {
+    label: "Economics",
+    fields: [
+      { key: "ppAdaPerUtxoByte", label: "ADA per UTxO Byte (lovelace)", hint: "Chi phí lưu trữ UTxO (min-ada). Hiện tại: 4310", placeholder: "4310" },
+      { key: "ppExpansionRate", label: "Monetary Expansion Rate (ρ)", hint: "Tỷ lệ phát hành ADA mới mỗi epoch (0–1). Hiện tại: 0.003", placeholder: "0.003", isDecimal: true, min: 0, max: 1, step: "0.001" },
+      { key: "ppTreasuryGrowthRate", label: "Treasury Growth Rate (τ)", hint: "Tỷ lệ chuyển rewards vào treasury (0–1). Hiện tại: 0.2", placeholder: "0.2", isDecimal: true, min: 0, max: 1, step: "0.01" },
+    ],
+  },
+  {
+    label: "Script & Collateral",
+    fields: [
+      { key: "ppMaxValSize", label: "Max Value Size (bytes)", hint: "Kích thước tối đa của Value trong output. Hiện tại: 5000", placeholder: "5000" },
+      { key: "ppCollateralPercent", label: "Collateral Percentage (%)", hint: "Tỷ lệ % collateral so với fee. Hiện tại: 150", placeholder: "150" },
+      { key: "ppMaxCollateralInputs", label: "Max Collateral Inputs", hint: "Số lượng tối đa collateral inputs. Hiện tại: 3", placeholder: "3" },
+    ],
+  },
+]
+
+function ProtocolParamChangeFields({
+  params,
+  onChange,
+}: {
+  params: TypeParams
+  onChange: (patch: Partial<TypeParams>) => void
+}) {
+  const filledCount = PP_GROUPS.flatMap((g) => g.fields).filter(
+    (f) => params[f.key].trim() !== "",
+  ).length
+
+  return (
+    <>
+      <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
+        <p className="font-semibold text-accent-light">Protocol Parameter Change — Lưu ý</p>
+        <p>Chỉ cần điền các thông số muốn thay đổi. Thông số nào để trống sẽ <strong>không thay đổi</strong> on-chain.</p>
+        <p>Yêu cầu DRep threshold 67% + CC threshold 60% + SPO threshold 51% để được ratified.</p>
+        <p className="text-warning">Conway-era specific params (govActionDeposit, dRepDeposit...) sẽ được hỗ trợ trong phiên bản sau.</p>
+      </div>
+
+      {filledCount > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-success/8 border border-success/20 rounded-xl">
+          <span className="text-xs text-success font-semibold">{filledCount} thông số sẽ được thay đổi</span>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {PP_GROUPS.map((group) => (
+          <div key={group.label} className="space-y-2">
+            <p className="text-[11px] font-bold text-text-muted uppercase tracking-widest border-b border-border-subtle pb-1">
+              {group.label}
+            </p>
+            <div className="space-y-3">
+              {group.fields.map((field) => (
+                <div key={field.key} className="space-y-1">
+                  <label className={LABEL + " normal-case tracking-normal text-[11px]"}>
+                    {field.label}
+                    <span className="ml-1.5 text-[10px] text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+                  </label>
+                  <p className="text-[11px] text-text-muted leading-relaxed">{field.hint}</p>
+                  <input
+                    type="number"
+                    min={field.min ?? 0}
+                    max={field.max}
+                    step={field.step ?? "1"}
+                    value={params[field.key]}
+                    onChange={(e) => onChange({ [field.key]: e.target.value } as Partial<TypeParams>)}
+                    placeholder={field.placeholder}
+                    className={INPUT_SM + " w-full tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <PrevGovActionFields
+        params={params}
+        onChange={onChange}
+        label="Previous Protocol Param Action"
+        hint="GA ParameterChange cuối cùng đã được enacted. Để trống nếu đây là lần đầu."
+      />
+    </>
+  )
+}
+
 // ─── Validation per type ─────────────────────────────────────────────────────
 
 function validateTypeParams(
@@ -564,6 +730,30 @@ function validateTypeParams(
     )
     if (badEpoch)
       return `Vui lòng nhập term epoch cho credential "${badEpoch.credential}".`
+  }
+  if (gaType === "protocolParametersUpdate") {
+    const allPpKeys: Array<keyof TypeParams> = [
+      "ppMinFeeA", "ppMinFeeB", "ppMaxTxSize", "ppMaxBlockSize", "ppMaxBlockHeaderSize",
+      "ppKeyDeposit", "ppPoolDeposit", "ppNOpt", "ppMaxEpoch", "ppMinPoolCost",
+      "ppPoolPledgeInfluence", "ppAdaPerUtxoByte", "ppExpansionRate", "ppTreasuryGrowthRate",
+      "ppMaxValSize", "ppCollateralPercent", "ppMaxCollateralInputs",
+    ]
+    const filled = allPpKeys.filter((k) => params[k].trim() !== "")
+    if (filled.length === 0)
+      return "Vui lòng điền ít nhất một thông số muốn thay đổi."
+    const decimalKeys: Array<keyof TypeParams> = ["ppExpansionRate", "ppTreasuryGrowthRate"]
+    for (const k of decimalKeys) {
+      if (params[k].trim() !== "") {
+        const v = parseFloat(params[k])
+        if (isNaN(v) || v < 0 || v > 1)
+          return `Giá trị "${k.replace("pp", "")}" phải là số từ 0 đến 1.`
+      }
+    }
+    if (params.ppPoolPledgeInfluence.trim() !== "") {
+      const v = parseFloat(params.ppPoolPledgeInfluence)
+      if (isNaN(v) || v < 0 || v > 2)
+        return "Pool Pledge Influence phải là số từ 0 đến 2."
+    }
   }
   return null
 }
@@ -621,6 +811,37 @@ function buildTypeParams(
         prevGovActionTxHash,
         prevGovActionIdx,
       }
+    case "protocolParametersUpdate": {
+      // Helper: parse optional integer field
+      const pi = (v: string) => (v.trim() !== "" ? parseInt(v) : undefined)
+      // Helper: convert decimal string (e.g. "0.003") to parts-per-million integer (e.g. 3000)
+      const toPerMillion = (v: string) =>
+        v.trim() !== "" ? Math.round(parseFloat(v) * 1_000_000) : undefined
+
+      return {
+        protocolParamUpdate: {
+          minFeeA: pi(params.ppMinFeeA),
+          minFeeB: pi(params.ppMinFeeB),
+          maxTxSize: pi(params.ppMaxTxSize),
+          maxBlockSize: pi(params.ppMaxBlockSize),
+          maxBlockHeaderSize: pi(params.ppMaxBlockHeaderSize),
+          keyDeposit: pi(params.ppKeyDeposit),
+          poolDeposit: pi(params.ppPoolDeposit),
+          nOpt: pi(params.ppNOpt),
+          maxEpoch: pi(params.ppMaxEpoch),
+          minPoolCost: pi(params.ppMinPoolCost),
+          adaPerUtxoByte: pi(params.ppAdaPerUtxoByte),
+          maxValSize: pi(params.ppMaxValSize),
+          collateralPercent: pi(params.ppCollateralPercent),
+          maxCollateralInputs: pi(params.ppMaxCollateralInputs),
+          poolPledgeInfluencePerMillion: toPerMillion(params.ppPoolPledgeInfluence),
+          expansionRatePerMillion: toPerMillion(params.ppExpansionRate),
+          treasuryGrowthRatePerMillion: toPerMillion(params.ppTreasuryGrowthRate),
+        },
+        prevGovActionTxHash,
+        prevGovActionIdx,
+      }
+    }
     default:
       return {}
   }
@@ -955,6 +1176,9 @@ export default function NewGovernanceActionPage({
                     addRows={committeeAddRows}
                     onAddChange={setCommitteeAddRows}
                   />
+                )}
+                {gaType === "protocolParametersUpdate" && (
+                  <ProtocolParamChangeFields params={typeParams} onChange={patchTypeParams} />
                 )}
               </div>
             </>

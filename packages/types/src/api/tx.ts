@@ -16,6 +16,7 @@ export const TxTypeSchema = z.enum([
   "PROPOSE_NEW_CONSTITUTION",
   "PROPOSE_TREASURY_WITHDRAWAL",
   "PROPOSE_UPDATE_COMMITTEE",
+  "PROPOSE_PROTOCOL_PARAM_CHANGE",
 ])
 export type TxType = z.infer<typeof TxTypeSchema>
 
@@ -66,6 +67,28 @@ export const BuildTxRequestSchema = z.object({
   })).optional(),
   quorumNumerator: z.number().int().min(1).optional(),
   quorumDenominator: z.number().int().min(1).optional(),
+  // PROPOSE_PROTOCOL_PARAM_CHANGE: only the fields to change (all optional, at least 1 required)
+  // Rate fields (expansionRate, treasuryGrowthRate, poolPledgeInfluence) expressed as
+  // parts-per-million: e.g. 0.003 → 3000, 0.2 → 200000, 0.3 → 300000
+  protocolParamUpdate: z.object({
+    minFeeA: z.number().int().min(0).optional(),
+    minFeeB: z.number().int().min(0).optional(),
+    maxTxSize: z.number().int().min(0).optional(),
+    maxBlockSize: z.number().int().min(0).optional(),
+    maxBlockHeaderSize: z.number().int().min(0).optional(),
+    keyDeposit: z.number().int().min(0).optional(),
+    poolDeposit: z.number().int().min(0).optional(),
+    nOpt: z.number().int().min(0).optional(),
+    maxEpoch: z.number().int().min(0).optional(),
+    minPoolCost: z.number().int().min(0).optional(),
+    poolPledgeInfluencePerMillion: z.number().int().min(0).max(2000000).optional(),
+    adaPerUtxoByte: z.number().int().min(0).optional(),
+    expansionRatePerMillion: z.number().int().min(0).max(1000000).optional(),
+    treasuryGrowthRatePerMillion: z.number().int().min(0).max(1000000).optional(),
+    maxValSize: z.number().int().min(0).optional(),
+    collateralPercent: z.number().int().min(0).optional(),
+    maxCollateralInputs: z.number().int().min(0).optional(),
+  }).optional(),
 })
 export type BuildTxRequest = z.infer<typeof BuildTxRequestSchema>
 

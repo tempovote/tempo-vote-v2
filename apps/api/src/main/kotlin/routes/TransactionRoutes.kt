@@ -58,6 +58,8 @@ data class BuildTxRequest(
     val quorumDenominator: Long? = null,
     // Collateral inputs — required when the TX executes Plutus scripts (e.g. guardrails)
     val collateral: List<String>? = null,
+    // PROPOSE_PROTOCOL_PARAM_CHANGE
+    val protocolParamUpdate: ProtocolParamUpdateItem? = null,
 )
 
 @Serializable
@@ -70,6 +72,28 @@ data class TreasuryWithdrawalItem(
 data class CommitteeAddItem(
     val credential: String,
     val termEpoch: Int,
+)
+
+@Serializable
+data class ProtocolParamUpdateItem(
+    val minFeeA: Long? = null,
+    val minFeeB: Long? = null,
+    val maxTxSize: Int? = null,
+    val maxBlockSize: Int? = null,
+    val maxBlockHeaderSize: Int? = null,
+    val keyDeposit: Long? = null,
+    val poolDeposit: Long? = null,
+    val nOpt: Int? = null,
+    val maxEpoch: Int? = null,
+    val minPoolCost: Long? = null,
+    // Rate fields as parts-per-million: 0.003 → 3000, 0.2 → 200000
+    val poolPledgeInfluencePerMillion: Long? = null,
+    val adaPerUtxoByte: Long? = null,
+    val expansionRatePerMillion: Long? = null,
+    val treasuryGrowthRatePerMillion: Long? = null,
+    val maxValSize: Long? = null,
+    val collateralPercent: Int? = null,
+    val maxCollateralInputs: Int? = null,
 )
 
 @Serializable
@@ -190,6 +214,16 @@ fun Route.transactionRoutes() {
                             .map { it.credential to it.termEpoch },
                         quorumNumerator = req.quorumNumerator ?: error("quorumNumerator required"),
                         quorumDenominator = req.quorumDenominator ?: error("quorumDenominator required"),
+                        prevGovActionTxHash = req.prevGovActionTxHash,
+                        prevGovActionIdx = req.prevGovActionIdx,
+                    )
+                    "PROPOSE_PROTOCOL_PARAM_CHANGE" -> builder.buildProtocolParamChange(
+                        changeAddress = req.changeAddress,
+                        rewardAddress = req.rewardAddress,
+                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                        paramUpdate = req.protocolParamUpdate ?: error("protocolParamUpdate required"),
+                        collateral = req.collateral ?: emptyList(),
                         prevGovActionTxHash = req.prevGovActionTxHash,
                         prevGovActionIdx = req.prevGovActionIdx,
                     )
