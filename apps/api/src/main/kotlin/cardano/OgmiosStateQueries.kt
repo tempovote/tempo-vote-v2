@@ -170,6 +170,22 @@ class OgmiosStateQueries(private val network: Network) {
         return queryRaw("queryLedgerState/constitutionalCommittee", buildJsonObject {})
     }
 
+    /**
+     * Returns the current constitution's guardrails script hash as raw bytes (28 bytes),
+     * or null if the constitution has no guardrails script.
+     * Treasury Withdrawals and ParameterChange proposals must include this hash when non-null.
+     */
+    suspend fun getConstitutionGuardrailsHash(): ByteArray? {
+        val constitution = queryRaw("queryLedgerState/constitution", buildJsonObject {}).jsonObject
+        val guardrails = constitution["guardrails"]
+        if (guardrails == null || guardrails is JsonNull) return null
+        val hashHex = guardrails.jsonObject["script"]?.jsonObject
+            ?.get("hash")?.jsonPrimitive?.contentOrNull ?: return null
+        return ByteArray(hashHex.length / 2) { i ->
+            hashHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+        }
+    }
+
     suspend fun getTreasury(): JsonObject {
         return queryRaw("queryLedgerState/treasury", buildJsonObject {}).jsonObject
     }

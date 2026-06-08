@@ -260,7 +260,7 @@ class TxBuilder(private val network: Network) {
      * Build an unsigned Treasury Withdrawal governance proposal.
      * @param withdrawals list of (bech32 stake address, lovelace amount) pairs
      */
-    fun buildTreasuryWithdrawal(
+    suspend fun buildTreasuryWithdrawal(
         changeAddress: String,
         rewardAddress: String,
         anchorUrl: String,
@@ -269,10 +269,14 @@ class TxBuilder(private val network: Network) {
     ): String {
         require(withdrawals.isNotEmpty()) { "treasuryWithdrawals must not be empty" }
         val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        // Constitution guardrails hash is required when the current constitution defines one.
+        // Omitting it (null) causes a ledger rejection with error code 3163.
+        val guardrailsHash = OgmiosStateQueries(network).getConstitutionGuardrailsHash()
         val action = TreasuryWithdrawalsAction.builder()
             .withdrawals(withdrawals.map { (addr, lovelace) ->
                 Withdrawal.builder().rewardAddress(addr).coin(lovelace).build()
             })
+            .policyHash(guardrailsHash)
             .build()
         val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
         return buildUnsigned(tx, changeAddress)
