@@ -13,9 +13,9 @@ Bloxbean 0.7.0-beta1 đã có class cho tất cả 7 type trong `cardano-client-
 | 2 | No Confidence | `NoConfidence` | ✅ Done (Phase 2) |
 | 3 | Hard Fork Initiation | `HardForkInitiationAction` | ✅ Done (Phase 2) |
 | 4 | New Constitution | `NewConstitution` | ✅ Done (Phase 2) |
-| 5 | Treasury Withdrawal | `TreasuryWithdrawalsAction` | ⏳ Phase 3 |
-| 6 | Update Committee | `UpdateCommittee` | ⏳ Phase 4 |
-| 7 | Protocol Parameter Change | `ParameterChangeAction` | ⏳ Phase 4 |
+| 5 | Treasury Withdrawal | `TreasuryWithdrawalsAction` | ✅ Done (Phase 3) |
+| 6 | Update Committee | `UpdateCommittee` | ✅ Done (Phase 4) |
+| 7 | Protocol Parameter Change | `ParameterChangeAction` | ⏳ Phase 5 |
 
 ---
 

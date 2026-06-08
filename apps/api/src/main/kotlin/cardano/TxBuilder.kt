@@ -18,7 +18,11 @@ import com.bloxbean.cardano.client.transaction.spec.governance.actions.HardForkI
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.InfoAction
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.NewConstitution
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.NoConfidence
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.TreasuryWithdrawalsAction
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.UpdateCommittee
 import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
+import com.bloxbean.cardano.client.transaction.spec.Withdrawal
+import com.bloxbean.cardano.client.spec.UnitInterval
 import com.bloxbean.cardano.client.util.HexUtil
 import java.math.BigInteger
 
@@ -252,6 +256,64 @@ class TxBuilder(private val network: Network) {
         return buildUnsigned(tx, changeAddress)
     }
 
+    /**
+     * Build an unsigned Treasury Withdrawal governance proposal.
+     * @param withdrawals list of (bech32 stake address, lovelace amount) pairs
+     */
+    fun buildTreasuryWithdrawal(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        withdrawals: List<Pair<String, BigInteger>>,
+    ): String {
+        require(withdrawals.isNotEmpty()) { "treasuryWithdrawals must not be empty" }
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val action = TreasuryWithdrawalsAction.builder()
+            .withdrawals(withdrawals.map { (addr, lovelace) ->
+                Withdrawal.builder().rewardAddress(addr).coin(lovelace).build()
+            })
+            .build()
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned Update Committee governance proposal.
+     * @param membersToRemove  bech32 cc_cold / cc_cold_test credentials (or raw hex) to remove
+     * @param membersToAdd     list of (credential, termEpoch) pairs for new members
+     * @param quorumNumerator  numerator of the new quorum threshold
+     * @param quorumDenominator denominator of the new quorum threshold (e.g. 2/3 = 67%)
+     */
+    fun buildUpdateCommittee(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        membersToRemove: List<String>,
+        membersToAdd: List<Pair<String, Int>>,
+        quorumNumerator: Long,
+        quorumDenominator: Long,
+        prevGovActionTxHash: String? = null,
+        prevGovActionIdx: Int? = null,
+    ): String {
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val prevId = buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx)
+        val removeSet = LinkedHashSet(membersToRemove.map { parseCcCredential(it) })
+        val addMap = LinkedHashMap<Credential, Int>().apply {
+            membersToAdd.forEach { (cred, epoch) -> put(parseCcCredential(cred), epoch) }
+        }
+        val quorum = UnitInterval(BigInteger.valueOf(quorumNumerator), BigInteger.valueOf(quorumDenominator))
+        val action = UpdateCommittee.builder()
+            .prevGovActionId(prevId)
+            .membersForRemoval(removeSet)
+            .newMembersAndTerms(addMap)
+            .quorumThreshold(quorum)
+            .build()
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
@@ -270,6 +332,25 @@ class TxBuilder(private val network: Network) {
             Credential.fromKey(hash)
         } else {
             Credential.fromKey(drepId)
+        }
+    }
+
+    /**
+     * Parse a CC cold credential from bech32 (cc_cold1..., cc_cold_test1...,
+     * cc_cold_script1..., cc_cold_script_test1...) or raw hex key hash.
+     */
+    private fun parseCcCredential(credential: String): Credential {
+        val trimmed = credential.trim()
+        return when {
+            trimmed.startsWith("cc_cold_script") -> {
+                val hash = com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data
+                Credential.fromScript(hash)
+            }
+            trimmed.startsWith("cc_cold") -> {
+                val hash = com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data
+                Credential.fromKey(hash)
+            }
+            else -> Credential.fromKey(HexUtil.decodeHexString(trimmed))
         }
     }
 

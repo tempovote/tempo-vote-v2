@@ -49,6 +49,25 @@ data class BuildTxRequest(
     val constitutionAnchorUrl: String? = null,
     val constitutionAnchorHash: String? = null,
     val constitutionScriptHash: String? = null,
+    // PROPOSE_TREASURY_WITHDRAWAL: recipients (lovelace as string to avoid precision loss)
+    val treasuryWithdrawals: List<TreasuryWithdrawalItem>? = null,
+    // PROPOSE_UPDATE_COMMITTEE: members to add/remove and new quorum threshold
+    val committeeRemove: List<String>? = null,
+    val committeeAdd: List<CommitteeAddItem>? = null,
+    val quorumNumerator: Long? = null,
+    val quorumDenominator: Long? = null,
+)
+
+@Serializable
+data class TreasuryWithdrawalItem(
+    val stakeAddress: String,
+    val lovelace: String,
+)
+
+@Serializable
+data class CommitteeAddItem(
+    val credential: String,
+    val termEpoch: Int,
 )
 
 @Serializable
@@ -147,6 +166,27 @@ fun Route.transactionRoutes() {
                         constitutionAnchorUrl = req.constitutionAnchorUrl ?: error("constitutionAnchorUrl required"),
                         constitutionAnchorHash = req.constitutionAnchorHash ?: error("constitutionAnchorHash required"),
                         constitutionScriptHash = req.constitutionScriptHash,
+                        prevGovActionTxHash = req.prevGovActionTxHash,
+                        prevGovActionIdx = req.prevGovActionIdx,
+                    )
+                    "PROPOSE_TREASURY_WITHDRAWAL" -> builder.buildTreasuryWithdrawal(
+                        changeAddress = req.changeAddress,
+                        rewardAddress = req.rewardAddress,
+                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                        withdrawals = (req.treasuryWithdrawals ?: error("treasuryWithdrawals required"))
+                            .map { it.stakeAddress to it.lovelace.toBigInteger() },
+                    )
+                    "PROPOSE_UPDATE_COMMITTEE" -> builder.buildUpdateCommittee(
+                        changeAddress = req.changeAddress,
+                        rewardAddress = req.rewardAddress,
+                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                        membersToRemove = req.committeeRemove ?: emptyList(),
+                        membersToAdd = (req.committeeAdd ?: emptyList())
+                            .map { it.credential to it.termEpoch },
+                        quorumNumerator = req.quorumNumerator ?: error("quorumNumerator required"),
+                        quorumDenominator = req.quorumDenominator ?: error("quorumDenominator required"),
                         prevGovActionTxHash = req.prevGovActionTxHash,
                         prevGovActionIdx = req.prevGovActionIdx,
                     )
