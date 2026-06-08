@@ -36,7 +36,7 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
   const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
-  const proposalTitle = anchorTitle ?? action.type
+  const proposalTitle = anchorTitle ?? getActionTypeLabel(action.actionType)
 
   return (
     <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block">

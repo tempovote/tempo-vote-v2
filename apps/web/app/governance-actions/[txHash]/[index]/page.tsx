@@ -11,7 +11,7 @@ import { ActionIdChip } from "@/components/governance/ActionIdChip"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { RationaleEditor } from "@/components/governance/RationaleEditor"
 import { GovernanceActionSchema, type GovernanceAction } from "@tempo/types"
-import { resolveAnchorUrl } from "@/lib/governance"
+import { resolveAnchorUrl, getActionTypeLabel } from "@/lib/governance"
 import { getJwt, authHeader } from "@/lib/api"
 import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
 
@@ -207,7 +207,7 @@ function VoteSection({ action, network }: { action: GovernanceAction; network: s
           </div>
           <div className="flex justify-between">
             <span className="text-text-muted">Loại</span>
-            <span>{action.type}</span>
+            <span>{getActionTypeLabel(action.actionType)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-text-muted">Lựa chọn</span>
@@ -480,7 +480,7 @@ export default function GovernanceActionDetailPage({
               <div className="flex items-start gap-3 flex-wrap">
                 <span className="badge badge-active shrink-0">Active</span>
                 <span className="text-xs text-text-muted bg-bg-elevated px-2 py-0.5 rounded-full shrink-0">
-                  {action.type}
+                  {getActionTypeLabel(action.actionType)}
                 </span>
               </div>
               <h1 className="text-xl font-bold leading-snug">{heading}</h1>
