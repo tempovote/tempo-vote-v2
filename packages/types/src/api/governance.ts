@@ -48,3 +48,17 @@ export const GovernanceActionSchema = z.object({
 export type GovernanceAction = z.infer<typeof GovernanceActionSchema>
 
 export const GovernanceActionListSchema = z.array(GovernanceActionSchema)
+
+export const ProposalUploadRequestSchema = z.object({
+  drepId: z.string(),
+  title: z.string().min(1).max(80),
+  abstract: z.string().min(1).max(2500),
+  motivation: z.string().max(2500).optional(),
+  rationale: z.string().max(2500).optional(),
+  references: z.array(z.object({
+    type: z.string(),
+    label: z.string(),
+    uri: z.string().url(),
+  })).optional().default([]),
+})
+export type ProposalUploadRequest = z.infer<typeof ProposalUploadRequestSchema>

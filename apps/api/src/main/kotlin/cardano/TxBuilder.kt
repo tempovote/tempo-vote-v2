@@ -13,6 +13,7 @@ import com.bloxbean.cardano.client.transaction.spec.governance.Vote
 import com.bloxbean.cardano.client.transaction.spec.governance.Voter
 import com.bloxbean.cardano.client.transaction.spec.governance.VoterType
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.GovActionId
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.InfoAction
 import com.bloxbean.cardano.client.util.HexUtil
 import java.math.BigInteger
 
@@ -147,6 +148,25 @@ class TxBuilder(private val network: Network) {
             .delegateVotingPowerTo(rewardAddress, drep)
             .from(changeAddress)
 
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned Info Action governance proposal transaction.
+     * @param rewardAddress bech32 stake address — deposit is returned here when action expires
+     * @param anchorUrl     CIP-108 metadata URL on IPFS
+     * @param anchorDataHash blake2b-256 hash of the metadata file (hex)
+     */
+    fun buildInfoAction(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+    ): String {
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val tx = Tx()
+            .createProposal(InfoAction.builder().build(), rewardAddress, anchor)
+            .from(changeAddress)
         return buildUnsigned(tx, changeAddress)
     }
 

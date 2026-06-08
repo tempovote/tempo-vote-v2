@@ -66,13 +66,19 @@ export function computeVotePercent(votes: VoteCounts): {
 
 export function getActionTypeLabel(actionType: string): string {
   const map: Record<string, string> = {
+    // canonical names (from our code / CIP)
+    infoAction:               "Info",
     treasuryWithdrawals:      "Treasury Withdrawals",
     protocolParametersUpdate: "Protocol Parameter Change",
     hardForkInitiation:       "Hard Fork Initiation",
     noConfidence:             "No Confidence",
     updateCommittee:          "Update Committee",
     newConstitution:          "New Constitution",
-    infoAction:               "Info Action",
+    // raw Ogmios display strings
+    information:              "Info",
+    treasuryWithdrawal:       "Treasury Withdrawals",
+    protocolParameterUpdate:  "Protocol Parameter Change",
+    hardFork:                 "Hard Fork Initiation",
   }
   return map[actionType] ?? actionType
 }

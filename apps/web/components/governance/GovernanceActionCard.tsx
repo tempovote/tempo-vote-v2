@@ -8,6 +8,7 @@ import type { MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
 import { ActionIdChip } from "./ActionIdChip"
 import VoteResultsPanel from "./VoteResultsPanel"
+import { getActionTypeLabel } from "@/lib/governance"
 
 interface Props {
   action: GovernanceAction
@@ -35,7 +36,7 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
   const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
-  const proposalTitle = anchorTitle ?? action.type
+  const proposalTitle = anchorTitle ?? getActionTypeLabel(action.actionType)
 
   return (
     <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block">
@@ -62,7 +63,7 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
           <span className="badge badge-active">Active</span>
           <span className="text-text-muted">·</span>
           <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-bg-elevated text-text-secondary border border-border-subtle">
-            {action.type}
+            {getActionTypeLabel(action.actionType)}
           </span>
         </div>
 

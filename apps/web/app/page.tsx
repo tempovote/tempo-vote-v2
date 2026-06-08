@@ -1,12 +1,14 @@
 import Link from "next/link"
 import GovernancePreview from "@/components/governance/GovernancePreview"
 import HomeHeroSections from "@/components/home/HomeHeroSections"
+import { DRepBanner } from "@/components/home/DRepBanner"
 import { mockPolls } from "@/lib/mock-data"
 
 export default function Home() {
 
   return (
     <div className="page-container space-y-8">
+      <DRepBanner />
       <HomeHeroSections />
 
       {/* ── Section 3: Governance Action Preview ────────────── */}

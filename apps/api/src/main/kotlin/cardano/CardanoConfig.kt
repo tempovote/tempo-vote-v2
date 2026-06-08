@@ -53,8 +53,11 @@ private class ConwayParamsPatchEpochService(
         delegate.getProtocolParameters(epoch).also { patchDrepDeposit(it) }
 
     private fun patchDrepDeposit(result: Result<ProtocolParams>) {
-        if (result.isSuccessful && result.value?.drepDeposit == null) {
-            result.value.drepDeposit = BigInteger.valueOf(500_000_000L)
+        if (result.isSuccessful) {
+            if (result.value?.drepDeposit == null)
+                result.value.drepDeposit = BigInteger.valueOf(500_000_000L)
+            if (result.value?.govActionDeposit == null)
+                result.value.govActionDeposit = BigInteger.valueOf(100_000_000_000L)
         }
     }
 }

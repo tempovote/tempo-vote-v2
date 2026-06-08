@@ -8,6 +8,7 @@ interface Props {
   type: AlertType
   title: string
   message?: string
+  children?: React.ReactNode
   onClose: () => void
 }
 
@@ -34,7 +35,7 @@ const CONFIG: Record<AlertType, { icon: string; iconCls: string; btnCls: string 
   },
 }
 
-export function AlertModal({ type, title, message, onClose }: Props) {
+export function AlertModal({ type, title, message, children, onClose }: Props) {
   const btnRef = useRef<HTMLButtonElement>(null)
   const cfg = CONFIG[type]
 
@@ -79,6 +80,9 @@ export function AlertModal({ type, title, message, onClose }: Props) {
             <p className="text-sm text-text-secondary text-center leading-relaxed">
               {message}
             </p>
+          )}
+          {children && (
+            <div className="w-full mt-1">{children}</div>
           )}
         </div>
 
