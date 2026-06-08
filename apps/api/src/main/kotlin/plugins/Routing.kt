@@ -9,6 +9,7 @@ fun Application.configureRouting() {
         healthRoutes()
         authRoutes()
         transactionRoutes()
+        chainInfoRoutes()
         governanceRoutes()
         drepRoutes()
         stakeRoutes()
