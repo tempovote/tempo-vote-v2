@@ -66,9 +66,12 @@ function PollCard({ poll, drepId, network }: { poll: InternalPoll; drepId: strin
     <div className="border-b border-border-subtle last:border-0 p-5 space-y-3">
       {/* Header row */}
       <div className="flex items-start justify-between gap-4">
-        <h3 className="text-base font-bold text-text-primary leading-snug flex-1 min-w-0">
+        <Link
+          href={`/dreps/${drepId}/community/${poll.id}${networkParam}`}
+          className="text-base font-bold text-text-primary leading-snug flex-1 min-w-0 hover:text-accent-light transition-colors"
+        >
           {poll.title}
-        </h3>
+        </Link>
         <Link
           href={`/governance-actions/new?source=${poll.id}${networkParam.replace("?", "&")}`}
           className="shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border-default text-text-secondary hover:border-accent/50 hover:text-accent-light transition-colors"
