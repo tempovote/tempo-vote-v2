@@ -371,10 +371,64 @@ export default function PollDetailPage({
             <span className="text-xs text-text-muted">{timeLabel(poll.status, poll.endsAt, poll.startsAt)}</span>
           </div>
           <h1 className="text-xl font-bold text-text-primary leading-snug">{poll.title}</h1>
-          {poll.abstract && (
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.abstract}</p>
-          )}
         </div>
+
+        {/* Cover image */}
+        {poll.imageUrl && (
+          <div className="rounded-xl overflow-hidden border border-border-subtle">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={poll.imageUrl}
+              alt="Poll cover"
+              className="w-full max-h-72 object-cover"
+            />
+          </div>
+        )}
+
+        {/* Abstract */}
+        {poll.abstract && (
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tóm tắt</h3>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.abstract}</p>
+          </div>
+        )}
+
+        {/* Motivation */}
+        {poll.motivation && (
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Động lực</h3>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.motivation}</p>
+          </div>
+        )}
+
+        {/* Rationale */}
+        {poll.rationale && (
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Cơ sở lý luận</h3>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.rationale}</p>
+          </div>
+        )}
+
+        {/* Support links */}
+        {poll.supportLinks && poll.supportLinks.length > 0 && (
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tài liệu tham khảo</h3>
+            <ul className="space-y-1">
+              {poll.supportLinks.map((link, i) => (
+                <li key={i}>
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-accent-light hover:underline break-all"
+                  >
+                    {link}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Divider */}
         <hr className="border-border-subtle" />
