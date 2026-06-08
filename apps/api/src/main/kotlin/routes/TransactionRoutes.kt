@@ -39,6 +39,16 @@ data class BuildTxRequest(
     val targetDrepId: String? = null,
     // DREP_REGISTER: include a self-delegation cert in the same TX (atomic)
     val selfDelegate: Boolean = false,
+    // Governance proposals — previous GA of same type (on-chain chaining, null = first of type)
+    val prevGovActionTxHash: String? = null,
+    val prevGovActionIdx: Int? = null,
+    // PROPOSE_HARD_FORK: target protocol version
+    val protocolVersionMajor: Int? = null,
+    val protocolVersionMinor: Int? = null,
+    // PROPOSE_NEW_CONSTITUTION: constitution document anchor (separate from proposal anchor)
+    val constitutionAnchorUrl: String? = null,
+    val constitutionAnchorHash: String? = null,
+    val constitutionScriptHash: String? = null,
 )
 
 @Serializable
@@ -110,6 +120,35 @@ fun Route.transactionRoutes() {
                         rewardAddress = req.rewardAddress,
                         anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
                         anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                    )
+                    "PROPOSE_NO_CONFIDENCE" -> builder.buildNoConfidence(
+                        changeAddress = req.changeAddress,
+                        rewardAddress = req.rewardAddress,
+                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                        prevGovActionTxHash = req.prevGovActionTxHash,
+                        prevGovActionIdx = req.prevGovActionIdx,
+                    )
+                    "PROPOSE_HARD_FORK" -> builder.buildHardFork(
+                        changeAddress = req.changeAddress,
+                        rewardAddress = req.rewardAddress,
+                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                        protocolVersionMajor = req.protocolVersionMajor ?: error("protocolVersionMajor required"),
+                        protocolVersionMinor = req.protocolVersionMinor ?: 0,
+                        prevGovActionTxHash = req.prevGovActionTxHash,
+                        prevGovActionIdx = req.prevGovActionIdx,
+                    )
+                    "PROPOSE_NEW_CONSTITUTION" -> builder.buildNewConstitution(
+                        changeAddress = req.changeAddress,
+                        rewardAddress = req.rewardAddress,
+                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                        constitutionAnchorUrl = req.constitutionAnchorUrl ?: error("constitutionAnchorUrl required"),
+                        constitutionAnchorHash = req.constitutionAnchorHash ?: error("constitutionAnchorHash required"),
+                        constitutionScriptHash = req.constitutionScriptHash,
+                        prevGovActionTxHash = req.prevGovActionTxHash,
+                        prevGovActionIdx = req.prevGovActionIdx,
                     )
                     "ACTIVATE_COMMUNITY" -> {
                         val envKey = if (req.network == "mainnet") "PLATFORM_FEE_ADDRESS_MAINNET" else "PLATFORM_FEE_ADDRESS_PREPROD"

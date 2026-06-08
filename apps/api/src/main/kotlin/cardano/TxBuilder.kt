@@ -13,7 +13,12 @@ import com.bloxbean.cardano.client.transaction.spec.governance.Vote
 import com.bloxbean.cardano.client.transaction.spec.governance.Voter
 import com.bloxbean.cardano.client.transaction.spec.governance.VoterType
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.GovActionId
+import com.bloxbean.cardano.client.transaction.spec.governance.Constitution
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.HardForkInitiationAction
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.InfoAction
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.NewConstitution
+import com.bloxbean.cardano.client.transaction.spec.governance.actions.NoConfidence
+import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
 import com.bloxbean.cardano.client.util.HexUtil
 import java.math.BigInteger
 
@@ -170,9 +175,89 @@ class TxBuilder(private val network: Network) {
         return buildUnsigned(tx, changeAddress)
     }
 
+    /**
+     * Build an unsigned No Confidence governance proposal.
+     * @param prevGovActionTxHash optional — tx hash of the last enacted committee action
+     * @param prevGovActionIdx    optional — index of the last enacted committee action
+     */
+    fun buildNoConfidence(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        prevGovActionTxHash: String? = null,
+        prevGovActionIdx: Int? = null,
+    ): String {
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val prevId = buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx)
+        val action = NoConfidence.builder().prevGovActionId(prevId).build()
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned Hard Fork Initiation governance proposal.
+     * @param protocolVersionMajor target Conway protocol major version (e.g. 10)
+     * @param protocolVersionMinor target Conway protocol minor version (e.g. 0)
+     */
+    fun buildHardFork(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        protocolVersionMajor: Int,
+        protocolVersionMinor: Int,
+        prevGovActionTxHash: String? = null,
+        prevGovActionIdx: Int? = null,
+    ): String {
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val prevId = buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx)
+        val action = HardForkInitiationAction.builder()
+            .prevGovActionId(prevId)
+            .protocolVersion(ProtocolVersion(protocolVersionMajor, protocolVersionMinor))
+            .build()
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned New Constitution governance proposal.
+     * @param constitutionAnchorUrl  URL of the constitution document (IPFS or HTTPS)
+     * @param constitutionAnchorHash blake2b-256 hash of the constitution document (hex)
+     * @param constitutionScriptHash optional guardrails script hash (28-byte hex)
+     */
+    fun buildNewConstitution(
+        changeAddress: String,
+        rewardAddress: String,
+        anchorUrl: String,
+        anchorDataHash: String,
+        constitutionAnchorUrl: String,
+        constitutionAnchorHash: String,
+        constitutionScriptHash: String? = null,
+        prevGovActionTxHash: String? = null,
+        prevGovActionIdx: Int? = null,
+    ): String {
+        val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
+        val prevId = buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx)
+        val constitutionAnchor = Anchor(constitutionAnchorUrl, HexUtil.decodeHexString(constitutionAnchorHash))
+        val constitution = Constitution.builder()
+            .anchor(constitutionAnchor)
+            .scripthash(constitutionScriptHash)
+            .build()
+        val action = NewConstitution.builder()
+            .prevGovActionId(prevId)
+            .constitution(constitution)
+            .build()
+        val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private fun buildPrevGovActionId(txHash: String?, index: Int?): GovActionId? =
+        if (txHash != null && index != null) GovActionId(txHash, index) else null
 
     /**
      * Convert a DRep ID (bech32 drep_...) or hex key hash to a Credential.

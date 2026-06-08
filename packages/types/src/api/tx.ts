@@ -11,6 +11,9 @@ export const TxTypeSchema = z.enum([
   "DELEGATE",
   "ACTIVATE_COMMUNITY",
   "PROPOSE_INFO_ACTION",
+  "PROPOSE_NO_CONFIDENCE",
+  "PROPOSE_HARD_FORK",
+  "PROPOSE_NEW_CONSTITUTION",
 ])
 export type TxType = z.infer<typeof TxTypeSchema>
 
@@ -35,6 +38,16 @@ export const BuildTxRequestSchema = z.object({
   targetDrepId: z.string().optional(),
   // DREP_REGISTER: include a self-delegation cert in the same TX (atomic, no double-spent risk)
   selfDelegate: z.boolean().optional(),
+  // Governance proposals — previous GA of same type (on-chain chaining, null = first of type)
+  prevGovActionTxHash: z.string().optional(),
+  prevGovActionIdx: z.number().int().min(0).optional(),
+  // PROPOSE_HARD_FORK: target protocol version
+  protocolVersionMajor: z.number().int().min(0).optional(),
+  protocolVersionMinor: z.number().int().min(0).optional(),
+  // PROPOSE_NEW_CONSTITUTION: constitution document anchor (separate from proposal anchor)
+  constitutionAnchorUrl: z.string().optional(),
+  constitutionAnchorHash: z.string().optional(),
+  constitutionScriptHash: z.string().optional(),
 })
 export type BuildTxRequest = z.infer<typeof BuildTxRequestSchema>
 
