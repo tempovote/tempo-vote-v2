@@ -544,66 +544,71 @@ function UpdateCommitteeFields({
   )
 }
 
-// ─── Protocol Parameter Change UI ────────────────────────────────────────────
+// ─── Protocol Parameter Change — types & data ────────────────────────────────
 
-type PpGroup = { label: string; fields: PpFieldDef[] }
-type PpFieldDef = {
+type PpActiveParam = { id: string; groupId: string; paramKey: keyof TypeParams }
+
+const GOVERNANCE_GROUP_META = { id: "governance", label: "Governance Group", threshold: "CC + 67% DRep" }
+
+// ─── Protocol Parameter Change — 4 CIP-1694 parameter groups ─────────────────
+
+type PpParamDef = {
   key: keyof TypeParams
   label: string
-  hint: string
-  placeholder: string
-  step?: string
-  min?: number
+  unit: string
+  step: string
+  min: number
   max?: number
-  isDecimal?: boolean
 }
 
-const PP_GROUPS: PpGroup[] = [
+type PpCIP1694Group = {
+  id: string
+  label: string
+  threshold: string
+  color: string
+  params: PpParamDef[]
+}
+
+const CIP1694_GROUPS: PpCIP1694Group[] = [
   {
-    label: "Fees",
-    fields: [
-      { key: "ppMinFeeA", label: "Min Fee A (lovelace/byte)", hint: "Hệ số fee tuyến tính theo kích thước TX. Hiện tại: 44", placeholder: "44" },
-      { key: "ppMinFeeB", label: "Min Fee B (lovelace)", hint: "Fee cố định cho mỗi transaction. Hiện tại: 155381", placeholder: "155381" },
+    id: "network",
+    label: "Network Group",
+    threshold: "CC + 60% DRep + 51% SPO",
+    color: "text-accent-light",
+    params: [
+      { key: "ppMaxTxSize",          label: "Max Transaction Size",     unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxBlockSize",       label: "Max Block Body Size",      unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxBlockHeaderSize", label: "Max Block Header Size",    unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxValSize",         label: "Max Value Size",           unit: "bytes",    step: "1",     min: 0 },
+      { key: "ppMaxCollateralInputs",label: "Max Collateral Inputs",    unit: "inputs",   step: "1",     min: 0 },
     ],
   },
   {
-    label: "Transaction & Block Limits",
-    fields: [
-      { key: "ppMaxTxSize", label: "Max TX Size (bytes)", hint: "Kích thước tối đa của một transaction. Hiện tại: 16384", placeholder: "16384" },
-      { key: "ppMaxBlockSize", label: "Max Block Size (bytes)", hint: "Kích thước tối đa của block body. Hiện tại: 90112", placeholder: "90112" },
-      { key: "ppMaxBlockHeaderSize", label: "Max Block Header Size (bytes)", hint: "Kích thước tối đa của block header. Hiện tại: 1100", placeholder: "1100" },
+    id: "economic",
+    label: "Economic Group",
+    threshold: "CC + 67% DRep",
+    color: "text-success",
+    params: [
+      { key: "ppMinFeeA",            label: "Min Fee Coefficient (A)",  unit: "lov/byte", step: "1",     min: 0 },
+      { key: "ppMinFeeB",            label: "Min Fee Constant (B)",     unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppKeyDeposit",         label: "Stake Key Deposit",        unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppPoolDeposit",        label: "Pool Registration Deposit",unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppExpansionRate",      label: "Monetary Expansion (ρ)",   unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppTreasuryGrowthRate", label: "Treasury Growth Rate (τ)", unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppMinPoolCost",        label: "Min Pool Cost",            unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppAdaPerUtxoByte",     label: "ADA per UTxO Byte",        unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppCollateralPercent",  label: "Collateral Percentage",    unit: "%",        step: "1",     min: 0 },
     ],
   },
   {
-    label: "Deposits (lovelace)",
-    fields: [
-      { key: "ppKeyDeposit", label: "Stake Key Deposit", hint: "Deposit khi đăng ký stake key. Hiện tại: 2,000,000 (2 ADA)", placeholder: "2000000" },
-      { key: "ppPoolDeposit", label: "Pool Registration Deposit", hint: "Deposit khi đăng ký stake pool. Hiện tại: 500,000,000 (500 ADA)", placeholder: "500000000" },
-    ],
-  },
-  {
-    label: "Pool Parameters",
-    fields: [
-      { key: "ppNOpt", label: "Desired Pool Count (k)", hint: "Số lượng pools tối ưu (k parameter). Hiện tại: 500", placeholder: "500" },
-      { key: "ppMaxEpoch", label: "Pool Retirement Window (epochs)", hint: "Thời gian tối đa để retire pool sau khi thông báo. Hiện tại: 18", placeholder: "18" },
-      { key: "ppMinPoolCost", label: "Min Pool Cost (lovelace)", hint: "Chi phí cố định tối thiểu của pool. Hiện tại: 170,000,000 (170 ADA)", placeholder: "170000000" },
-      { key: "ppPoolPledgeInfluence", label: "Pool Pledge Influence (a0)", hint: "Ảnh hưởng của pledge lên rewards (0 đến 1+). Hiện tại: 0.3", placeholder: "0.3", isDecimal: true, min: 0, max: 2, step: "0.001" },
-    ],
-  },
-  {
-    label: "Economics",
-    fields: [
-      { key: "ppAdaPerUtxoByte", label: "ADA per UTxO Byte (lovelace)", hint: "Chi phí lưu trữ UTxO (min-ada). Hiện tại: 4310", placeholder: "4310" },
-      { key: "ppExpansionRate", label: "Monetary Expansion Rate (ρ)", hint: "Tỷ lệ phát hành ADA mới mỗi epoch (0–1). Hiện tại: 0.003", placeholder: "0.003", isDecimal: true, min: 0, max: 1, step: "0.001" },
-      { key: "ppTreasuryGrowthRate", label: "Treasury Growth Rate (τ)", hint: "Tỷ lệ chuyển rewards vào treasury (0–1). Hiện tại: 0.2", placeholder: "0.2", isDecimal: true, min: 0, max: 1, step: "0.01" },
-    ],
-  },
-  {
-    label: "Script & Collateral",
-    fields: [
-      { key: "ppMaxValSize", label: "Max Value Size (bytes)", hint: "Kích thước tối đa của Value trong output. Hiện tại: 5000", placeholder: "5000" },
-      { key: "ppCollateralPercent", label: "Collateral Percentage (%)", hint: "Tỷ lệ % collateral so với fee. Hiện tại: 150", placeholder: "150" },
-      { key: "ppMaxCollateralInputs", label: "Max Collateral Inputs", hint: "Số lượng tối đa collateral inputs. Hiện tại: 3", placeholder: "3" },
+    id: "technical",
+    label: "Technical Group",
+    threshold: "CC + 67% DRep",
+    color: "text-warning",
+    params: [
+      { key: "ppNOpt",               label: "Desired Pool Count (k)",   unit: "pools",    step: "1",     min: 0 },
+      { key: "ppMaxEpoch",           label: "Pool Retirement Window",   unit: "epochs",   step: "1",     min: 0 },
+      { key: "ppPoolPledgeInfluence",label: "Pool Pledge Influence (a₀)",unit: "0–2",     step: "0.001", min: 0, max: 2 },
     ],
   },
 ]
@@ -611,66 +616,181 @@ const PP_GROUPS: PpGroup[] = [
 function ProtocolParamChangeFields({
   params,
   onChange,
+  network: _network,
 }: {
   params: TypeParams
   onChange: (patch: Partial<TypeParams>) => void
+  network: string
 }) {
-  const filledCount = PP_GROUPS.flatMap((g) => g.fields).filter(
-    (f) => params[f.key].trim() !== "",
-  ).length
+  const [activeParams, setActiveParams] = useState<PpActiveParam[]>([])
+  const [selGroup, setSelGroup] = useState("")
+  const [selParam, setSelParam] = useState("")
+
+  const addedKeys = new Set(activeParams.map((p) => p.paramKey))
+  const selGroupDef = CIP1694_GROUPS.find((g) => g.id === selGroup)
+  const availableForSel = (selGroupDef?.params ?? []).filter((p) => !addedKeys.has(p.key))
+  const isGovGroup = selGroup === "governance"
+  const allParamDefs = CIP1694_GROUPS.flatMap((g) => g.params)
+
+  const handleAdd = () => {
+    if (!selParam) return
+    setActiveParams((prev) => [
+      ...prev,
+      { id: `${selParam}-${Date.now()}`, groupId: selGroup, paramKey: selParam as keyof TypeParams },
+    ])
+    setSelParam("")
+  }
+
+  const handleRemove = (id: string, paramKey: keyof TypeParams) => {
+    setActiveParams((prev) => prev.filter((p) => p.id !== id))
+    onChange({ [paramKey]: "" } as Partial<TypeParams>)
+  }
+
+  const filledCount = activeParams.filter((p) => params[p.paramKey].trim() !== "").length
 
   return (
     <>
+      {/* Intro */}
       <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
-        <p className="font-semibold text-accent-light">Protocol Parameter Change — Lưu ý</p>
-        <p>Chỉ cần điền các thông số muốn thay đổi. Thông số nào để trống sẽ <strong>không thay đổi</strong> on-chain.</p>
-        <p>Yêu cầu DRep threshold 67% + CC threshold 60% + SPO threshold 51% để được ratified.</p>
-        <p className="text-warning">Conway-era specific params (govActionDeposit, dRepDeposit...) sẽ được hỗ trợ trong phiên bản sau.</p>
+        <p className="font-semibold text-accent-light">Hướng dẫn</p>
+        <p>
+          Chọn Group, thêm từng thông số muốn <strong>thay đổi</strong> và điền giá trị đề xuất.
+          Thông số không được chọn sẽ giữ nguyên giá trị on-chain.
+        </p>
       </div>
 
-      {filledCount > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-success/8 border border-success/20 rounded-xl">
-          <span className="text-xs text-success font-semibold">{filledCount} thông số sẽ được thay đổi</span>
+      {/* Selector */}
+      <div className="space-y-2">
+        <label className={LABEL}>Thêm thông số</label>
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* Group dropdown */}
+          <div className="relative flex-1 min-w-[150px]">
+            <select
+              value={selGroup}
+              onChange={(e) => { setSelGroup(e.target.value); setSelParam("") }}
+              className={`${INPUT_SM} w-full pr-8 appearance-none cursor-pointer`}
+            >
+              <option value="">── Chọn Group ──</option>
+              {CIP1694_GROUPS.map((g) => (
+                <option key={g.id} value={g.id}>{g.label}</option>
+              ))}
+              <option value="governance">{GOVERNANCE_GROUP_META.label}</option>
+            </select>
+            <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+
+          {/* Param dropdown — only for non-governance groups */}
+          {selGroup && !isGovGroup && (
+            <div className="relative flex-1 min-w-[220px]">
+              <select
+                value={selParam}
+                onChange={(e) => setSelParam(e.target.value)}
+                className={`${INPUT_SM} w-full pr-8 appearance-none cursor-pointer disabled:opacity-50`}
+                disabled={availableForSel.length === 0}
+              >
+                <option value="">
+                  {availableForSel.length === 0 ? "Tất cả đã được thêm" : "── Chọn Tham số ──"}
+                </option>
+                {availableForSel.map((p) => (
+                  <option key={p.key} value={p.key}>{p.label} ({p.unit})</option>
+                ))}
+              </select>
+              <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </div>
+          )}
+
+          {/* Add button */}
+          {selGroup && !isGovGroup && (
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!selParam || availableForSel.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-accent/10 text-accent-light border border-accent/20 hover:bg-accent/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Thêm
+            </button>
+          )}
+        </div>
+
+        {/* Governance Group notice */}
+        {isGovGroup && (
+          <div className="px-3 py-2.5 bg-bg-elevated border border-border-subtle rounded-xl text-xs text-text-muted space-y-1">
+            <p className="font-semibold text-text-secondary">Governance Group — Chưa hỗ trợ</p>
+            <p>govActionDeposit · dRepDeposit · dRepActivity · committeeMinSize · committeeMaxTermLength · poolVotingThresholds · dRepVotingThresholds</p>
+            <p className="text-warning mt-1">
+              Các thông số này (Conway CDDL keys 25+) chưa được hỗ trợ trong Bloxbean 0.7.0-beta1. Sẽ có trong phiên bản tiếp theo.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Active params list */}
+      {activeParams.length === 0 ? (
+        <div className="text-center py-6 text-sm text-text-muted border border-dashed border-border-subtle rounded-xl">
+          Chưa có thông số nào. Dùng selector bên trên để thêm.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filledCount > 0 && (
+            <p className="text-xs text-success font-semibold">
+              {filledCount} / {activeParams.length} thông số đã có giá trị đề xuất
+            </p>
+          )}
+          {activeParams.map((entry) => {
+            const groupDef = CIP1694_GROUPS.find((g) => g.id === entry.groupId)
+            const paramDef = allParamDefs.find((p) => p.key === entry.paramKey)
+            if (!paramDef) return null
+            const hasValue = params[entry.paramKey].trim() !== ""
+
+            return (
+              <div
+                key={entry.id}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
+                  hasValue ? "bg-accent/5 border-accent/20" : "bg-bg-elevated border-border-subtle"
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider leading-none mb-0.5">
+                    {groupDef?.label}
+                  </p>
+                  <p className="text-sm font-medium text-text-primary leading-tight">{paramDef.label}</p>
+                  <p className="text-[10px] text-text-muted">{paramDef.unit}</p>
+                </div>
+                <input
+                  type="number"
+                  min={paramDef.min}
+                  max={paramDef.max}
+                  step={paramDef.step}
+                  value={params[entry.paramKey]}
+                  onChange={(e) => onChange({ [entry.paramKey]: e.target.value } as Partial<TypeParams>)}
+                  placeholder="Giá trị đề xuất..."
+                  className={`w-40 text-right tabular-nums text-sm rounded-xl px-3 py-2 bg-bg-secondary placeholder-text-muted focus:outline-none transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    hasValue
+                      ? "border border-accent/60 text-text-primary focus:border-accent"
+                      : "border border-border-default text-text-primary focus:border-accent/60"
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemove(entry.id, entry.paramKey)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
-
-      <div className="space-y-4">
-        {PP_GROUPS.map((group) => (
-          <div key={group.label} className="space-y-2">
-            <p className="text-[11px] font-bold text-text-muted uppercase tracking-widest border-b border-border-subtle pb-1">
-              {group.label}
-            </p>
-            <div className="space-y-3">
-              {group.fields.map((field) => (
-                <div key={field.key} className="space-y-1">
-                  <label className={LABEL + " normal-case tracking-normal text-[11px]"}>
-                    {field.label}
-                    <span className="ml-1.5 text-[10px] text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
-                  </label>
-                  <p className="text-[11px] text-text-muted leading-relaxed">{field.hint}</p>
-                  <input
-                    type="number"
-                    min={field.min ?? 0}
-                    max={field.max}
-                    step={field.step ?? "1"}
-                    value={params[field.key]}
-                    onChange={(e) => onChange({ [field.key]: e.target.value } as Partial<TypeParams>)}
-                    placeholder={field.placeholder}
-                    className={INPUT_SM + " w-full tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <PrevGovActionFields
-        params={params}
-        onChange={onChange}
-        label="Previous Protocol Param Action"
-        hint="GA ParameterChange cuối cùng đã được enacted. Để trống nếu đây là lần đầu."
-      />
     </>
   )
 }
@@ -1178,7 +1298,7 @@ export default function NewGovernanceActionPage({
                   />
                 )}
                 {gaType === "protocolParametersUpdate" && (
-                  <ProtocolParamChangeFields params={typeParams} onChange={patchTypeParams} />
+                  <ProtocolParamChangeFields params={typeParams} onChange={patchTypeParams} network={network} />
                 )}
               </div>
             </>

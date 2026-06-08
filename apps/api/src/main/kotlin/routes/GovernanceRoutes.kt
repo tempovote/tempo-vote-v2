@@ -16,6 +16,95 @@ import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.parseCCContext
 import vote.tempo.cardano.parseDRepStakeContext
 
+/**
+ * GET /governance/chain-info?network=preprod|mainnet
+ * Returns current protocol parameters (for Existing/Proposed UI) and the
+ * constitution guardrails script hash.  All numeric values use their natural
+ * types (lovelace as Long, rates as Double, counts as Int).
+ */
+fun Route.chainInfoRoutes() {
+    get("/governance/chain-info") {
+        val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+        val ogmios = OgmiosStateQueries(network)
+
+        runCatching {
+            val raw = ogmios.getProtocolParameters()
+            val guardrailsHashBytes = ogmios.getConstitutionGuardrailsHash()
+            val guardrailsHash = guardrailsHashBytes?.joinToString("") { "%02x".format(it) }
+
+            // Helpers to parse the Ogmios JSON structure
+            // lovelace fields: {lovelace: N} or plain N
+            fun lovelace(key: String): Long? = raw[key]?.let { el ->
+                when {
+                    el is JsonPrimitive -> el.longOrNull
+                    el is JsonObject    -> el["lovelace"]?.jsonPrimitive?.longOrNull
+                    else               -> null
+                }
+            }
+            // bytes fields: {bytes: N} or plain N
+            fun bytes(key: String): Long? = raw[key]?.let { el ->
+                when {
+                    el is JsonPrimitive -> el.longOrNull
+                    el is JsonObject    -> el["bytes"]?.jsonPrimitive?.longOrNull
+                    else               -> null
+                }
+            }
+            fun int(key: String): Int?    = raw[key]?.jsonPrimitive?.intOrNull
+            fun long(key: String): Long?  = raw[key]?.jsonPrimitive?.longOrNull
+            // rational fields: plain Double, "3/10" string, or {"numerator":3,"denominator":10}
+            fun rational(key: String): Double? = raw[key]?.let { el ->
+                when {
+                    el is JsonPrimitive -> el.doubleOrNull
+                        ?: el.contentOrNull?.let { s ->
+                            val p = s.split("/")
+                            if (p.size == 2) p[0].trim().toDoubleOrNull()?.div(p[1].trim().toDoubleOrNull() ?: return@let null) else null
+                        }
+                    el is JsonObject -> {
+                        val n = el["numerator"]?.jsonPrimitive?.doubleOrNull
+                        val d = el["denominator"]?.jsonPrimitive?.doubleOrNull
+                        if (n != null && d != null && d != 0.0) n / d else null
+                    }
+                    else -> null
+                }
+            }
+
+            val params = buildJsonObject {
+                // Network group
+                bytes("maxTransactionSize")?.let   { put("maxTxSize", it) }
+                bytes("maxBlockBodySize")?.let      { put("maxBlockSize", it) }
+                bytes("maxBlockHeaderSize")?.let    { put("maxBlockHeaderSize", it) }
+                bytes("maxValueSize")?.let          { put("maxValSize", it) }
+                int("maxCollateralInputs")?.let     { put("maxCollateralInputs", it) }
+                // Economic group
+                int("minFeeCoefficient")?.let       { put("minFeeA", it) }
+                lovelace("minFeeConstant")?.let     { put("minFeeB", it) }
+                lovelace("stakeKeyDeposit")?.let    { put("keyDeposit", it) }
+                lovelace("stakePoolDeposit")?.let   { put("poolDeposit", it) }
+                rational("monetaryExpansion")?.let  { put("expansionRate", it) }
+                rational("treasuryExpansion")?.let  { put("treasuryGrowthRate", it) }
+                lovelace("minStakePoolCost")?.let   { put("minPoolCost", it) }
+                long("minUtxoDepositCoefficient")?.let { put("adaPerUtxoByte", it) }
+                int("collateralPercentage")?.let    { put("collateralPercent", it) }
+                // Technical group
+                int("desiredNumberOfStakePools")?.let  { put("nOpt", it) }
+                int("stakePoolRetirementEpochBound")?.let { put("maxEpoch", it) }
+                rational("stakePoolPledgeInfluence")?.let { put("poolPledgeInfluence", it) }
+            }
+
+            buildJsonObject {
+                guardrailsHash?.let { put("guardrailsHash", it) }
+                put("protocolParams", params)
+            }
+        }.fold(
+            onSuccess = { call.respond(it) },
+            onFailure = { e ->
+                call.respond(HttpStatusCode.InternalServerError,
+                    mapOf("error" to (e.message ?: "Failed to fetch chain info")))
+            }
+        )
+    }
+}
+
 fun Route.governanceRoutes() {
     route("/governance-actions") {
 
