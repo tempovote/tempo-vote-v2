@@ -105,6 +105,12 @@ fun Route.transactionRoutes() {
                         delegationType = req.delegationType ?: "drep",
                         targetDrepId = req.targetDrepId,
                     )
+                    "PROPOSE_INFO_ACTION" -> builder.buildInfoAction(
+                        changeAddress = req.changeAddress,
+                        rewardAddress = req.rewardAddress,
+                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                    )
                     "ACTIVATE_COMMUNITY" -> {
                         val envKey = if (req.network == "mainnet") "PLATFORM_FEE_ADDRESS_MAINNET" else "PLATFORM_FEE_ADDRESS_PREPROD"
                         val platformFeeAddress = System.getenv(envKey)

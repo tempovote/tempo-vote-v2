@@ -58,6 +58,16 @@ data class VoteRationaleRequest(
     val comment: String,
 )
 
+@Serializable
+data class ProposalUploadRequest(
+    val drepId: String,
+    val title: String,
+    val abstract: String,
+    val motivation: String? = null,
+    val rationale: String? = null,
+    val references: List<MetadataReference> = emptyList(),
+)
+
 fun Route.metadataRoutes() {
     route("/metadata") {
         authenticate("jwt") {
@@ -194,6 +204,40 @@ fun Route.metadataRoutes() {
                     HttpStatusCode.BadGateway,
                     mapOf("error" to "Pinata upload failed: ${e.message}")
                 )
+            }
+
+            call.respond(mapOf(
+                "anchorUrl" to "ipfs://$ipfsHash",
+                "anchorDataHash" to anchorDataHash,
+            ))
+        }
+
+        // POST /metadata/upload-proposal  [requires JWT]
+        post("/upload-proposal") {
+            val pinataJwt = System.getenv("PINATA_JWT")
+                ?: return@post call.respond(
+                    HttpStatusCode.InternalServerError,
+                    mapOf("error" to "PINATA_JWT not configured")
+                )
+
+            val req = try {
+                call.receive<ProposalUploadRequest>()
+            } catch (e: Exception) {
+                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request body: ${e.message}"))
+            }
+
+            if (req.title.isBlank() || req.abstract.isBlank()) {
+                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "title and abstract are required"))
+            }
+
+            val metadata = buildCip108Metadata(req)
+            val metadataBytes = json.encodeToString(metadata).toByteArray(Charsets.UTF_8)
+            val anchorDataHash = blake2b256Hex(metadataBytes)
+
+            val ipfsHash = try {
+                uploadJsonToPinata(pinataJwt, metadata, "proposal-${req.drepId.take(16)}-${req.title.take(20)}")
+            } catch (e: Exception) {
+                return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Pinata upload failed: ${e.message}"))
             }
 
             call.respond(mapOf(
@@ -350,3 +394,47 @@ private fun uploadJsonToPinata(jwt: String, metadata: JsonObject, name: String):
 
 private fun uploadToPinata(jwt: String, drepId: String, metadata: JsonObject): String =
     uploadJsonToPinata(jwt, metadata, "drep-$drepId-metadata")
+
+private fun buildCip108Metadata(req: ProposalUploadRequest): JsonObject = buildJsonObject {
+    putJsonObject("@context") {
+        put("CIP100", "https://github.com/cardano-foundation/CIPs/blob/master/CIP-0100/README.md#")
+        put("CIP108", "https://github.com/cardano-foundation/CIPs/blob/master/CIP-0108/README.md#")
+        put("hashAlgorithm", "CIP100:hashAlgorithm")
+        putJsonObject("body") {
+            put("@id", "CIP108:body")
+            putJsonObject("@context") {
+                put("title", "CIP108:title")
+                put("abstract", "CIP108:abstract")
+                put("motivation", "CIP108:motivation")
+                put("rationale", "CIP108:rationale")
+                putJsonObject("references") {
+                    put("@id", "CIP108:references")
+                    put("@container", "@set")
+                }
+            }
+        }
+        putJsonObject("authors") {
+            put("@id", "CIP100:authors")
+            put("@container", "@set")
+        }
+    }
+    put("hashAlgorithm", "blake2b-256")
+    putJsonObject("body") {
+        put("title", req.title)
+        put("abstract", req.abstract)
+        if (!req.motivation.isNullOrBlank()) put("motivation", req.motivation)
+        if (!req.rationale.isNullOrBlank()) put("rationale", req.rationale)
+        if (req.references.isNotEmpty()) {
+            putJsonArray("references") {
+                req.references.forEach { ref ->
+                    addJsonObject {
+                        put("@type", ref.type)
+                        put("label", ref.label)
+                        put("uri", ref.uri)
+                    }
+                }
+            }
+        }
+    }
+    putJsonArray("authors") {}
+}

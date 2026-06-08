@@ -10,6 +10,7 @@ export const TxTypeSchema = z.enum([
   "VOTE",
   "DELEGATE",
   "ACTIVATE_COMMUNITY",
+  "PROPOSE_INFO_ACTION",
 ])
 export type TxType = z.infer<typeof TxTypeSchema>
 
@@ -21,7 +22,7 @@ export const BuildTxRequestSchema = z.object({
   rewardAddress: z.string(),
   // DRep operations
   drepId: z.string().optional(),
-  anchorUrl: z.string().url().optional(),
+  anchorUrl: z.string().optional(),
   anchorDataHash: z.string().optional(),
   // Vote
   govActionTxHash: z.string().optional(),
