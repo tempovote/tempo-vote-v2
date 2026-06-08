@@ -908,7 +908,7 @@ export default function NewGovernanceActionPage({
             </label>
             <RationaleEditor
               label="" description="" placeholder="Vấn đề nào đề xuất này giải quyết?"
-              height={150}
+              maxLength={15000} height={150}
               value={motivation} onChange={setMotivation}
             />
           </div>

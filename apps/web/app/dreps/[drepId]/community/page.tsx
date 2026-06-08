@@ -555,7 +555,7 @@ function CreatePollForm({
               <label className={LABEL}>Motivation {OPTIONAL}</label>
               <RationaleEditor
                 label="" placeholder="Vấn đề poll này giải quyết?"
-                height={150} description=""
+                maxLength={15000} height={150} description=""
                 value={motivation} onChange={setMotivation}
               />
             </div>
