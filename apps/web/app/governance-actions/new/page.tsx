@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useRef, useCallback } from "react"
+import { use, useState, useRef, useCallback, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
@@ -544,66 +544,108 @@ function UpdateCommitteeFields({
   )
 }
 
-// ─── Protocol Parameter Change UI ────────────────────────────────────────────
+// ─── Protocol Parameter Change — chain-info hook ─────────────────────────────
 
-type PpGroup = { label: string; fields: PpFieldDef[] }
-type PpFieldDef = {
-  key: keyof TypeParams
-  label: string
-  hint: string
-  placeholder: string
-  step?: string
-  min?: number
-  max?: number
-  isDecimal?: boolean
+type ChainProtocolParams = {
+  minFeeA?: number; minFeeB?: number
+  maxTxSize?: number; maxBlockSize?: number; maxBlockHeaderSize?: number
+  maxValSize?: number; maxCollateralInputs?: number
+  keyDeposit?: number; poolDeposit?: number
+  expansionRate?: number; treasuryGrowthRate?: number
+  minPoolCost?: number; adaPerUtxoByte?: number; collateralPercent?: number
+  nOpt?: number; maxEpoch?: number; poolPledgeInfluence?: number
 }
 
-const PP_GROUPS: PpGroup[] = [
+type ChainInfo = { guardrailsHash?: string; protocolParams: ChainProtocolParams }
+
+function useChainInfo(network: string, enabled: boolean) {
+  const [data, setData] = useState<ChainInfo | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!enabled) return
+    setLoading(true)
+    fetch(`${API_URL}/governance/chain-info?network=${network}`)
+      .then((r) => r.json())
+      .then((d) => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [network, enabled])
+
+  return { data, loading }
+}
+
+// ─── Protocol Parameter Change — display helpers ──────────────────────────────
+
+function fmtLovelace(v?: number) {
+  if (v === undefined || v === null) return null
+  const ada = v / 1_000_000
+  return `${v.toLocaleString()} (${ada % 1 === 0 ? ada.toFixed(0) : ada.toFixed(2)} ₳)`
+}
+
+function fmtInt(v?: number)  { return v !== undefined && v !== null ? v.toLocaleString() : null }
+function fmtRate(v?: number) { return v !== undefined && v !== null ? v.toPrecision(4).replace(/\.?0+$/, "") : null }
+
+// ─── Protocol Parameter Change — 4 CIP-1694 parameter groups ─────────────────
+
+type PpParamDef = {
+  key: keyof TypeParams
+  label: string
+  unit: string
+  chainKey: keyof ChainProtocolParams
+  step: string
+  min: number
+  max?: number
+  format: (v?: number) => string | null
+}
+
+type PpCIP1694Group = {
+  id: string
+  label: string
+  threshold: string
+  color: string
+  params: PpParamDef[]
+}
+
+const CIP1694_GROUPS: PpCIP1694Group[] = [
   {
-    label: "Fees",
-    fields: [
-      { key: "ppMinFeeA", label: "Min Fee A (lovelace/byte)", hint: "Hệ số fee tuyến tính theo kích thước TX. Hiện tại: 44", placeholder: "44" },
-      { key: "ppMinFeeB", label: "Min Fee B (lovelace)", hint: "Fee cố định cho mỗi transaction. Hiện tại: 155381", placeholder: "155381" },
+    id: "network",
+    label: "Network Group",
+    threshold: "CC + 60% DRep + 51% SPO",
+    color: "text-accent-light",
+    params: [
+      { key: "ppMaxTxSize",         label: "Max Transaction Size",    unit: "bytes",    chainKey: "maxTxSize",         step: "1",     min: 0, format: fmtInt },
+      { key: "ppMaxBlockSize",      label: "Max Block Body Size",     unit: "bytes",    chainKey: "maxBlockSize",      step: "1",     min: 0, format: fmtInt },
+      { key: "ppMaxBlockHeaderSize",label: "Max Block Header Size",   unit: "bytes",    chainKey: "maxBlockHeaderSize",step: "1",     min: 0, format: fmtInt },
+      { key: "ppMaxValSize",        label: "Max Value Size",          unit: "bytes",    chainKey: "maxValSize",        step: "1",     min: 0, format: fmtInt },
+      { key: "ppMaxCollateralInputs",label:"Max Collateral Inputs",   unit: "inputs",   chainKey: "maxCollateralInputs",step:"1",     min: 0, format: fmtInt },
     ],
   },
   {
-    label: "Transaction & Block Limits",
-    fields: [
-      { key: "ppMaxTxSize", label: "Max TX Size (bytes)", hint: "Kích thước tối đa của một transaction. Hiện tại: 16384", placeholder: "16384" },
-      { key: "ppMaxBlockSize", label: "Max Block Size (bytes)", hint: "Kích thước tối đa của block body. Hiện tại: 90112", placeholder: "90112" },
-      { key: "ppMaxBlockHeaderSize", label: "Max Block Header Size (bytes)", hint: "Kích thước tối đa của block header. Hiện tại: 1100", placeholder: "1100" },
+    id: "economic",
+    label: "Economic Group",
+    threshold: "CC + 67% DRep",
+    color: "text-success",
+    params: [
+      { key: "ppMinFeeA",           label: "Min Fee Coefficient (A)", unit: "lov/byte", chainKey: "minFeeA",          step: "1",     min: 0, format: fmtInt },
+      { key: "ppMinFeeB",           label: "Min Fee Constant (B)",    unit: "lovelace", chainKey: "minFeeB",          step: "1",     min: 0, format: fmtLovelace },
+      { key: "ppKeyDeposit",        label: "Stake Key Deposit",       unit: "lovelace", chainKey: "keyDeposit",       step: "1",     min: 0, format: fmtLovelace },
+      { key: "ppPoolDeposit",       label: "Pool Registration Deposit",unit:"lovelace", chainKey: "poolDeposit",      step: "1",     min: 0, format: fmtLovelace },
+      { key: "ppExpansionRate",     label: "Monetary Expansion (ρ)",  unit: "0–1",      chainKey: "expansionRate",    step: "0.001", min: 0, max: 1, format: fmtRate },
+      { key: "ppTreasuryGrowthRate",label: "Treasury Growth Rate (τ)",unit: "0–1",      chainKey: "treasuryGrowthRate",step:"0.001", min: 0, max: 1, format: fmtRate },
+      { key: "ppMinPoolCost",       label: "Min Pool Cost",           unit: "lovelace", chainKey: "minPoolCost",      step: "1",     min: 0, format: fmtLovelace },
+      { key: "ppAdaPerUtxoByte",    label: "ADA per UTxO Byte",       unit: "lovelace", chainKey: "adaPerUtxoByte",   step: "1",     min: 0, format: fmtInt },
+      { key: "ppCollateralPercent", label: "Collateral Percentage",   unit: "%",        chainKey: "collateralPercent",step: "1",     min: 0, format: fmtInt },
     ],
   },
   {
-    label: "Deposits (lovelace)",
-    fields: [
-      { key: "ppKeyDeposit", label: "Stake Key Deposit", hint: "Deposit khi đăng ký stake key. Hiện tại: 2,000,000 (2 ADA)", placeholder: "2000000" },
-      { key: "ppPoolDeposit", label: "Pool Registration Deposit", hint: "Deposit khi đăng ký stake pool. Hiện tại: 500,000,000 (500 ADA)", placeholder: "500000000" },
-    ],
-  },
-  {
-    label: "Pool Parameters",
-    fields: [
-      { key: "ppNOpt", label: "Desired Pool Count (k)", hint: "Số lượng pools tối ưu (k parameter). Hiện tại: 500", placeholder: "500" },
-      { key: "ppMaxEpoch", label: "Pool Retirement Window (epochs)", hint: "Thời gian tối đa để retire pool sau khi thông báo. Hiện tại: 18", placeholder: "18" },
-      { key: "ppMinPoolCost", label: "Min Pool Cost (lovelace)", hint: "Chi phí cố định tối thiểu của pool. Hiện tại: 170,000,000 (170 ADA)", placeholder: "170000000" },
-      { key: "ppPoolPledgeInfluence", label: "Pool Pledge Influence (a0)", hint: "Ảnh hưởng của pledge lên rewards (0 đến 1+). Hiện tại: 0.3", placeholder: "0.3", isDecimal: true, min: 0, max: 2, step: "0.001" },
-    ],
-  },
-  {
-    label: "Economics",
-    fields: [
-      { key: "ppAdaPerUtxoByte", label: "ADA per UTxO Byte (lovelace)", hint: "Chi phí lưu trữ UTxO (min-ada). Hiện tại: 4310", placeholder: "4310" },
-      { key: "ppExpansionRate", label: "Monetary Expansion Rate (ρ)", hint: "Tỷ lệ phát hành ADA mới mỗi epoch (0–1). Hiện tại: 0.003", placeholder: "0.003", isDecimal: true, min: 0, max: 1, step: "0.001" },
-      { key: "ppTreasuryGrowthRate", label: "Treasury Growth Rate (τ)", hint: "Tỷ lệ chuyển rewards vào treasury (0–1). Hiện tại: 0.2", placeholder: "0.2", isDecimal: true, min: 0, max: 1, step: "0.01" },
-    ],
-  },
-  {
-    label: "Script & Collateral",
-    fields: [
-      { key: "ppMaxValSize", label: "Max Value Size (bytes)", hint: "Kích thước tối đa của Value trong output. Hiện tại: 5000", placeholder: "5000" },
-      { key: "ppCollateralPercent", label: "Collateral Percentage (%)", hint: "Tỷ lệ % collateral so với fee. Hiện tại: 150", placeholder: "150" },
-      { key: "ppMaxCollateralInputs", label: "Max Collateral Inputs", hint: "Số lượng tối đa collateral inputs. Hiện tại: 3", placeholder: "3" },
+    id: "technical",
+    label: "Technical Group",
+    threshold: "CC + 67% DRep",
+    color: "text-warning",
+    params: [
+      { key: "ppNOpt",              label: "Desired Pool Count (k)",  unit: "pools",    chainKey: "nOpt",             step: "1",     min: 0, format: fmtInt },
+      { key: "ppMaxEpoch",          label: "Pool Retirement Window",  unit: "epochs",   chainKey: "maxEpoch",         step: "1",     min: 0, format: fmtInt },
+      { key: "ppPoolPledgeInfluence",label:"Pool Pledge Influence (a₀)",unit:"0–2",     chainKey: "poolPledgeInfluence",step:"0.001",min: 0, max: 2, format: fmtRate },
     ],
   },
 ]
@@ -611,66 +653,166 @@ const PP_GROUPS: PpGroup[] = [
 function ProtocolParamChangeFields({
   params,
   onChange,
+  network,
 }: {
   params: TypeParams
   onChange: (patch: Partial<TypeParams>) => void
+  network: string
 }) {
-  const filledCount = PP_GROUPS.flatMap((g) => g.fields).filter(
-    (f) => params[f.key].trim() !== "",
-  ).length
+  const { data: chainInfo, loading } = useChainInfo(network, true)
+  const [copied, setCopied] = useState(false)
+
+  const pp = chainInfo?.protocolParams ?? {}
+  const guardrailsHash = chainInfo?.guardrailsHash
+
+  const filledCount = CIP1694_GROUPS.flatMap((g) => g.params)
+    .filter((p) => params[p.key].trim() !== "").length
+
+  const numInput = "w-full tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 
   return (
     <>
-      <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
-        <p className="font-semibold text-accent-light">Protocol Parameter Change — Lưu ý</p>
-        <p>Chỉ cần điền các thông số muốn thay đổi. Thông số nào để trống sẽ <strong>không thay đổi</strong> on-chain.</p>
-        <p>Yêu cầu DRep threshold 67% + CC threshold 60% + SPO threshold 51% để được ratified.</p>
-        <p className="text-warning">Conway-era specific params (govActionDeposit, dRepDeposit...) sẽ được hỗ trợ trong phiên bản sau.</p>
+      {/* Guardrails Hash Script */}
+      <div className="space-y-1.5">
+        <label className={LABEL}>Guardrails Script Hash</label>
+        <p className="text-xs text-text-muted">
+          Hash script guardrails của Constitution hiện tại. Được gắn tự động vào TX khi submit.
+        </p>
+        <div className="flex items-center gap-2 px-3 py-2.5 bg-bg-elevated border border-border-subtle rounded-xl">
+          {loading ? (
+            <span className="text-xs text-text-muted animate-pulse">Đang tải...</span>
+          ) : guardrailsHash ? (
+            <>
+              <span className="font-mono text-xs text-text-secondary flex-1 truncate">{guardrailsHash}</span>
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard.writeText(guardrailsHash); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                className="shrink-0 text-text-muted hover:text-accent-light transition-colors"
+                title="Copy"
+              >
+                {copied ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                )}
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-text-muted italic">Không có guardrails script</span>
+          )}
+        </div>
       </div>
 
+      {/* Previous Governance Action Id */}
+      <PrevGovActionFields
+        params={params}
+        onChange={onChange}
+        label="Previous Protocol Parameter Change Action Id"
+        hint="Governance Action Id của lần ParameterChange cuối cùng đã được enacted. Để trống nếu đây là lần đầu tiên."
+      />
+
+      {/* Intro notice */}
+      <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
+        <p className="font-semibold text-accent-light">Hướng dẫn</p>
+        <p>Chỉ điền các thông số muốn <strong>thay đổi</strong>. Thông số để trống sẽ không bị ảnh hưởng.</p>
+        <p className="text-warning">Governance Group (govActionDeposit, dRepDeposit…) sẽ được hỗ trợ trong phiên bản tiếp theo.</p>
+      </div>
+
+      {/* Counter */}
       {filledCount > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 bg-success/8 border border-success/20 rounded-xl">
           <span className="text-xs text-success font-semibold">{filledCount} thông số sẽ được thay đổi</span>
         </div>
       )}
 
-      <div className="space-y-4">
-        {PP_GROUPS.map((group) => (
-          <div key={group.label} className="space-y-2">
-            <p className="text-[11px] font-bold text-text-muted uppercase tracking-widest border-b border-border-subtle pb-1">
-              {group.label}
-            </p>
-            <div className="space-y-3">
-              {group.fields.map((field) => (
-                <div key={field.key} className="space-y-1">
-                  <label className={LABEL + " normal-case tracking-normal text-[11px]"}>
-                    {field.label}
-                    <span className="ml-1.5 text-[10px] text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
-                  </label>
-                  <p className="text-[11px] text-text-muted leading-relaxed">{field.hint}</p>
-                  <input
-                    type="number"
-                    min={field.min ?? 0}
-                    max={field.max}
-                    step={field.step ?? "1"}
-                    value={params[field.key]}
-                    onChange={(e) => onChange({ [field.key]: e.target.value } as Partial<TypeParams>)}
-                    placeholder={field.placeholder}
-                    className={INPUT_SM + " w-full tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"}
-                  />
-                </div>
-              ))}
+      {/* 4 CIP-1694 groups */}
+      <div className="space-y-5">
+        {CIP1694_GROUPS.map((group) => (
+          <div key={group.id} className="space-y-2">
+            {/* Group header */}
+            <div className="flex items-baseline justify-between border-b border-border-subtle pb-1">
+              <span className={`text-[11px] font-bold uppercase tracking-widest ${group.color}`}>
+                {group.label}
+              </span>
+              <span className="text-[10px] text-text-muted">{group.threshold}</span>
+            </div>
+
+            {/* Column headers */}
+            <div className="grid grid-cols-[1fr_28px_1fr] gap-x-2 px-0.5">
+              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider text-center">Existing</span>
+              <span />
+              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider text-center">Proposed</span>
+            </div>
+
+            {/* Param rows */}
+            <div className="space-y-2.5">
+              {group.params.map((p) => {
+                const existingVal = pp[p.chainKey]
+                const existingFmt = p.format(existingVal as number | undefined)
+                const hasProposed = params[p.key].trim() !== ""
+
+                return (
+                  <div key={p.key} className="space-y-1">
+                    <div className="text-[11px] font-medium text-text-secondary leading-none">
+                      {p.label}
+                      <span className="ml-1.5 text-[10px] text-text-muted font-normal">({p.unit})</span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_28px_1fr] gap-x-2 items-center">
+                      {/* Existing */}
+                      <div className={`px-3 py-2 rounded-xl border text-xs font-mono leading-tight ${
+                        loading
+                          ? "bg-bg-elevated border-border-subtle text-text-muted animate-pulse"
+                          : existingFmt
+                            ? "bg-bg-elevated border-border-subtle text-text-secondary"
+                            : "bg-bg-elevated border-border-subtle text-text-muted italic"
+                      }`}>
+                        {loading ? "…" : (existingFmt ?? "–")}
+                      </div>
+
+                      {/* Arrow */}
+                      <div className="flex items-center justify-center">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          strokeWidth="2" strokeLinecap="round"
+                          className={hasProposed ? "text-accent-light" : "text-border-default"}>
+                          <line x1="5" y1="12" x2="19" y2="12"/>
+                          <polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                      </div>
+
+                      {/* Proposed input */}
+                      <input
+                        type="number"
+                        min={p.min}
+                        max={p.max}
+                        step={p.step}
+                        value={params[p.key]}
+                        onChange={(e) => onChange({ [p.key]: e.target.value } as Partial<TypeParams>)}
+                        placeholder={existingFmt ?? "–"}
+                        className={`${INPUT_SM} ${numInput} ${hasProposed ? "border-accent/60" : ""}`}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         ))}
-      </div>
 
-      <PrevGovActionFields
-        params={params}
-        onChange={onChange}
-        label="Previous Protocol Param Action"
-        hint="GA ParameterChange cuối cùng đã được enacted. Để trống nếu đây là lần đầu."
-      />
+        {/* Governance Group — display-only notice */}
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between border-b border-border-subtle pb-1">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-text-muted">
+              Governance Group
+            </span>
+            <span className="text-[10px] text-text-muted">CC + 67% DRep</span>
+          </div>
+          <div className="px-3 py-2.5 bg-bg-elevated border border-border-subtle rounded-xl text-xs text-text-muted space-y-1">
+            <p className="font-semibold text-text-secondary">Các thông số Governance Group</p>
+            <p>govActionDeposit · dRepDeposit · dRepActivity · committeeMinSize · committeeMaxTermLength · các voting thresholds</p>
+            <p className="text-warning mt-1">Các thông số này (Conway keys 25+) chưa được hỗ trợ trong phiên bản hiện tại của thư viện Bloxbean. Sẽ có trong phiên bản tiếp theo.</p>
+          </div>
+        </div>
+      </div>
     </>
   )
 }
@@ -1178,7 +1320,7 @@ export default function NewGovernanceActionPage({
                   />
                 )}
                 {gaType === "protocolParametersUpdate" && (
-                  <ProtocolParamChangeFields params={typeParams} onChange={patchTypeParams} />
+                  <ProtocolParamChangeFields params={typeParams} onChange={patchTypeParams} network={network} />
                 )}
               </div>
             </>
