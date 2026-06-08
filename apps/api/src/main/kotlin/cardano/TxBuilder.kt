@@ -2,13 +2,30 @@ package vote.tempo.cardano
 
 import com.bloxbean.cardano.client.address.Credential
 import com.bloxbean.cardano.client.api.model.Amount
+import com.bloxbean.cardano.client.api.util.CostModelUtil
 import com.bloxbean.cardano.client.common.model.Networks
 import com.bloxbean.cardano.client.governance.LegacyDRepId
+import com.bloxbean.cardano.client.plutus.spec.ConstrPlutusData
+import com.bloxbean.cardano.client.plutus.spec.CostMdls
+import com.bloxbean.cardano.client.plutus.spec.ExUnits
+import com.bloxbean.cardano.client.plutus.spec.Language
+import com.bloxbean.cardano.client.plutus.spec.ListPlutusData
+import com.bloxbean.cardano.client.plutus.spec.PlutusData
 import com.bloxbean.cardano.client.plutus.spec.PlutusV3Script
+import com.bloxbean.cardano.client.plutus.spec.Redeemer
+import com.bloxbean.cardano.client.plutus.spec.RedeemerTag
+import com.bloxbean.cardano.client.plutus.util.ScriptDataHashGenerator
 import com.bloxbean.cardano.client.quicktx.AbstractTx
 import com.bloxbean.cardano.client.quicktx.QuickTxBuilder
 import com.bloxbean.cardano.client.quicktx.Tx
+import com.bloxbean.cardano.client.spec.Era
+import com.bloxbean.cardano.client.transaction.spec.TransactionInput
 import com.bloxbean.cardano.client.transaction.spec.TransactionWitnessSet
+import co.nstant.`in`.cbor.CborDecoder as CborDecoderLib
+import co.nstant.`in`.cbor.model.Array as CborArray
+import co.nstant.`in`.cbor.model.ByteString as CborByteString
+import co.nstant.`in`.cbor.model.UnsignedInteger as CborUInt
+import java.io.ByteArrayInputStream
 import com.bloxbean.cardano.client.transaction.spec.governance.Anchor
 import com.bloxbean.cardano.client.transaction.spec.governance.DRep
 import com.bloxbean.cardano.client.transaction.spec.governance.DRepType
@@ -269,6 +286,7 @@ class TxBuilder(private val network: Network) {
         anchorUrl: String,
         anchorDataHash: String,
         withdrawals: List<Pair<String, BigInteger>>,
+        collateral: List<String> = emptyList(),
     ): String {
         require(withdrawals.isNotEmpty()) { "treasuryWithdrawals must not be empty" }
         val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
@@ -285,18 +303,16 @@ class TxBuilder(private val network: Network) {
         val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
 
         if (guardrailsHash != null) {
-            // Conway rule: guardrails script must be PRESENT in witness set at submission time
-            // but is NOT executed (no redeemer, no scriptDataHash). Execution happens at ratification.
             val scriptHex = ogmios.getConstitutionScriptHex()
             if (scriptHex != null) {
-                return buildUnsignedWithGuardrailsScript(tx, changeAddress, scriptHex)
+                return buildUnsignedWithGuardrailsScript(tx, changeAddress, scriptHex, collateral)
             }
         }
 
         return buildUnsigned(tx, changeAddress)
     }
 
-    private fun buildUnsignedWithGuardrailsScript(tx: Tx, changeAddress: String, scriptHex: String): String {
+    private fun buildUnsignedWithGuardrailsScript(tx: Tx, changeAddress: String, scriptHex: String, collateral: List<String> = emptyList()): String {
         val quickTxBuilder = QuickTxBuilder(backendService)
         val transaction = quickTxBuilder
             .compose(tx)
@@ -320,13 +336,70 @@ class TxBuilder(private val network: Network) {
         val lenHex = "%04x".format(scriptBytesLen)         // "0854"
         val doubleCborHex = "59$lenHex$scriptHex"          // bytes(2132, 590851flat_bytes)
         val plutusScript = PlutusV3Script.builder().cborHex(doubleCborHex).build()
+        // Redeemer for "propose" purpose (tag 5) — the guardrails script is executed at submission
+        // time for governance proposals. Index 0 = first (only) proposal in this TX.
+        // Redeemer data: unit () = Constr 0 [] = d87980 (standard for guardrails scripts).
+        // ExUnits: generous budget; actual usage is far less for a simple validation script.
+        val redeemer = Redeemer.builder()
+            .tag(RedeemerTag.Proposing)
+            .index(0)
+            .data(ConstrPlutusData.builder().data(ListPlutusData.of()).build())
+            .exUnits(ExUnits.builder()
+                .mem(BigInteger.valueOf(1_000_000L))
+                .steps(BigInteger.valueOf(1_000_000_000L))
+                .build())
+            .build()
+
         val ws = transaction.witnessSet ?: TransactionWitnessSet()
         ws.plutusV3Scripts = (ws.plutusV3Scripts ?: emptyList()) + listOf(plutusScript)
+        ws.redeemers = (ws.redeemers ?: emptyList()) + listOf(redeemer)
         transaction.witnessSet = ws
 
-        // Pad fee: base governance padding + 2135 bytes of double-encoded script witness at ~44 lovelace/byte
-        val padding = BigInteger.valueOf(10_000L + 44L * 2135L)  // ≈ 103,940
+        // Collateral inputs — forfeited if script execution fails (ledger requires ≥1 for Plutus TXs)
+        if (collateral.isNotEmpty()) {
+            val collateralInputs = collateral.mapNotNull { utxoCbor ->
+                runCatching {
+                    val items = CborDecoderLib(ByteArrayInputStream(HexUtil.decodeHexString(utxoCbor))).decode()
+                    val utxoArr = items.first() as CborArray
+                    val inputArr = utxoArr.dataItems[0] as CborArray
+                    val txHash = HexUtil.encodeHexString((inputArr.dataItems[0] as CborByteString).bytes)
+                    val txIndex = (inputArr.dataItems[1] as CborUInt).value.toInt()
+                    TransactionInput.builder().transactionId(txHash).index(txIndex).build()
+                }.onFailure { println("[TxBuilder] Failed to parse collateral UTxO: ${it.message}") }.getOrNull()
+            }
+            if (collateralInputs.isNotEmpty()) {
+                transaction.body.collateral = collateralInputs
+                println("[TxBuilder] collateral inputs set: ${collateralInputs.size}")
+            }
+        }
+        // Fallback: wallet didn't supply explicit collateral — use the first selected TX input.
+        // Any ADA-bearing UTxO is valid collateral; the fee padding covers execution costs.
+        if (transaction.body.collateral.isNullOrEmpty()) {
+            val firstInput = transaction.body.inputs?.firstOrNull()
+            if (firstInput != null) {
+                transaction.body.collateral = listOf(firstInput)
+                println("[TxBuilder] collateral fallback: ${firstInput.transactionId}#${firstInput.index}")
+            } else {
+                println("[TxBuilder] WARNING: no collateral available — TX may fail with error 3132")
+            }
+        }
+
+        // Compute scriptDataHash (TX body key 11).
+        // Conway format: blake2b-256(redeemers_map || "" || languageViews({PlutusV3: costModel}))
+        val costMdls = CostMdls()
+        runCatching {
+            val pp = backendService.epochService.getProtocolParameters().value
+            CostModelUtil.getCostModelFromProtocolParams(pp, Language.PLUTUS_V3).ifPresent { costMdls.add(it) }
+        }.onFailure { println("[TxBuilder] Protocol params fetch failed, using hardcoded V3 cost model: ${it.message}") }
+        if (costMdls.isEmpty) costMdls.add(CostModelUtil.PlutusV3CostModel)
+        val scriptDataHash = ScriptDataHashGenerator.generate(Era.Conway, listOf(redeemer), emptyList(), costMdls)
+        println("[TxBuilder] scriptDataHash = ${HexUtil.encodeHexString(scriptDataHash)}")
+
+        // Pad fee: script bytes (2135) + script data hash (34B) + redeemer (~30B) + execution units cost
+        // Exec cost estimate: 1M mem * 0.0577 + 1B steps * 0.0000721 ≈ 130,000 lovelace
+        val padding = BigInteger.valueOf(300_000L)
         val body = transaction.body
+        body.scriptDataHash = scriptDataHash
         body.fee = body.fee.add(padding)
         body.outputs.firstOrNull { it.address == changeAddress }?.let { changeOut ->
             if (changeOut.value.coin >= padding) {

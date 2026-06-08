@@ -1,7 +1,7 @@
 "use client"
 
 import { useWalletStore } from "@/store/wallet"
-import { signTx, getUtxos, getChangeAddress, getRewardAddresses, hexAddressToBech32 } from "@tempo/wallet-bridge"
+import { signTx, getUtxos, getChangeAddress, getRewardAddresses, getCollateral, hexAddressToBech32 } from "@tempo/wallet-bridge"
 import type { BuildTxRequest, BuildTxResponse } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -18,10 +18,11 @@ export function useTx() {
 
     // 1. Collect wallet data needed by backend to build tx
     // CIP-30 returns hex CBOR addresses — convert to bech32 for cardano-client-lib
-    const [utxos, changeAddressRaw, rewardAddressesRaw] = await Promise.all([
+    const [utxos, changeAddressRaw, rewardAddressesRaw, collateral] = await Promise.all([
       getUtxos(api),
       getChangeAddress(api),
       getRewardAddresses(api),
+      getCollateral(api),
     ])
     const net = networkId ?? 0
     const changeAddress = hexAddressToBech32(changeAddressRaw, net)
@@ -30,12 +31,17 @@ export function useTx() {
       : ""
 
     // 2. Build unsigned tx on backend
+    // If wallet doesn't expose a dedicated collateral UTxO, fall back to the
+    // first available UTxO — same CBOR format, valid for collateral purposes.
+    const effectiveCollateral = collateral.length > 0 ? collateral : utxos.slice(0, 1)
+
     const buildReq: BuildTxRequest = {
       txType,
       utxos,
       changeAddress,
       rewardAddress,
       network: networkId === 1 ? "mainnet" : "preprod",
+      collateral: effectiveCollateral.length > 0 ? effectiveCollateral : undefined,
       ...params,
     }
 
