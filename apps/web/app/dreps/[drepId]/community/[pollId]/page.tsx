@@ -2,6 +2,7 @@
 
 import { use, useState, useRef, useEffect } from "react"
 import Link from "next/link"
+import { marked } from "marked"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { usePollDetail, usePollComments } from "@/hooks/useCommunity"
@@ -374,6 +375,19 @@ function CommentItem({ comment, network, myStakeAddress, pollId, onDeleted }: {
   )
 }
 
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+
+function MarkdownBody({ value }: { value: string }) {
+  const html = marked.parse(value, { async: false }) as string
+  return (
+    // eslint-disable-next-line react/no-danger
+    <div
+      className="text-sm text-text-secondary leading-relaxed markdown-preview"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PollDetailPage({
@@ -510,7 +524,7 @@ export default function PollDetailPage({
         {poll.abstract && (
           <div className="space-y-1">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tóm tắt</h3>
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.abstract}</p>
+            <MarkdownBody value={poll.abstract} />
           </div>
         )}
 
@@ -518,7 +532,7 @@ export default function PollDetailPage({
         {poll.motivation && (
           <div className="space-y-1">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Động lực</h3>
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.motivation}</p>
+            <MarkdownBody value={poll.motivation} />
           </div>
         )}
 
@@ -526,7 +540,7 @@ export default function PollDetailPage({
         {poll.rationale && (
           <div className="space-y-1">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Cơ sở lý luận</h3>
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{poll.rationale}</p>
+            <MarkdownBody value={poll.rationale} />
           </div>
         )}
 
