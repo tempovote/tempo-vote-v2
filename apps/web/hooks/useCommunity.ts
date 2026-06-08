@@ -53,6 +53,7 @@ export function useCommunityPolls(drepId: string, network: string, page: number)
   const [limit, setLimit] = useState(10)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     if (!drepId) return
@@ -61,7 +62,10 @@ export function useCommunityPolls(drepId: string, network: string, page: number)
     setError(null)
     fetch(`${API_URL}/communities/${drepId}/polls?network=${network}&page=${page}`)
       .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        if (!r.ok) return r.json().then((e: unknown) => {
+          const msg = (e as Record<string, string>).error ?? `HTTP ${r.status}`
+          throw new Error(msg)
+        })
         return r.json()
       })
       .then((data: PollsPage) => {
@@ -70,12 +74,14 @@ export function useCommunityPolls(drepId: string, network: string, page: number)
         setTotal(data.total)
         setLimit(data.limit)
       })
-      .catch(() => { if (!cancelled) setError("Không thể tải polls") })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Không thể tải polls")
+      })
       .finally(() => { if (!cancelled) setIsLoading(false) })
     return () => { cancelled = true }
-  }, [drepId, network, page])
+  }, [drepId, network, page, tick])
 
-  return { polls, total, limit, isLoading, error }
+  return { polls, total, limit, isLoading, error, refetch: () => setTick((t) => t + 1) }
 }
 
 // ─── Poll detail (with options + vote counts) ─────────────────────────────────

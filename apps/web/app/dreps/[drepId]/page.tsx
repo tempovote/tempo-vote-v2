@@ -530,7 +530,7 @@ export default function DRepProfilePage({
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
   const router = useRouter()
-  const { drepKey } = useWallet()
+  const { drepKey, reauthenticate } = useWallet()
   const { submitTx } = useTx()
 
   const { profile, isLoading, isLoadingMeta, error } = useDRepProfile(drepId, network)
@@ -558,11 +558,27 @@ export default function DRepProfilePage({
     setActivateError(null)
     try {
       const txHash = await submitTx("ACTIVATE_COMMUNITY", {})
-      await fetch(`${API_URL}/communities/${canonicalId}/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
-        body: JSON.stringify({ network, txHash }),
-      })
+
+      let jwt = getJwt()
+      if (!jwt) jwt = await reauthenticate()
+
+      const doActivate = (token: string | null) =>
+        fetch(`${API_URL}/communities/${canonicalId}/activate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(token) },
+          body: JSON.stringify({ network, txHash }),
+        })
+
+      let res = await doActivate(jwt)
+      if (res.status === 401) {
+        const newJwt = await reauthenticate()
+        res = await doActivate(newJwt)
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error((body as { error?: string }).error ?? `Kích hoạt thất bại (${res.status})`)
+      }
+
       refetchCommunity()
     } catch (err: unknown) {
       setActivateError(err instanceof Error ? err.message : "Kích hoạt thất bại")

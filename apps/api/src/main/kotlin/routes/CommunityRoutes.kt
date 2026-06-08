@@ -11,6 +11,9 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.db.Communities
@@ -23,6 +26,9 @@ import java.util.UUID
 // ─── Response DTOs ────────────────────────────────────────────────────────────
 
 @Serializable
+data class CreatePollResponse(val id: String)
+
+@Serializable
 data class CommunityResponse(
     val id: String,
     val drepId: String,
@@ -30,6 +36,9 @@ data class CommunityResponse(
     val isActive: Boolean,
     val activatedAt: String?,
 )
+
+@Serializable
+data class ActivateCommunityResponse(val id: String, val isActive: Boolean)
 
 @Serializable
 data class PollOptionDetail(
@@ -58,6 +67,10 @@ data class PollDetailResponse(
     val communityId: String,
     val title: String,
     val abstract: String?,
+    val motivation: String?,
+    val imageUrl: String?,
+    val supportLinks: List<String>,
+    val rationale: String?,
     val votingType: String,
     val status: String,
     val startsAt: String,
@@ -65,7 +78,7 @@ data class PollDetailResponse(
     val createdAt: String,
     val options: List<PollOptionDetail>,
     val totalVotes: Int,
-    val userVote: String?,   // optionId if the requesting stakeAddress has voted, else null
+    val userVote: String?,
 )
 
 @Serializable
@@ -103,6 +116,12 @@ data class CreatePollRequest(
     val network: String,
     val title: String,
     val abstract: String? = null,
+    val motivation: String? = null,
+    val imageUrl: String? = null,
+    val supportLinks: List<String> = emptyList(),
+    val rationale: String? = null,
+    val votingType: String = "BASIC",   // BASIC | SINGLE_CHOICE | MULTIPLE_CHOICE
+    val options: List<String> = emptyList(),  // custom options for SINGLE/MULTIPLE
     val startsAt: String,
     val endsAt: String,
 )
@@ -200,7 +219,7 @@ fun Route.communityRoutes() {
                     }
                 }
 
-                call.respond(mapOf("id" to communityId, "isActive" to true))
+                call.respond(ActivateCommunityResponse(id = communityId, isActive = true))
             }
         }
 
@@ -306,30 +325,51 @@ fun Route.communityRoutes() {
                     return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "endsAt must be after startsAt"))
                 }
 
-                val pollId = transaction {
-                    val id = InternalPolls.insert {
-                        it[InternalPolls.communityId] = communityId
-                        it[InternalPolls.title] = req.title.trim()
-                        it[InternalPolls.abstract] = req.abstract?.trim()
-                        it[InternalPolls.votingType] = "BASIC"
-                        it[InternalPolls.startEpoch] = 0
-                        it[InternalPolls.startsAt] = startsAt
-                        it[InternalPolls.endsAt] = endsAt
-                    }[InternalPolls.id]
+                val allowedTypes = setOf("BASIC", "SINGLE_CHOICE", "MULTIPLE_CHOICE")
+                val votingType = req.votingType.uppercase().takeIf { it in allowedTypes } ?: "BASIC"
 
-                    // Auto-create Yes / No / Abstain options for BASIC polls
-                    BASIC_OPTIONS.forEachIndexed { idx, text ->
-                        PollOptions.insert {
-                            it[PollOptions.pollId] = id
-                            it[PollOptions.text] = text
-                            it[PollOptions.order] = idx
-                        }
-                    }
-
-                    id.toString()
+                if (votingType != "BASIC" && req.options.size < 2) {
+                    return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "At least 2 options required for ${votingType}"))
                 }
 
-                call.respond(HttpStatusCode.Created, mapOf("id" to pollId))
+                val pollResult = runCatching {
+                    transaction {
+                        val id = InternalPolls.insert {
+                            it[InternalPolls.communityId] = communityId
+                            it[InternalPolls.title] = req.title.trim()
+                            it[InternalPolls.abstract] = req.abstract?.trim()
+                            it[InternalPolls.motivation] = req.motivation?.trim()
+                            it[InternalPolls.imageUrl] = req.imageUrl?.trim()
+                            it[InternalPolls.supportLinks] = if (req.supportLinks.isEmpty()) null
+                                else Json.encodeToString(req.supportLinks.filter { l -> l.isNotBlank() })
+                            it[InternalPolls.rationale] = req.rationale?.trim()
+                            it[InternalPolls.votingType] = votingType
+                            it[InternalPolls.startEpoch] = 0
+                            it[InternalPolls.startsAt] = startsAt
+                            it[InternalPolls.endsAt] = endsAt
+                        }[InternalPolls.id]
+
+                        val optionTexts = if (votingType == "BASIC") BASIC_OPTIONS else req.options.filter { it.isNotBlank() }
+                        optionTexts.forEachIndexed { idx, text ->
+                            PollOptions.insert {
+                                it[PollOptions.pollId] = id
+                                it[PollOptions.text] = text.trim()
+                                it[PollOptions.order] = idx
+                            }
+                        }
+
+                        id.toString()
+                    }
+                }
+
+                pollResult.fold(
+                    onSuccess = { pollId ->
+                        call.respond(HttpStatusCode.Created, CreatePollResponse(id = pollId))
+                    },
+                    onFailure = { e ->
+                        call.respond(HttpStatusCode.InternalServerError, vote.tempo.plugins.ApiError(e.message ?: "Failed to create poll"))
+                    }
+                )
             }
         }
 
@@ -382,11 +422,20 @@ fun Route.communityRoutes() {
                         ?.toString()
                 } else null
 
+                val rawLinks = pollRow[InternalPolls.supportLinks]
+                val parsedLinks: List<String> = if (rawLinks != null)
+                    runCatching { Json.decodeFromString<List<String>>(rawLinks) }.getOrElse { emptyList() }
+                else emptyList()
+
                 PollDetailResponse(
                     id = pollId.toString(),
                     communityId = pollRow[InternalPolls.communityId].toString(),
                     title = pollRow[InternalPolls.title],
                     abstract = pollRow[InternalPolls.abstract],
+                    motivation = pollRow[InternalPolls.motivation],
+                    imageUrl = pollRow[InternalPolls.imageUrl],
+                    supportLinks = parsedLinks,
+                    rationale = pollRow[InternalPolls.rationale],
                     votingType = pollRow[InternalPolls.votingType],
                     status = computeStatus(pollRow[InternalPolls.startsAt], pollRow[InternalPolls.endsAt], now),
                     startsAt = pollRow[InternalPolls.startsAt].toString(),

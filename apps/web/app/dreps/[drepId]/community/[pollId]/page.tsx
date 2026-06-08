@@ -148,6 +148,7 @@ function VotingSection({
   status,
   stakeAddress,
   isConnected,
+  reauthenticate,
   onVoted,
 }: {
   pollId: string
@@ -157,6 +158,7 @@ function VotingSection({
   status: string
   stakeAddress: string | null | undefined
   isConnected: boolean
+  reauthenticate: () => Promise<string | null>
   onVoted: () => void
 }) {
   const [pending, setPending] = useState<string | null>(null)
@@ -170,11 +172,21 @@ function VotingSection({
     setPending(optionId)
     setVoteError(null)
     try {
-      const res = await fetch(`${API_URL}/communities/polls/${pollId}/vote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
-        body: JSON.stringify({ optionId }),
-      })
+      let jwt = getJwt()
+      if (!jwt) jwt = await reauthenticate()
+      if (!jwt) throw new Error("Cần xác thực ví trước khi bỏ phiếu.")
+      const doVote = (token: string) =>
+        fetch(`${API_URL}/communities/polls/${pollId}/vote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(token) },
+          body: JSON.stringify({ optionId }),
+        })
+      let res = await doVote(jwt)
+      if (res.status === 401) {
+        const newJwt = await reauthenticate()
+        if (!newJwt) throw new Error("Xác thực thất bại.")
+        res = await doVote(newJwt)
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as Record<string, string>).error ?? "Bỏ phiếu thất bại")
@@ -251,7 +263,7 @@ export default function PollDetailPage({
 }) {
   const { drepId, pollId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
-  const { isConnected, rewardAddress: stakeAddress } = useWallet()
+  const { isConnected, rewardAddress: stakeAddress, reauthenticate } = useWallet()
   const commentRef = useRef<HTMLDivElement>(null)
 
   const { poll, isLoading: pollLoading, error: pollError, refetch: refetchPoll } = usePollDetail(pollId, stakeAddress)
@@ -275,11 +287,21 @@ export default function PollDetailPage({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const res = await fetch(`${API_URL}/communities/polls/${pollId}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
-        body: JSON.stringify({ content: content.trim() }),
-      })
+      let jwt = getJwt()
+      if (!jwt) jwt = await reauthenticate()
+      if (!jwt) throw new Error("Cần xác thực ví trước khi bình luận.")
+      const doPost = (token: string) =>
+        fetch(`${API_URL}/communities/polls/${pollId}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(token) },
+          body: JSON.stringify({ content: content.trim() }),
+        })
+      let res = await doPost(jwt)
+      if (res.status === 401) {
+        const newJwt = await reauthenticate()
+        if (!newJwt) throw new Error("Xác thực thất bại.")
+        res = await doPost(newJwt)
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as Record<string, string>).error ?? "Gửi comment thất bại")
@@ -366,6 +388,7 @@ export default function PollDetailPage({
           status={poll.status}
           stakeAddress={stakeAddress}
           isConnected={isConnected}
+          reauthenticate={reauthenticate}
           onVoted={refetchPoll}
         />
       </div>

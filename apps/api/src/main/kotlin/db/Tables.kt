@@ -31,8 +31,12 @@ object InternalPolls : Table("internal_polls") {
     val id          = uuid("id").autoGenerate()
     val communityId = uuid("community_id").references(Communities.id)
     val title       = varchar("title", 255)
-    val abstract    = text("abstract").nullable()
-    val votingType  = varchar("voting_type", 20)  // BASIC | SINGLE_CHOICE | MULTIPLE_CHOICE
+    val abstract     = text("abstract").nullable()
+    val motivation   = text("motivation").nullable()
+    val imageUrl     = text("image_url").nullable()
+    val supportLinks = text("support_links").nullable()  // JSON array e.g. '["https://..."]'
+    val rationale    = text("rationale").nullable()
+    val votingType   = varchar("voting_type", 20)  // BASIC | SINGLE_CHOICE | MULTIPLE_CHOICE
     val startEpoch  = integer("start_epoch")        // voting power snapshot epoch
     val startsAt    = datetime("starts_at")
     val endsAt      = datetime("ends_at")
