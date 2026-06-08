@@ -280,27 +280,25 @@ function TreasuryWithdrawalFields({
         <label className={LABEL}>Recipients <span className="text-danger font-normal normal-case">*</span></label>
         <div className="space-y-2">
           {rows.map((row, i) => (
-            <div key={i} className="flex gap-2 items-start">
-              <div className="flex-1 space-y-1.5">
-                <input
-                  type="text"
-                  value={row.stakeAddress}
-                  onChange={(e) => patchRow(i, { stakeAddress: e.target.value })}
-                  placeholder={`Stake address (${stakeHint})`}
-                  className={INPUT_SM + " w-full font-mono text-xs"}
-                />
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
+            <div key={i} className="flex gap-2 items-center">
+              <input
+                type="text"
+                value={row.stakeAddress}
+                onChange={(e) => patchRow(i, { stakeAddress: e.target.value })}
+                placeholder={`Stake address (${stakeHint})`}
+                className={INPUT_SM + " flex-1 min-w-0 font-mono text-xs"}
+              />
+              <div className="relative shrink-0 w-44">
                 <input
                   type="number"
                   min={0}
                   step="any"
                   value={row.adaAmount}
                   onChange={(e) => patchRow(i, { adaAmount: e.target.value })}
-                  placeholder="ADA"
-                  className={INPUT_SM + " w-28 text-right tabular-nums"}
+                  placeholder="0"
+                  className={INPUT_SM + " w-full text-right pr-9 tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"}
                 />
-                <span className="text-xs text-text-muted shrink-0">₳</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-text-muted pointer-events-none select-none">₳</span>
               </div>
               {rows.length > 1 && (
                 <button
