@@ -565,7 +565,7 @@ function CreatePollForm({
               <label className={LABEL}>Rationale {OPTIONAL}</label>
               <RationaleEditor
                 label="" placeholder="Lý do và lập luận cho poll này..."
-                maxLength={15000} height={150} description=""
+                height={150} description=""
                 value={rationale} onChange={setRationale}
               />
             </div>
