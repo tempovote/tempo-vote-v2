@@ -65,7 +65,7 @@ data class ProposalUploadRequest(
     val abstract: String,
     val motivation: String? = null,
     val rationale: String? = null,
-    val references: List<MetadataReference> = emptyList(),
+    val supportLinks: List<String> = emptyList(),
 )
 
 fun Route.metadataRoutes() {
@@ -235,7 +235,8 @@ fun Route.metadataRoutes() {
             val anchorDataHash = blake2b256Hex(metadataBytes)
 
             val ipfsHash = try {
-                uploadJsonToPinata(pinataJwt, metadata, "proposal-${req.drepId.take(16)}-${req.title.take(20)}")
+                val pinataName = "proposal-${req.drepId.take(16)}-${req.title.take(20)}"
+                uploadJsonToPinata(pinataJwt, metadata, pinataName)
             } catch (e: Exception) {
                 return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Pinata upload failed: ${e.message}"))
             }
@@ -424,13 +425,14 @@ private fun buildCip108Metadata(req: ProposalUploadRequest): JsonObject = buildJ
         put("abstract", req.abstract)
         if (!req.motivation.isNullOrBlank()) put("motivation", req.motivation)
         if (!req.rationale.isNullOrBlank()) put("rationale", req.rationale)
-        if (req.references.isNotEmpty()) {
+        val validLinks = req.supportLinks.filter { it.startsWith("http") }
+        if (validLinks.isNotEmpty()) {
             putJsonArray("references") {
-                req.references.forEach { ref ->
+                validLinks.forEachIndexed { i, url ->
                     addJsonObject {
-                        put("@type", ref.type)
-                        put("label", ref.label)
-                        put("uri", ref.uri)
+                        put("@type", "Other")
+                        put("label", "Reference ${i + 1}")
+                        put("uri", url)
                     }
                 }
             }
