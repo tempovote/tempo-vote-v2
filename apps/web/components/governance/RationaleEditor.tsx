@@ -31,13 +31,14 @@ export function RationaleEditor({
   label = "Lý do bỏ phiếu",
   description = "Rationale sẽ được lưu trên IPFS và gắn vào giao dịch vote.",
   placeholder = "Nhập lý do bỏ phiếu của bạn...",
-  maxLength = 2000,
+  maxLength,
   height = 220,
   optional = false,
 }: Props) {
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit")
-  const remaining = maxLength - value.length
-  const isOver = remaining < 0
+  const isLimited = maxLength !== undefined
+  const remaining = isLimited ? maxLength - value.length : null
+  const isOver = remaining !== null && remaining < 0
 
   return (
     <div className="space-y-2">
@@ -86,7 +87,7 @@ export function RationaleEditor({
             enableScroll={true}
             textareaProps={{
               placeholder,
-              maxLength: maxLength + 50,
+              ...(isLimited ? { maxLength: maxLength! + 50 } : {}),
             }}
           />
         ) : (
@@ -101,9 +102,15 @@ export function RationaleEditor({
         ) : (
           <span />
         )}
-        <span className={isOver ? "text-danger font-medium" : "text-text-muted"}>
-          {remaining.toLocaleString()} ký tự còn lại
-        </span>
+        {isLimited ? (
+          <span className={isOver ? "text-danger font-medium" : "text-text-muted"}>
+            {remaining!.toLocaleString()} ký tự còn lại
+          </span>
+        ) : (
+          <span className="text-text-muted">
+            {value.length.toLocaleString()} ký tự
+          </span>
+        )}
       </div>
     </div>
   )
