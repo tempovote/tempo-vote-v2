@@ -108,6 +108,15 @@ object CardanoCache {
         .build<String, kotlinx.serialization.json.JsonObject>()  // key: "NETWORK:credentialHex"
 
     /**
+     * Delegator counts per network, pre-warmed by BackgroundPoller for the top ~200 DReps.
+     * Key: credentialHex → delegatorCount. Populated sequentially to avoid Koios burst limit.
+     * TTL matches BackgroundPoller interval so stale data is replaced each poll cycle.
+     */
+    val drepDelegatorCounts = Caffeine.newBuilder()
+        .expireAfterWrite(10, TimeUnit.MINUTES)
+        .build<String, Map<String, Int>>()  // key: network.name
+
+    /**
      * Full leaderboard result — computed once, cached 15 min.
      * Prevents re-computing and re-fetching Koios on every page load.
      */
