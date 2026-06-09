@@ -6,6 +6,7 @@ import { credentialHexToDrepId, lovelaceToAda } from "@/lib/governance"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useRationale } from "@/hooks/useRationale"
 import type { RationaleContent } from "@/hooks/useRationale"
+import { marked } from "marked"
 
 type RoleTab = "drep" | "cc" | "spo"
 
@@ -168,7 +169,11 @@ function RationaleBody({ content, rationaleUrl }: { content: RationaleContent; r
           {content.title && (
             <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">Nội dung</h4>
           )}
-          <p className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">{content.comment}</p>
+          <div
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: marked.parse(content.comment, { async: false }) as string }}
+            className="prose-metadata text-sm text-text-secondary leading-relaxed"
+          />
         </div>
       )}
 
