@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { resolveAnchorUrls } from "@/lib/governance"
+import { resolveAnchorUrls, resolveAnchorUrl } from "@/lib/governance"
 
 // v2: stores {v, t} objects so we can apply TTL to both hits and misses.
 // Changing the key drops the old format gracefully (old key is simply ignored).
@@ -14,6 +14,8 @@ interface StoredEntry { v: string | null; t: number }
 
 // session cache: anchorUrl → title (null = fetched, no title found)
 const sessionCache = new Map<string, string | null>()
+// session cache: anchorUrl → imageUrl (null = fetched, no image found)
+const imageSessionCache = new Map<string, string | null>()
 // in-flight dedup: prevents duplicate fetches when multiple cards mount simultaneously
 const inFlight     = new Map<string, Promise<string | null>>()
 
@@ -62,6 +64,24 @@ function extractTitle(data: unknown): string | null {
   return typeof val === "string" && val.length > 0 ? val : null
 }
 
+// CIP-119: body.image may be a string URL, or { contentUrl, url, "@id" }
+function extractImage(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null
+  const d = data as Record<string, unknown>
+  const body = d.body as Record<string, unknown> | undefined
+  const image = body?.image ?? d.image
+  if (!image) return null
+  const raw = typeof image === "string"
+    ? image
+    : (() => {
+        const obj = image as Record<string, unknown>
+        return (typeof obj.contentUrl === "string" ? obj.contentUrl : null)
+          ?? (typeof obj.url === "string" ? obj.url : null)
+          ?? (typeof obj["@id"] === "string" ? (obj["@id"] as string) : null)
+      })()
+  return raw ? (resolveAnchorUrl(raw) ?? null) : null
+}
+
 async function fetchTitle(anchorUrl: string): Promise<string | null> {
   const urls = resolveAnchorUrls(anchorUrl)
 
@@ -76,6 +96,10 @@ async function fetchTitle(anchorUrl: string): Promise<string | null> {
       if (!r.ok) return tryFetch(rest)
       const data: unknown = await r.json()
       const t = extractTitle(data)
+      // Piggyback image extraction on same parse — no extra network call
+      if (!imageSessionCache.has(anchorUrl)) {
+        imageSessionCache.set(anchorUrl, extractImage(data))
+      }
       return t ?? tryFetch(rest)
     } catch {
       return tryFetch(rest)
@@ -131,6 +155,56 @@ export function useAnchorTitlesMap(
         setMap((prev) =>
           prev.get(url) === result ? prev : new Map([...prev, [url, result]]),
         )
+      })
+    }
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlsKey])
+
+  return map
+}
+
+/**
+ * Returns imageUrl (string) for anchor URLs whose metadata has already been fetched
+ * by useAnchorTitlesMap. Images are extracted from the same CIP-119 JSON parse —
+ * no extra network calls. Returns null for URLs not yet fetched or with no image.
+ */
+export function useAnchorImagesMap(
+  urls: (string | null | undefined)[],
+): ReadonlyMap<string, string> {
+  const urlsKey = urls.filter(Boolean).join("\0")
+
+  const [map, setMap] = useState<Map<string, string>>(() => {
+    const m = new Map<string, string>()
+    for (const url of urls) {
+      if (!url) continue
+      const cached = imageSessionCache.get(url)
+      if (cached != null) m.set(url, cached)
+    }
+    return m
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    for (const url of urls) {
+      if (!url) continue
+      const cached = imageSessionCache.get(url)
+      if (cached != null) {
+        setMap((prev) => prev.get(url) === cached ? prev : new Map([...prev, [url, cached]]))
+        continue
+      }
+      // If not yet fetched, subscribe to the same inFlight promise as fetchTitle
+      let p = inFlight.get(url)
+      if (!p) {
+        p = fetchTitle(url)   // triggers fetch which also populates imageSessionCache
+        inFlight.set(url, p)
+        p.finally(() => inFlight.delete(url))
+      }
+      p.then(() => {
+        if (cancelled) return
+        const img = imageSessionCache.get(url)
+        if (img != null)
+          setMap((prev) => prev.get(url) === img ? prev : new Map([...prev, [url, img]]))
       })
     }
     return () => { cancelled = true }

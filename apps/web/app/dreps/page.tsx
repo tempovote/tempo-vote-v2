@@ -5,26 +5,15 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepList } from "@/hooks/useDRepList"
-import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
+import { useAnchorTitlesMap, useAnchorImagesMap } from "@/hooks/useAnchorTitle"
 import { useDRepLeaderboard } from "@/hooks/useDRepLeaderboard"
 import { lovelaceToAda } from "@/lib/governance"
+import DRepAvatar from "@/components/drep/DRepAvatar"
+import CopyableId from "@/components/ui/CopyableId"
 
 function looksLikeDrepId(q: string): boolean {
   const t = q.trim()
   return t.toLowerCase().startsWith("drep1") || /^[0-9a-f]{56}$/i.test(t)
-}
-
-function avatarGradient(credHex: string): string {
-  const palettes: [string, string][] = [
-    ["#6366f1", "#a855f7"],
-    ["#14b8a6", "#6366f1"],
-    ["#f59e0b", "#ef4444"],
-    ["#10b981", "#14b8a6"],
-    ["#ec4899", "#a855f7"],
-    ["#3b82f6", "#6366f1"],
-  ]
-  const idx = parseInt(credHex.slice(0, 2), 16) % palettes.length
-  return `linear-gradient(135deg, ${palettes[idx]![0]}, ${palettes[idx]![1]})`
 }
 
 function SkeletonRow() {
@@ -51,10 +40,12 @@ export default function DRepsPage() {
   const { dreps, isLoading: isDrepsLoading } = useDRepList(network)
   const { entries: leaderboard, loading: leaderboardLoading } = useDRepLeaderboard(network, 5)
 
-  // Combine anchor URLs for a single name-resolution pass
+  // Combine anchor URLs so names + images share a single fetch pass
   const anchorUrlsForSearch = nameQ.length >= 2 ? dreps.map((d) => d.anchorUrl) : []
   const leaderboardAnchorUrls = leaderboard.map((e) => e.anchorUrl)
-  const namesMap = useAnchorTitlesMap([...anchorUrlsForSearch, ...leaderboardAnchorUrls])
+  const allAnchorUrls = [...anchorUrlsForSearch, ...leaderboardAnchorUrls]
+  const namesMap  = useAnchorTitlesMap(allAnchorUrls)
+  const imagesMap = useAnchorImagesMap(leaderboardAnchorUrls)
 
   const searchResults = nameQ
     ? dreps.filter((d) => {
@@ -168,8 +159,6 @@ export default function DRepsPage() {
               <div className="space-y-3">
                 {searchResults.slice(0, 30).map((drep) => {
                   const name = drep.anchorUrl ? (namesMap.get(drep.anchorUrl) ?? null) : null
-                  const label = typeof name === "string" ? name : drep.id
-                  const initial = label.charAt(4).toUpperCase() || "D"
                   return (
                     <Link
                       key={drep.id}
@@ -177,12 +166,11 @@ export default function DRepsPage() {
                       className="block"
                     >
                       <div className="card flex items-center gap-4 !py-3 !px-4 hover:border-border-default transition-colors cursor-pointer">
-                        <div
-                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
-                          style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
-                        >
-                          {initial}
-                        </div>
+                        <DRepAvatar
+                          name={name ?? null}
+                          imageUrl={null}
+                          credHex={drep.credHex}
+                        />
                         <div className="flex-1 min-w-0">
                           {name ? (
                             <div className="font-medium text-sm truncate">{name}</div>
@@ -191,9 +179,7 @@ export default function DRepsPage() {
                               {drep.anchorUrl ? "Đang tải tên..." : "Không có tên"}
                             </div>
                           )}
-                          <div className="text-xs text-text-muted font-mono truncate">
-                            {drep.id}
-                          </div>
+                          <CopyableId id={drep.id} />
                         </div>
                         <div className="text-xs text-text-secondary shrink-0">
                           {lovelaceToAda(drep.votingPower)} ₳
@@ -231,8 +217,7 @@ export default function DRepsPage() {
                       ? [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
                       : leaderboard.map((entry, i) => {
                           const name = entry.anchorUrl ? (namesMap.get(entry.anchorUrl) ?? null) : null
-                          const label = name ?? entry.id
-                          const initial = (name ? label.charAt(0) : label.charAt(5)).toUpperCase()
+                          const imageUrl = entry.anchorUrl ? (imagesMap.get(entry.anchorUrl) ?? null) : null
                           return (
                             <tr
                               key={entry.id}
@@ -244,22 +229,19 @@ export default function DRepsPage() {
                                   href={`/dreps/${encodeURIComponent(entry.id)}`}
                                   className="flex items-center gap-3 hover:text-accent-light transition-colors group"
                                 >
-                                  <div
-                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
-                                    style={{ background: avatarGradient(entry.credHex) }}
-                                  >
-                                    {initial}
-                                  </div>
+                                  <DRepAvatar
+                                    name={name}
+                                    imageUrl={imageUrl}
+                                    credHex={entry.credHex}
+                                    size="sm"
+                                  />
                                   <div className="min-w-0">
-                                    {name ? (
+                                    {name && (
                                       <div className="font-medium text-sm truncate group-hover:text-accent-light">
                                         {name}
                                       </div>
-                                    ) : (
-                                      <div className="font-mono text-xs text-text-muted truncate">
-                                        {entry.id.slice(0, 24)}…
-                                      </div>
                                     )}
+                                    <CopyableId id={entry.id} />
                                   </div>
                                 </Link>
                               </td>
