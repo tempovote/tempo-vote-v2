@@ -60,6 +60,7 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
         objectives?: string | null
         qualifications?: string | null
         references?: Array<{ "@type": string; label: string; uri: string }> | null
+        metaFetched?: boolean
         anchorUrl: string | null
         votingPower: number | null
         stakeKeyBalance: number | null
@@ -67,7 +68,8 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
         if (cancelled) return
 
         // API already resolves metadata server-side (bypasses CORS restrictions).
-        const apiHasMeta = data.motivations != null || data.objectives != null || data.qualifications != null
+        // metaFetched=true means the API fetched the anchor (even if all fields were empty strings).
+        const apiHasMeta = data.metaFetched === true || data.motivations != null || data.objectives != null || data.qualifications != null
 
         const base: DRepFullProfile = {
           isRegistered: data.isRegistered ?? false,

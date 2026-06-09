@@ -540,6 +540,8 @@ private suspend fun buildDRepResponse(
         put("objectives",     meta?.objectives?.let     { JsonPrimitive(it) } ?: JsonNull)
         put("qualifications", meta?.qualifications?.let { JsonPrimitive(it) } ?: JsonNull)
         put("references",     meta?.references ?: JsonNull)
+        // true = API fetched the anchor document (even if all fields were empty); skip browser fallback
+        put("metaFetched", JsonPrimitive(meta != null))
         put("anchorUrl", listEntry["anchorUrl"]!!)
         put("votingPower", JsonPrimitive(votingPower))
         put("stakeKeyBalance", stakeKeyBalance?.let { JsonPrimitive(it) } ?: JsonNull)
