@@ -1,3 +1,6 @@
+"use client"
+
+import { useState } from "react"
 import type {
   GovernanceAction,
   HardForkDetails,
@@ -30,6 +33,11 @@ const PP_LABELS: Record<string, string> = {
   desiredNumberOfStakePools: "Desired Pool Count (k)",
   stakePoolRetirementEpochBound: "Pool Retirement Window",
   stakePoolPledgeInfluence: "Pool Pledge Influence (a₀)",
+  // Plutus
+  plutusCostModels:      "Plutus Cost Models",
+  maxExecutionUnitsPerBlock: "Max Execution Units / Block",
+  maxExecutionUnitsPerTransaction: "Max Execution Units / TX",
+  executionUnitPrices:   "Execution Unit Prices",
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -61,6 +69,151 @@ function PrevAction({ txHash, index }: { txHash?: string; index?: number }) {
       </p>
     </div>
   )
+}
+
+// ── Large-value detection & summary ──────────────────────────────────────────
+
+/**
+ * Returns true for values too large to display inline:
+ * - Arrays with more than 10 items
+ * - Objects where any direct value is an array with >10 items
+ */
+function isLargeValue(val: unknown): boolean {
+  if (Array.isArray(val)) return val.length > 10
+  if (val !== null && typeof val === "object") {
+    return Object.values(val as Record<string, unknown>).some(
+      (v) => Array.isArray(v) && v.length > 10,
+    )
+  }
+  return false
+}
+
+/**
+ * Short human-readable summary for a large value.
+ * - plutusCostModels → "plutus:v1 (332 ops), plutus:v2 (332 ops), ..."
+ * - plain array → "[N items]"
+ */
+function summarizeLargeValue(val: unknown): string {
+  if (Array.isArray(val)) return `[${val.length} items]`
+  if (val !== null && typeof val === "object") {
+    return Object.entries(val as Record<string, unknown>)
+      .map(([k, v]) => (Array.isArray(v) ? `${k} (${v.length} ops)` : k))
+      .join(", ")
+  }
+  return String(val)
+}
+
+/** Format a large value as indented Markdown code block for the modal. */
+function formatModalContent(key: string, val: unknown): string {
+  if (
+    key === "plutusCostModels" &&
+    val !== null &&
+    typeof val === "object" &&
+    !Array.isArray(val)
+  ) {
+    // Pretty-print each Plutus version as its own section
+    return Object.entries(val as Record<string, unknown>)
+      .map(([version, ops]) => {
+        const opsArr = Array.isArray(ops) ? ops : []
+        return `### ${version} — ${opsArr.length} cost values\n\`\`\`\n${JSON.stringify(opsArr, null, 2)}\n\`\`\``
+      })
+      .join("\n\n")
+  }
+  return `\`\`\`json\n${JSON.stringify(val, null, 2)}\n\`\`\``
+}
+
+// ── Expand Modal ──────────────────────────────────────────────────────────────
+
+interface ExpandModalProps {
+  label: string
+  content: string    // pre-formatted text (may contain markdown-ish code fences)
+  onClose: () => void
+}
+
+function ExpandModal({ label, content, onClose }: ExpandModalProps) {
+  // Parse content into renderable sections (plain text or code blocks)
+  const sections = parseModalContent(content)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-bg-card w-full sm:max-w-2xl max-h-[90dvh] sm:max-h-[80vh] flex flex-col sm:rounded-2xl rounded-t-2xl shadow-2xl border border-border-subtle overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle shrink-0">
+          <h3 className="font-semibold text-base">{label}</h3>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-full bg-bg-secondary text-text-muted hover:text-text-primary hover:bg-border-subtle transition-colors text-sm"
+            aria-label="Đóng"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 p-5 space-y-4">
+          {sections.map((section, i) =>
+            section.type === "heading" ? (
+              <p key={i} className="text-sm font-semibold text-text-secondary mt-2 first:mt-0">
+                {section.text}
+              </p>
+            ) : section.type === "code" ? (
+              <pre
+                key={i}
+                className="bg-bg-secondary border border-border-subtle rounded-xl p-3 text-xs font-mono text-text-secondary overflow-x-auto whitespace-pre leading-relaxed"
+              >
+                {section.text}
+              </pre>
+            ) : (
+              <p key={i} className="text-sm text-text-secondary">
+                {section.text}
+              </p>
+            ),
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type ContentSection =
+  | { type: "heading"; text: string }
+  | { type: "code"; text: string }
+  | { type: "text"; text: string }
+
+function parseModalContent(raw: string): ContentSection[] {
+  const sections: ContentSection[] = []
+  const lines = raw.split("\n")
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i] ?? ""
+    if (line.startsWith("### ")) {
+      sections.push({ type: "heading", text: line.slice(4) })
+      i++
+    } else if (line.startsWith("```")) {
+      const codeLines: string[] = []
+      i++ // skip opening fence
+      while (i < lines.length) {
+        const codeLine = lines[i] ?? ""
+        if (codeLine.startsWith("```")) break
+        codeLines.push(codeLine)
+        i++
+      }
+      i++ // skip closing fence
+      sections.push({ type: "code", text: codeLines.join("\n") })
+    } else if (line.trim() === "") {
+      i++
+    } else {
+      sections.push({ type: "text", text: line })
+      i++
+    }
+  }
+  return sections
 }
 
 // ── Type-specific detail sections ─────────────────────────────────────────────
@@ -126,7 +279,7 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border-subtle bg-bg-secondary">
-              <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Stake Credential</th>
+              <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Stake Address</th>
               <th className="px-3 py-2 text-right text-xs text-text-muted font-semibold">ADA</th>
             </tr>
           </thead>
@@ -220,45 +373,77 @@ function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
 }
 
 function ProtocolParamChangeDetail({ d }: { d: ProtocolParamChangeDetails }) {
+  const [modal, setModal] = useState<{ label: string; content: string } | null>(null)
   const params = d.parameters ?? {}
   const entries = Object.entries(params)
 
   return (
-    <div className="space-y-3">
-      {entries.length === 0 ? (
-        <p className="text-xs text-text-muted">Không có thông số nào được thay đổi.</p>
-      ) : (
-        <div className="rounded-xl border border-border-subtle overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border-subtle bg-bg-secondary">
-                <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Thông số</th>
-                <th className="px-3 py-2 text-right text-xs text-text-muted font-semibold">Giá trị đề xuất</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map(([key, val]) => {
-                const label = PP_LABELS[key] ?? key
-                const display = formatParamValue(val)
-                return (
-                  <tr key={key} className="border-b border-border-subtle/50 last:border-0">
-                    <td className="px-3 py-2 text-text-secondary">{label}</td>
-                    <td className="px-3 py-2 text-right font-mono text-xs font-medium tabular-nums text-accent-light">
-                      {display}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <>
+      <div className="space-y-3">
+        {entries.length === 0 ? (
+          <p className="text-xs text-text-muted">Không có thông số nào được thay đổi.</p>
+        ) : (
+          <div className="rounded-xl border border-border-subtle overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border-subtle bg-bg-secondary">
+                  <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Thông số</th>
+                  <th className="px-3 py-2 text-right text-xs text-text-muted font-semibold">Giá trị đề xuất</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map(([key, val]) => {
+                  const label = PP_LABELS[key] ?? key
+                  const large = isLargeValue(val)
+                  return (
+                    <tr key={key} className="border-b border-border-subtle/50 last:border-0">
+                      <td className="px-3 py-2 text-text-secondary">{label}</td>
+                      <td className="px-3 py-2 text-right">
+                        {large ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="font-mono text-xs text-text-muted">
+                              {summarizeLargeValue(val)}
+                            </span>
+                            <button
+                              onClick={() =>
+                                setModal({
+                                  label,
+                                  content: formatModalContent(key, val),
+                                })
+                              }
+                              className="shrink-0 px-2 py-0.5 rounded-md text-xs font-medium bg-accent/10 text-accent-light hover:bg-accent/20 transition-colors border border-accent/20"
+                            >
+                              Xem thêm
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="font-mono text-xs font-medium tabular-nums text-accent-light">
+                            {formatParamValue(val)}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {d.guardrailsHash && (
-        <HashRow label="Guardrails Script Hash" value={d.guardrailsHash} />
+        {d.guardrailsHash && (
+          <HashRow label="Guardrails Script Hash" value={d.guardrailsHash} />
+        )}
+        <PrevAction txHash={d.prevActionTxHash} index={d.prevActionIndex} />
+      </div>
+
+      {modal && (
+        <ExpandModal
+          label={modal.label}
+          content={modal.content}
+          onClose={() => setModal(null)}
+        />
       )}
-      <PrevAction txHash={d.prevActionTxHash} index={d.prevActionIndex} />
-    </div>
+    </>
   )
 }
 
