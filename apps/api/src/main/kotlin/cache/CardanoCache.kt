@@ -86,5 +86,5 @@ object CardanoCache {
     val poolInfo = Caffeine.newBuilder()
         .expireAfterWrite(1, TimeUnit.HOURS)
         .maximumSize(10_000)
-        .build<String, PoolInfo>()      // key: "NETWORK:hexPoolId"
+        .build<String, PoolInfo>()      // key: "NETWORK:bech32PoolId" (pool1...)
 }

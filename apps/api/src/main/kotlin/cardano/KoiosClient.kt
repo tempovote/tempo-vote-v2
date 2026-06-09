@@ -30,42 +30,40 @@ private fun koiosBaseUrl(network: Network) = when (network) {
 }
 
 /**
- * Batch-fetch pool metadata (name, voting_power) from Koios for the given hex pool IDs.
- * Uncached IDs are fetched from Koios; results are stored per-pool in CardanoCache.poolInfo.
- * Returns a map of hexPoolId → PoolInfo.
+ * Batch-fetch pool metadata (name, voting_power) from Koios.
+ * Pool IDs from Ogmios are already in bech32 format (pool1...) — passed directly to Koios.
+ * Returns a map of bech32PoolId → PoolInfo; same key format as VoteEntry.id for SPO.
  */
-suspend fun fetchPoolInfo(hexPoolIds: List<String>, network: Network): Map<String, PoolInfo> {
-    if (hexPoolIds.isEmpty()) return emptyMap()
+suspend fun fetchPoolInfo(bech32PoolIds: List<String>, network: Network): Map<String, PoolInfo> {
+    if (bech32PoolIds.isEmpty()) return emptyMap()
 
     val result = mutableMapOf<String, PoolInfo>()
     val toFetch = mutableListOf<String>()
 
-    for (hexId in hexPoolIds) {
-        val cached = CardanoCache.poolInfo.getIfPresent("${network.name}:$hexId")
-        if (cached != null) result[hexId] = cached else toFetch.add(hexId)
+    for (bech32Id in bech32PoolIds) {
+        val cached = CardanoCache.poolInfo.getIfPresent("${network.name}:$bech32Id")
+        if (cached != null) result[bech32Id] = cached else toFetch.add(bech32Id)
     }
 
     if (toFetch.isEmpty()) return result
-
-    val bech32Ids = toFetch.map { poolIdHexToBech32(it) }
 
     runCatching {
         val response = koiosHttp.post("${koiosBaseUrl(network)}/pool_info") {
             contentType(ContentType.Application.Json)
             setBody(buildJsonObject {
-                putJsonArray("_pool_bech32_ids") { bech32Ids.forEach { add(it) } }
+                putJsonArray("_pool_bech32_ids") { toFetch.forEach { add(it) } }
             })
         }
         val body: JsonArray = response.body()
 
         for (item in body) {
-            val obj     = item.jsonObject
-            val hexId   = obj["pool_id_hex"]?.jsonPrimitive?.contentOrNull ?: continue
-            val name    = obj["meta_json"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
-            val power   = obj["voting_power"]?.jsonPrimitive?.longOrNull ?: 0L
-            val info    = PoolInfo(name = name, votingPower = power)
-            result[hexId] = info
-            CardanoCache.poolInfo.put("${network.name}:$hexId", info)
+            val obj      = item.jsonObject
+            val bech32Id = obj["pool_id_bech32"]?.jsonPrimitive?.contentOrNull ?: continue
+            val name     = obj["meta_json"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+            val power    = obj["voting_power"]?.jsonPrimitive?.longOrNull ?: 0L
+            val info     = PoolInfo(name = name, votingPower = power)
+            result[bech32Id] = info
+            CardanoCache.poolInfo.put("${network.name}:$bech32Id", info)
         }
     }.onFailure { e ->
         logger.warn { "Koios pool_info fetch failed for $network: ${e.message}" }
@@ -75,7 +73,8 @@ suspend fun fetchPoolInfo(hexPoolIds: List<String>, network: Network): Map<Strin
 }
 
 /**
- * Scan raw Ogmios governanceProposals JSON and collect all unique SPO pool IDs (hex).
+ * Scan raw Ogmios governanceProposals JSON and collect all unique SPO pool IDs.
+ * Ogmios returns pool IDs in bech32 format (pool1...).
  */
 fun extractSPOPoolIds(raw: JsonElement): List<String> {
     val array: JsonArray = when (raw) {
