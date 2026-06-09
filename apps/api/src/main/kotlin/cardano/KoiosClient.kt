@@ -1,12 +1,10 @@
 package vote.tempo.cardano
 
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import vote.tempo.cache.CardanoCache
@@ -20,8 +18,14 @@ data class PoolInfo(
 
 private val koiosJson = Json { ignoreUnknownKeys = true }
 
-private val koiosHttp = HttpClient(CIO) {
-    install(ContentNegotiation) { json(koiosJson) }
+// No ContentNegotiation — parse via bodyAsText() to avoid "SourceByteReadChannel" errors
+// when Koios returns 429/5xx with non-JSON Content-Type.
+private val koiosHttp = HttpClient(CIO)
+
+private suspend fun HttpResponse.jsonArray(): JsonArray {
+    val text = bodyAsText()
+    if (!status.isSuccess()) throw Exception("HTTP ${status.value}: ${text.take(200)}")
+    return koiosJson.parseToJsonElement(text).jsonArray
 }
 
 private fun koiosBaseUrl(network: Network) = when (network) {
@@ -54,7 +58,7 @@ suspend fun fetchPoolInfo(bech32PoolIds: List<String>, network: Network): Map<St
                 putJsonArray("_pool_bech32_ids") { toFetch.forEach { add(it) } }
             })
         }
-        val body: JsonArray = response.body()
+        val body: JsonArray = response.jsonArray()
 
         for (item in body) {
             val obj      = item.jsonObject
@@ -94,7 +98,7 @@ suspend fun fetchProposalVoteRationales(txHash: String, index: Int, network: Net
                 parameter("limit",  limit)
                 parameter("offset", offset)
             }
-            val page: JsonArray = response.body()
+            val page: JsonArray = response.jsonArray()
             for (item in page) {
                 val obj    = item.jsonObject
                 val metaUrl = obj["meta_url"]?.jsonPrimitive?.contentOrNull ?: continue
@@ -161,7 +165,7 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
         val infoResp = koiosHttp.get("$base/drep_info") {
             parameter("_drep_ids", "{$drepId}")
         }
-        val infoBody: JsonArray = infoResp.body()
+        val infoBody: JsonArray = infoResp.jsonArray()
         val liveVotingPower = infoBody.firstOrNull()?.jsonObject
             ?.get("amount")?.jsonPrimitive?.longOrNull ?: 0L
 
@@ -184,7 +188,7 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
                 parameter("limit",  limit)
                 parameter("offset", offset)
             }
-            val page: JsonArray = votesResp.body()
+            val page: JsonArray = votesResp.jsonArray()
             votedCount += page.size
             if (page.size < limit) break
             offset += limit
