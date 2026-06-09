@@ -8,23 +8,12 @@ type RoleTab = "drep" | "cc" | "spo"
 
 const ROLE_LABELS: Record<RoleTab, string> = { drep: "DRep", cc: "CC", spo: "SPO" }
 
-const VOTE_ORDER = { yes: 0, no: 1, abstain: 2 }
-
-function voteBadge(vote: string) {
-  if (vote === "yes")     return <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-success/15 text-success border border-success/30">YES</span>
-  if (vote === "no")      return <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-danger/15 text-danger border border-danger/30">NO</span>
-  return <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-bg-elevated text-text-secondary border border-border-default">ABSTAIN</span>
-}
-
 function CopyableId({ id, role }: { id: string; role: RoleTab }) {
   const [copied, setCopied] = useState(false)
 
-  const display = role === "drep"
-    ? credentialHexToDrepId(id)
-    : id
-
-  const truncated = display.length > 24
-    ? `${display.slice(0, 12)}…${display.slice(-8)}`
+  const display = role === "drep" ? credentialHexToDrepId(id) : id
+  const truncated = display.length > 20
+    ? `${display.slice(0, 10)}…${display.slice(-7)}`
     : display
 
   function copy() {
@@ -38,11 +27,79 @@ function CopyableId({ id, role }: { id: string; role: RoleTab }) {
     <button
       onClick={copy}
       title={display}
-      className="font-mono text-xs text-text-secondary hover:text-text-primary transition-colors text-left"
+      className="font-mono text-xs text-text-secondary hover:text-text-primary transition-colors text-left truncate max-w-full"
     >
       {truncated}
       {copied && <span className="ml-1 text-success text-[10px]">✓</span>}
     </button>
+  )
+}
+
+function VoteTable({
+  votes,
+  role,
+  side,
+}: {
+  votes: VoteEntry[]
+  role: RoleTab
+  side: "yes" | "no-abstain"
+}) {
+  const filtered = votes
+    .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
+    .sort((a, b) => b.votingPower - a.votingPower)
+
+  const headerCls = side === "yes"
+    ? "text-success/70"
+    : "text-danger/70"
+
+  const emptyLabel = side === "yes" ? "Không có YES" : "Không có NO / ABSTAIN"
+
+  return (
+    <div className="flex-1 min-w-0">
+      {/* Column header */}
+      <div className={`text-xs font-semibold mb-2 ${headerCls}`}>
+        {side === "yes"
+          ? `YES · ${filtered.length}`
+          : `NO + ABSTAIN · ${filtered.length}`}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-xs text-text-muted py-3 text-center">{emptyLabel}</p>
+      ) : (
+        <div className="divide-y divide-border-subtle">
+          {/* Table header */}
+          <div className="grid grid-cols-[1fr_auto] gap-2 pb-1.5 text-[11px] text-text-muted font-medium">
+            <span>ID</span>
+            <span className="text-right">VP / Vote</span>
+          </div>
+          {/* Rows */}
+          {filtered.map((v, i) => {
+            const isNo      = v.vote === "no"
+            const isAbstain = v.vote === "abstain"
+            const voteCls   = isNo      ? "text-danger"
+                            : isAbstain ? "text-text-muted"
+                            : "text-success"
+            const voteLabel = isNo ? "NO" : isAbstain ? "ABS" : "YES"
+
+            return (
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-2 items-center py-2">
+                <CopyableId id={v.id} role={role} />
+                <div className="flex items-center gap-1.5 justify-end shrink-0">
+                  {v.votingPower > 0 && (
+                    <span className="text-[11px] text-text-muted tabular-nums">
+                      {lovelaceToAda(v.votingPower)}₳
+                    </span>
+                  )}
+                  <span className={`text-[11px] font-bold ${voteCls} w-7 text-right`}>
+                    {voteLabel}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -55,13 +112,7 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
     spo:  votes.filter((v) => v.role === "spo").length,
   }
 
-  const filtered = votes
-    .filter((v) => v.role === role)
-    .sort((a, b) => {
-      const vo = (VOTE_ORDER[a.vote as keyof typeof VOTE_ORDER] ?? 3) - (VOTE_ORDER[b.vote as keyof typeof VOTE_ORDER] ?? 3)
-      if (vo !== 0) return vo
-      return b.votingPower - a.votingPower
-    })
+  const roleVotes = votes.filter((v) => v.role === role)
 
   return (
     <div className="space-y-4">
@@ -85,31 +136,16 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
         ))}
       </div>
 
-      {/* Vote list */}
-      {filtered.length === 0 ? (
+      {/* Two-column vote tables */}
+      {roleVotes.length === 0 ? (
         <p className="text-sm text-text-muted py-4 text-center">
           Chưa có phiếu nào từ {ROLE_LABELS[role]}
         </p>
       ) : (
-        <div className="divide-y divide-border-subtle">
-          {/* Header */}
-          <div className="grid grid-cols-[1fr_auto_auto] gap-4 py-2 text-xs text-text-muted font-medium px-1">
-            <span>ID</span>
-            <span className="text-right">Voting Power</span>
-            <span className="text-right w-16">Phiếu</span>
-          </div>
-          {/* Rows */}
-          {filtered.map((v, i) => (
-            <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-4 items-center py-2.5 px-1">
-              <CopyableId id={v.id} role={role} />
-              <span className="text-xs text-text-muted text-right tabular-nums">
-                {v.votingPower > 0 ? `${lovelaceToAda(v.votingPower)} ₳` : "—"}
-              </span>
-              <div className="flex justify-end w-16">
-                {voteBadge(v.vote)}
-              </div>
-            </div>
-          ))}
+        <div className="flex gap-5">
+          <VoteTable votes={roleVotes} role={role} side="yes" />
+          <div className="w-px bg-border-subtle shrink-0" />
+          <VoteTable votes={roleVotes} role={role} side="no-abstain" />
         </div>
       )}
     </div>
