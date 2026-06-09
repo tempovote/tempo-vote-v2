@@ -154,6 +154,8 @@ fun credentialHexToDrepIdCip105(credentialHex: String): String? =
     }.getOrNull()
 
 private const val HTTP_TIMEOUT_MS = 20_000L
+// delegateRepresentatives returns 1.5MB+ on mainnet (10k+ DReps) — needs a longer window.
+private const val HEAVY_QUERY_TIMEOUT_MS = 120_000L
 
 class OgmiosStateQueries(private val network: Network) {
 
@@ -181,7 +183,7 @@ class OgmiosStateQueries(private val network: Network) {
     }
 
     suspend fun getDelegateRepresentatives(): JsonElement {
-        return queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {})
+        return queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {}, HEAVY_QUERY_TIMEOUT_MS)
     }
 
     suspend fun getConstitutionalCommittee(): JsonElement {
@@ -281,8 +283,8 @@ class OgmiosStateQueries(private val network: Network) {
 
     // -------------------------------------------------------------------------
 
-    private suspend fun queryRaw(method: String, params: JsonObject): JsonElement {
-        return withTimeout(HTTP_TIMEOUT_MS) {
+    private suspend fun queryRaw(method: String, params: JsonObject, timeoutMs: Long = HTTP_TIMEOUT_MS): JsonElement {
+        return withTimeout(timeoutMs) {
             val body = buildRequest(method, params).toString()
             val response = client.post(ogmiosUrl) {
                 contentType(ContentType.Application.Json)
