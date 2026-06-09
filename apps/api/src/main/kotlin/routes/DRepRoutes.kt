@@ -7,6 +7,8 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.SortOrder
@@ -328,7 +330,32 @@ fun Route.drepRoutes() {
                 .sortedByDescending { it["delegatorCount"]?.jsonPrimitive?.intOrNull ?: 0 }
                 .take(limit)
 
-            val resultArray = JsonArray(sorted)
+            // Fetch name + imageUrl server-side for the final top-N DReps.
+            // Done after sort+take so we only make `limit` metadata calls (not candidateCount).
+            // Checks drepInfo cache first (populated by profile page visits); falls back to
+            // fetchDRepMeta so CORS-restricted hosts (e.g. everstake.one) still work.
+            val withMeta = coroutineScope {
+                sorted.map { entry ->
+                    async {
+                        val credHex = entry["credHex"]?.jsonPrimitive?.contentOrNull
+                        val anchor  = entry["anchorUrl"]?.jsonPrimitive?.contentOrNull
+                        val cached  = credHex?.let { CardanoCache.drepInfo.getIfPresent("${network.name}:$it") }
+                        val cachedName     = cached?.get("name")?.jsonPrimitive?.contentOrNull
+                        val cachedImageUrl = cached?.get("imageUrl")?.jsonPrimitive?.contentOrNull
+                        val meta = if ((cachedName == null || cachedImageUrl == null) && anchor != null)
+                            fetchDRepMeta(anchor) else null
+                        val name     = cachedName     ?: meta?.name
+                        val imageUrl = cachedImageUrl ?: meta?.imageUrl
+                        buildJsonObject {
+                            entry.forEach { (k, v) -> put(k, v) }
+                            put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                        }
+                    }
+                }.map { it.await() }
+            }
+
+            val resultArray = JsonArray(withMeta)
             CardanoCache.leaderboard.put(leaderboardKey, resultArray)
             call.respond(resultArray)
         }

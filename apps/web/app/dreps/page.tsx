@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepList } from "@/hooks/useDRepList"
-import { useAnchorTitlesMap, useAnchorImagesMap } from "@/hooks/useAnchorTitle"
+import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useDRepLeaderboard } from "@/hooks/useDRepLeaderboard"
 import { lovelaceToAda } from "@/lib/governance"
 import DRepAvatar from "@/components/drep/DRepAvatar"
@@ -40,12 +40,9 @@ export default function DRepsPage() {
   const { dreps, isLoading: isDrepsLoading } = useDRepList(network)
   const { entries: leaderboard, loading: leaderboardLoading } = useDRepLeaderboard(network, 5)
 
-  // Combine anchor URLs so names + images share a single fetch pass
+  // Only fetch anchor titles for the search list — leaderboard name/imageUrl come from the API.
   const anchorUrlsForSearch = nameQ.length >= 2 ? dreps.map((d) => d.anchorUrl) : []
-  const leaderboardAnchorUrls = leaderboard.map((e) => e.anchorUrl)
-  const allAnchorUrls = [...anchorUrlsForSearch, ...leaderboardAnchorUrls]
-  const namesMap  = useAnchorTitlesMap(allAnchorUrls)
-  const imagesMap = useAnchorImagesMap(leaderboardAnchorUrls)
+  const namesMap = useAnchorTitlesMap(anchorUrlsForSearch)
 
   const searchResults = nameQ
     ? dreps.filter((d) => {
@@ -216,8 +213,6 @@ export default function DRepsPage() {
                     {leaderboardLoading
                       ? [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
                       : leaderboard.map((entry, i) => {
-                          const name = entry.anchorUrl ? (namesMap.get(entry.anchorUrl) ?? null) : null
-                          const imageUrl = entry.anchorUrl ? (imagesMap.get(entry.anchorUrl) ?? null) : null
                           return (
                             <tr
                               key={entry.id}
@@ -230,15 +225,15 @@ export default function DRepsPage() {
                                   className="flex items-center gap-3 hover:text-accent-light transition-colors group"
                                 >
                                   <DRepAvatar
-                                    name={name}
-                                    imageUrl={imageUrl}
+                                    name={entry.name}
+                                    imageUrl={entry.imageUrl}
                                     credHex={entry.credHex}
                                     size="sm"
                                   />
                                   <div className="min-w-0">
-                                    {name && (
+                                    {entry.name && (
                                       <div className="font-medium text-sm truncate group-hover:text-accent-light">
-                                        {name}
+                                        {entry.name}
                                       </div>
                                     )}
                                     <CopyableId id={entry.id} />
