@@ -12,11 +12,12 @@ import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.CCContext
 import vote.tempo.cardano.GovernanceThresholds
-import vote.tempo.cardano.mapOgmiosProposal
 import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.parseCCContext
 import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
+import vote.tempo.cardano.parseProposals
+import vote.tempo.db.GovernanceActionDao
 
 /**
  * GET /governance/chain-info?network=preprod|mainnet
@@ -193,35 +194,41 @@ fun Route.governanceRoutes() {
 }
 
 /**
- * Fetch governance proposals — try parsed cache first, then raw cache, then Ogmios.
+ * Fetch governance proposals — live from Ogmios (cached) plus historical from DB.
  *
- * Fast path (cache hit): single cache lookup, no JSON parsing, no context fetches.
- * Slow path (cache miss): fetch all context caches (each cached independently), parse
- * proposals once, store result in parsedGovActions for subsequent requests.
+ * Live proposals come from parsedGovActions cache (pre-warmed by BackgroundPoller).
+ * Historical proposals (expired / enacted / dropped) come from governance_action_snapshots
+ * in PostgreSQL — these are proposals that have left Ogmios ledger state.
  *
- * parsedGovActions is invalidated by BackgroundPoller whenever raw govActions data
- * is refreshed, so parsed proposals never lag more than one polling cycle behind on-chain state.
+ * If the DB is unavailable (e.g. local dev), getHistorical() returns empty list silently.
  */
 private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> {
-    CardanoCache.parsedGovActions.getIfPresent(network.name)?.let { return it }
+    // ── Live proposals (from cache or Ogmios) ──────────────────────────────────
+    val live = CardanoCache.parsedGovActions.getIfPresent(network.name)
+        ?: run {
+            val stakeCtx   = getOrFetchDRepStakeContext(network)
+            val ccCtx      = getOrFetchCCContext(network)
+            val thresholds = getOrFetchGovernanceThresholds(network)
+            val epoch      = getOrFetchCurrentEpoch(network)
 
-    val stakeCtx   = getOrFetchDRepStakeContext(network)
-    val ccCtx      = getOrFetchCCContext(network)
-    val thresholds = getOrFetchGovernanceThresholds(network)
-    val epoch      = getOrFetchCurrentEpoch(network)
+            val raw = CardanoCache.govActions.getIfPresent(network.name)
+                ?: try {
+                    OgmiosStateQueries(network).getGovernanceProposals()
+                        .also { CardanoCache.govActions.put(network.name, it) }
+                } catch (e: Exception) {
+                    return emptyList()
+                }
 
-    val raw = CardanoCache.govActions.getIfPresent(network.name)
-        ?: try {
-            val fetched = OgmiosStateQueries(network).getGovernanceProposals()
-            CardanoCache.govActions.put(network.name, fetched)
-            fetched
-        } catch (e: Exception) {
-            return emptyList()
+            parseProposals(raw, stakeCtx, ccCtx, thresholds, epoch)
+                .also { CardanoCache.parsedGovActions.put(network.name, it) }
         }
 
-    val parsed = parseProposalsFromCache(raw, stakeCtx, ccCtx, thresholds, epoch)
-    CardanoCache.parsedGovActions.put(network.name, parsed)
-    return parsed
+    // ── Historical proposals (expired / enacted / dropped from DB) ────────────
+    val liveKeys = live.map { "${it.txHash}:${it.index}" }.toSet()
+    val historical = GovernanceActionDao.getHistorical(network.name.lowercase())
+        .filter { "${it.txHash}:${it.index}" !in liveKeys }
+
+    return live + historical
 }
 
 /**
@@ -291,21 +298,3 @@ private suspend fun getOrFetchCCContext(network: Network): CCContext {
     }
 }
 
-private fun parseProposalsFromCache(
-    raw: JsonElement,
-    stakeCtx:   DRepStakeContext,
-    ccCtx:      CCContext = CCContext.EMPTY,
-    thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
-    currentEpoch: Int = 0,
-): List<GovernanceActionDto> {
-    val array = when (raw) {
-        is JsonArray  -> raw
-        is JsonObject -> raw["governanceProposals"]?.jsonArray
-            ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
-            ?: return emptyList()
-        else          -> return emptyList()
-    }
-    return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch) }.getOrNull()
-    }
-}
