@@ -12,6 +12,7 @@ data class VoteEntry(
     val vote: String,         // "yes" | "no" | "abstain"
     val votingPower: Long = 0L,  // lovelace (DRep + SPO from Koios; 0 for CC)
     val anchorUrl: String? = null,    // DRep CIP-119 registration anchor — for name resolution
+    val rationaleUrl: String? = null, // per-vote anchor URL (CIP-100) — voter's rationale for this vote
     val memberName: String? = null,   // CC member display name — resolved via hot→cold credential mapping
     val poolName: String? = null,     // SPO pool display name — resolved from Koios meta_json.name
 )
@@ -270,6 +271,7 @@ fun parseProposals(
     thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
     currentEpoch: Int = 0,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
+    rationalesMap: Map<String, Map<String, String>> = emptyMap(),
 ): List<GovernanceActionDto> {
     val array: JsonArray = when (raw) {
         is JsonArray  -> raw
@@ -279,7 +281,7 @@ fun parseProposals(
         else          -> return emptyList()
     }
     return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch, poolInfoMap) }.getOrNull()
+        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch, poolInfoMap, rationalesMap) }.getOrNull()
     }
 }
 
@@ -291,6 +293,7 @@ fun mapOgmiosProposal(
     thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
     currentEpoch: Int = 0,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
+    rationalesMap: Map<String, Map<String, String>> = emptyMap(),
 ): GovernanceActionDto? = runCatching {
     val proposal = obj["proposal"]?.jsonObject ?: return null
     val txHash = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return null
@@ -312,10 +315,11 @@ fun mapOgmiosProposal(
     // votes is an array of { issuer: { role, from, id }, vote: "yes"|"no"|"abstain" }
     val votes = obj["votes"]?.jsonArray ?: JsonArray(emptyList())
 
+    val rationaleForProposal = rationalesMap["$txHash#$index"] ?: emptyMap()
     val drepVotes  = aggregateDRepVotes(votes, stakeCtx)
     val spoVotes   = aggregateSPOVotes(votes, poolInfoMap)
     val ccVotes    = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
-    val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx, poolInfoMap)
+    val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx, poolInfoMap, rationaleForProposal)
 
     val dtoDetails = extractActionDetails(actionType, action, proposal)
     val spoVoteCounts = VoteCounts(spoVotes.yes, spoVotes.no, spoVotes.abstain)
@@ -472,6 +476,7 @@ private fun extractVoteEntries(
     stakeCtx: DRepStakeContext,
     ccCtx: CCContext = CCContext.EMPTY,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
+    rationaleMap: Map<String, String> = emptyMap(),
 ): List<VoteEntry> =
     votes.mapNotNull { entry ->
         val obj  = entry.jsonObject
@@ -489,13 +494,14 @@ private fun extractVoteEntries(
             "spo"  -> poolInfoMap[id]?.votingPower ?: 0L
             else   -> 0L
         }
-        val anchorUrl  = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
-        val memberName = if (shortRole == "cc") {
+        val anchorUrl   = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
+        val rationaleUrl = rationaleMap[id]
+        val memberName  = if (shortRole == "cc") {
             val hex = when (id.length) { 58 -> id.substring(2); else -> id }
             ccCtx.hotToName[hex] ?: ccCtx.hotToName[id]
         } else null
-        val poolName   = if (shortRole == "spo") poolInfoMap[id]?.name else null
-        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl, memberName = memberName, poolName = poolName)
+        val poolName    = if (shortRole == "spo") poolInfoMap[id]?.name else null
+        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl, rationaleUrl = rationaleUrl, memberName = memberName, poolName = poolName)
     }
 
 private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {

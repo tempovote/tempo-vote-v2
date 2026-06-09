@@ -87,4 +87,14 @@ object CardanoCache {
         .expireAfterWrite(1, TimeUnit.HOURS)
         .maximumSize(10_000)
         .build<String, PoolInfo>()      // key: "NETWORK:bech32PoolId" (pool1...)
+
+    /**
+     * Per-proposal vote rationale URLs fetched from Koios proposal_votes.
+     * Long TTL: rationale anchors are immutable once submitted.
+     * Inner map key: credentialHex (DRep/CC) or bech32 pool ID (SPO) → rationale URL.
+     */
+    val proposalRationales = Caffeine.newBuilder()
+        .expireAfterWrite(24, TimeUnit.HOURS)
+        .maximumSize(500)
+        .build<String, Map<String, String>>()  // key: "NETWORK:txHash#index"
 }
