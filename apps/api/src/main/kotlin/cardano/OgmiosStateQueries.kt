@@ -86,6 +86,12 @@ private fun bech32Encode(hrp: String, words: List<Int>): String {
     return hrp + "1" + combined.joinToString("") { BECH32_ALPHABET[it].toString() }
 }
 
+/** Convert a 28-byte hex pool ID to bech32 "pool1..." format. */
+fun poolIdHexToBech32(hexId: String): String {
+    val bytes = hexId.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    return bech32Encode("pool", bytesToBech32Words(bytes))
+}
+
 /**
  * Construct a bech32 stake address from a 28-byte credential hex.
  * Assumes the DRep credential is the same as the wallet's stake key credential —

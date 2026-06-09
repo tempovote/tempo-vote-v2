@@ -101,7 +101,9 @@ function VoteTable({
 
             const resolvedName = role === "cc"
               ? (v.memberName ?? undefined)
-              : (v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined)
+              : role === "spo"
+                ? (v.poolName ?? undefined)
+                : (v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined)
             const nameLoading  = role === "drep" && v.anchorUrl && resolvedName === undefined
 
             return (
