@@ -174,6 +174,14 @@ class OgmiosStateQueries(private val network: Network) {
     companion object {
         private val client = HttpClient(CIO) {
             install(ContentNegotiation) { json() }
+            engine {
+                // Disable the CIO engine's own request timeout so it does not race against
+                // the per-query withTimeout() in queryRaw(). Without this, CIO fires its
+                // ~15 s socket-idle timeout while Ogmios is still processing large responses
+                // (e.g. delegateRepresentatives, 1.5 MB on mainnet), killing the request
+                // before withTimeout(HEAVY_QUERY_TIMEOUT_MS) even gets a chance to fire.
+                requestTimeout = 0
+            }
         }
         private val json = Json { ignoreUnknownKeys = true }
     }
