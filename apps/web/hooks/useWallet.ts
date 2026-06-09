@@ -157,8 +157,21 @@ async function fetchDRepStatus(
 
     if (signal.aborted) return
 
-    // Registered DRep — delegation check not needed
+    // Registered DRep — also check delegation to detect whether they've self-delegated.
+    // Without this, delegatedDrep would always be null for registered DReps, causing the
+    // self-delegate CTA to appear even after they've already delegated their own stake.
     if (isDrepRegistered) {
+      if (step2Res?.ok) {
+        const data = await step2Res.json().catch(() => null)
+        if (data != null && !signal.aborted) {
+          const drepData = data?.delegatedDrep
+          const delegatedDrep: DelegatedDrep | null = drepData
+            ? { id: drepData.id, name: drepData.name ?? null }
+            : null
+          setDRepStatus({ isDrepRegistered: true, drepName, delegatedDrep })
+          return
+        }
+      }
       setDRepStatus({ isDrepRegistered: true, drepName, delegatedDrep: null })
       return
     }
@@ -354,12 +367,24 @@ export function useWallet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /** Re-fetch DRep registration + delegation status. Call after a TX that changes delegation. */
+  const refreshDRepStatus = useCallback(async () => {
+    const state = useWalletStore.getState()
+    if (!state.hasCip95 || !state.drepKey) return
+    const drepId  = state.drepKey.dRepIDCip105
+    const network = state.selectedNetwork
+    const rewardAddress = state.rewardAddress
+    const ctrl = new AbortController()
+    await fetchDRepStatus(drepId, rewardAddress, network, store.setDRepStatus, store.setDRepStatusError, ctrl.signal)
+  }, [store])
+
   return {
     ...store,
     connect,
     disconnect,
     autoReconnect,
     reauthenticate,
+    refreshDRepStatus,
     availableWallets: getAvailableWallets(),
   }
 }
