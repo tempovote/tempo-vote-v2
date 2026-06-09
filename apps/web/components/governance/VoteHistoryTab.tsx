@@ -3,6 +3,7 @@
 import { useState } from "react"
 import type { VoteEntry } from "@tempo/types"
 import { credentialHexToDrepId, lovelaceToAda } from "@/lib/governance"
+import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useRationale } from "@/hooks/useRationale"
 import type { RationaleContent } from "@/hooks/useRationale"
 import { marked } from "marked"
@@ -307,10 +308,12 @@ function VoteTable({
   votes,
   role,
   side,
+  namesMap,
 }: {
   votes: VoteEntry[]
   role: RoleTab
   side: "yes" | "no-abstain"
+  namesMap: ReadonlyMap<string, string>
 }) {
   const filtered = votes
     .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
@@ -356,12 +359,14 @@ function VoteTable({
                             : "text-success"
             const voteLabel = isNo ? "NO" : isAbstain ? "ABS" : "YES"
 
+            // Server-side voterName (bypasses CORS) takes priority;
+            // fall back to browser-fetched name for CORS-friendly hosts.
             const resolvedName = role === "cc"
               ? (v.memberName ?? undefined)
               : role === "spo"
                 ? (v.poolName ?? undefined)
-                : (v.voterName ?? undefined)
-            const nameLoading  = false
+                : (v.voterName ?? (v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined))
+            const nameLoading  = role === "drep" && v.anchorUrl && !v.voterName && resolvedName === undefined
 
             return (
               <div key={i} className="grid grid-cols-[1fr_auto] gap-2 items-start py-2">
@@ -411,6 +416,12 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
 
   const roleVotes = votes.filter((v) => v.role === role)
 
+  // Browser-fetch names for DReps without a server-side voterName (CORS-friendly hosts resolve fine)
+  const drepAnchorUrls = votes
+    .filter((v) => v.role === "drep" && v.anchorUrl && !v.voterName)
+    .map((v) => v.anchorUrl!)
+  const namesMap = useAnchorTitlesMap(drepAnchorUrls)
+
   return (
     <div className="space-y-4">
       {/* Role sub-tabs */}
@@ -440,9 +451,9 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
         </p>
       ) : (
         <div className="flex gap-5">
-          <VoteTable votes={roleVotes} role={role} side="yes" />
+          <VoteTable votes={roleVotes} role={role} side="yes" namesMap={namesMap} />
           <div className="w-px bg-border-subtle shrink-0" />
-          <VoteTable votes={roleVotes} role={role} side="no-abstain" />
+          <VoteTable votes={roleVotes} role={role} side="no-abstain" namesMap={namesMap} />
         </div>
       )}
     </div>
