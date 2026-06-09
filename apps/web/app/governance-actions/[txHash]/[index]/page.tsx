@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useState, use } from "react"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
 import { useMyVote, writeOptimisticVote, type MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
+import { useGovernanceAction } from "@/hooks/useGovernanceAction"
 import { ActionIdChip } from "@/components/governance/ActionIdChip"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { RationaleEditor } from "@/components/governance/RationaleEditor"
-import { GovernanceActionSchema, type GovernanceAction } from "@tempo/types"
+import { type GovernanceAction } from "@tempo/types"
 import { resolveAnchorUrl, getActionTypeLabel } from "@/lib/governance"
 import { getJwt, authHeader } from "@/lib/api"
 import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
@@ -406,38 +407,13 @@ export default function GovernanceActionDetailPage({
 }: {
   params: Promise<{ txHash: string; index: string }>
 }) {
-  const { txHash, index } = use(params)
+  const { txHash, index: indexStr } = use(params)
+  const index = parseInt(indexStr, 10)
   const network = useWalletStore((s) => s.selectedNetwork)
 
-  const [action, setAction] = useState<GovernanceAction | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string | null>(null)
+  const { action, loading, error: fetchError } = useGovernanceAction(network, txHash, index)
 
   const anchorTitle = useAnchorTitle(action?.anchorUrl ?? null)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setFetchError(null)
-    setAction(null)
-    fetch(`${API_URL}/governance-actions/${txHash}/${index}?network=${network}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then((data) => {
-        if (cancelled) return
-        const parsed = GovernanceActionSchema.safeParse(data)
-        if (parsed.success) setAction(parsed.data)
-        else setFetchError("Dữ liệu không hợp lệ từ server")
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setFetchError(err instanceof Error ? err.message : "Không thể tải governance action")
-      })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [txHash, index, network])
 
   const heading = anchorTitle ?? action?.type ?? "Governance Action"
 

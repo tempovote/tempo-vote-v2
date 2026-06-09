@@ -34,6 +34,32 @@ async function fetchActions(network: string, typeFilter?: string): Promise<Gover
   return parsed.data
 }
 
+/**
+ * Search all cached GA list entries for the given network to find a specific proposal.
+ * Tries "all" (unfiltered) first — the most common case when navigating from the list page.
+ * Falls back to scanning type-filtered cache entries (e.g. user came from a filtered view).
+ */
+export function findInListCache(
+  network: string,
+  txHash: string,
+  index: number,
+): GovernanceAction | null {
+  // "all" key first — avoids iterating full map in the common case
+  const allKey = `${network}:all`
+  const allEntry = gaCache.get(allKey)
+  if (allEntry) {
+    const found = allEntry.data.find((a) => a.txHash === txHash && a.index === index)
+    if (found) return found
+  }
+  // Scan remaining entries for this network (type-filtered caches)
+  for (const [key, entry] of gaCache.entries()) {
+    if (key === allKey || !key.startsWith(`${network}:`)) continue
+    const found = entry.data.find((a) => a.txHash === txHash && a.index === index)
+    if (found) return found
+  }
+  return null
+}
+
 interface UseGovernanceActionsResult {
   actions: GovernanceAction[]
   isLoading: boolean
