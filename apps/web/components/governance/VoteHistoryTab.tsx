@@ -317,6 +317,13 @@ function VoteTable({
                   <CopyableId id={v.id} role={role} name={resolvedName} />
                 )}
                 <div className="flex items-center gap-1.5 justify-end shrink-0">
+                  {v.rationaleUrl && (
+                    <RationaleButton
+                      rationaleUrl={v.rationaleUrl}
+                      vote={v.vote}
+                      voterName={resolvedName}
+                    />
+                  )}
                   {v.votingPower > 0 && (
                     <span className="text-[11px] text-text-muted tabular-nums">
                       {lovelaceToAda(v.votingPower)}₳
@@ -325,13 +332,6 @@ function VoteTable({
                   <span className={`text-[11px] font-bold ${voteCls} w-7 text-right`}>
                     {voteLabel}
                   </span>
-                  {v.rationaleUrl && (
-                    <RationaleButton
-                      rationaleUrl={v.rationaleUrl}
-                      vote={v.vote}
-                      voterName={resolvedName}
-                    />
-                  )}
                 </div>
               </div>
             )
