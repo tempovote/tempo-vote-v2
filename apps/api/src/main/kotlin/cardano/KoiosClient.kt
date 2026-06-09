@@ -136,6 +136,62 @@ suspend fun buildRationalesMap(raw: JsonElement, network: Network): Map<String, 
     return result
 }
 
+data class DRepKoiosStats(
+    val liveVotingPower: Long,
+    val delegatorCount: Int,
+    val votedCount: Int,
+)
+
+/**
+ * Fetch DRep live stats from Koios in 2 calls:
+ *  1. drep_info       → liveVotingPower (amount field)
+ *  2. drep_delegators → delegatorCount via Content-Range header (limit=0, count=exact)
+ *  3. drep_votes      → votedCount (paginated, limit=1000)
+ * Returns null on total failure so callers can fall back gracefully.
+ */
+suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStats? {
+    val base = koiosBaseUrl(network)
+    return runCatching {
+        // ── 1. live voting power from drep_info ───────────────────────────────
+        val infoResp = koiosHttp.get("$base/drep_info") {
+            parameter("_drep_ids", "{$drepId}")
+        }
+        val infoBody: JsonArray = infoResp.body()
+        val liveVotingPower = infoBody.firstOrNull()?.jsonObject
+            ?.get("amount")?.jsonPrimitive?.longOrNull ?: 0L
+
+        // ── 2. delegator count via Content-Range header (zero data rows) ──────
+        val delegResp = koiosHttp.get("$base/drep_delegators") {
+            parameter("_drep_id", drepId)
+            parameter("limit", 0)
+            header("Prefer", "count=exact")
+        }
+        // Content-Range: */N  or  0-0/N
+        val contentRange = delegResp.headers["Content-Range"] ?: ""
+        val delegatorCount = contentRange.substringAfterLast("/").toIntOrNull() ?: 0
+
+        // ── 3. voted count from drep_votes (paginate until done) ──────────────
+        var votedCount = 0
+        var offset = 0
+        val limit = 1000
+        while (true) {
+            val votesResp = koiosHttp.get("$base/drep_votes") {
+                parameter("_drep_id", drepId)
+                parameter("limit",  limit)
+                parameter("offset", offset)
+            }
+            val page: JsonArray = votesResp.body()
+            votedCount += page.size
+            if (page.size < limit) break
+            offset += limit
+        }
+
+        DRepKoiosStats(liveVotingPower, delegatorCount, votedCount)
+    }.onFailure { e ->
+        logger.warn { "Koios DRep stats fetch failed for $drepId [$network]: ${e.message}" }
+    }.getOrNull()
+}
+
 /**
  * Scan raw Ogmios governanceProposals JSON and collect all unique SPO pool IDs.
  * Ogmios returns pool IDs in bech32 format (pool1...).

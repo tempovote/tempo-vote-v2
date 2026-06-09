@@ -20,8 +20,11 @@ import vote.tempo.cardano.actionTypeLabel
 import vote.tempo.cardano.credentialHexToStakeAddress
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
+import vote.tempo.cardano.fetchDRepKoiosStats
 import vote.tempo.cardano.networkFromString
+import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.db.DrepVotes
+import vote.tempo.db.GovernanceActionSnapshots
 
 private val httpClient = HttpClient(CIO)
 
@@ -156,6 +159,68 @@ fun Route.drepRoutes() {
                 put("page", page)
                 put("limit", limit)
             })
+        }
+
+        // GET /dreps/{drepId}/stats?network=mainnet
+        // Returns live DRep activity stats: voting power, delegators, influence, voted %.
+        // Cold fetch: 2-3 Koios calls (~1-2s). Cached 15 min per DRep.
+        get("/{drepId}/stats") {
+            val drepId = call.parameters["drepId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "drepId required"))
+            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+
+            val credentialHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid drepId"))
+            val cacheKey = "${network.name}:$credentialHex"
+
+            CardanoCache.drepStats.getIfPresent(cacheKey)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
+            // ── Active voting power + influence from Ogmios cache ─────────────
+            val stakeCtx = CardanoCache.drepList.getIfPresent(network.name)
+                ?.let { runCatching { parseDRepStakeContext(it) }.getOrNull() }
+            val activeVotingPower = stakeCtx?.stakeMap?.get(credentialHex) ?: 0L
+            val influencePower = if ((stakeCtx?.totalActiveDRepStake ?: 0L) > 0L)
+                activeVotingPower.toDouble() / stakeCtx!!.totalActiveDRepStake.toDouble() * 100.0
+            else 0.0
+
+            // ── Total GA count from DB snapshot + live Ogmios ─────────────────
+            val dbGaCount = runCatching {
+                transaction {
+                    GovernanceActionSnapshots.selectAll()
+                        .where { GovernanceActionSnapshots.network eq network.name.lowercase() }
+                        .count()
+                        .toInt()
+                }
+            }.getOrDefault(0)
+            val liveGaCount = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
+            // DB already includes live proposals (BackgroundPoller syncs them), avoid double-count
+            val totalGaCount = dbGaCount.coerceAtLeast(liveGaCount)
+
+            // ── Live stats from Koios ──────────────────────────────────────────
+            val koios = fetchDRepKoiosStats(drepId, network)
+            val liveVotingPower = koios?.liveVotingPower ?: activeVotingPower
+            val delegatorCount  = koios?.delegatorCount  ?: 0
+            val votedCount      = koios?.votedCount      ?: 0
+
+            val votedPercent    = if (totalGaCount > 0) votedCount.toDouble() / totalGaCount * 100.0 else 0.0
+            val notVotedPercent = (100.0 - votedPercent).coerceAtLeast(0.0)
+
+            val result = buildJsonObject {
+                put("activeVotingPower", activeVotingPower)
+                put("liveVotingPower",   liveVotingPower)
+                put("delegatorCount",    delegatorCount)
+                put("influencePower",    influencePower)
+                put("votedCount",        votedCount)
+                put("totalGaCount",      totalGaCount)
+                put("votedPercent",      votedPercent)
+                put("notVotedPercent",   notVotedPercent)
+            }
+
+            if (koios != null) CardanoCache.drepStats.put(cacheKey, result)
+            call.respond(result)
         }
 
         // GET /dreps/{drepId}?network=mainnet

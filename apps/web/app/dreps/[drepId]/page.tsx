@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
+import { useDRepStats } from "@/hooks/useDRepStats"
 import { useDRepVotingHistory } from "@/hooks/useDRepVotingHistory"
 import { useCommunity } from "@/hooks/useCommunity"
 import { useWallet } from "@/hooks/useWallet"
@@ -236,6 +237,37 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+// ─── Stat Cell ───────────────────────────────────────────────────────────────
+
+function StatCell({
+  label,
+  value,
+  loading,
+  fallback = "—",
+  highlight = false,
+  danger = false,
+}: {
+  label: string
+  value: string | null
+  loading: boolean
+  fallback?: string
+  highlight?: boolean
+  danger?: boolean
+}) {
+  return (
+    <div className="px-3 py-2.5 space-y-0.5">
+      <p className="text-[11px] text-text-muted leading-tight">{label}</p>
+      {loading && !value ? (
+        <div className="h-5 w-20 bg-bg-elevated rounded animate-pulse mt-1" />
+      ) : (
+        <p className={`text-sm font-bold leading-tight ${danger ? "text-danger" : highlight ? "text-accent-light" : "text-text-primary"}`}>
+          {value ?? fallback}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ─── Delegate Modal ───────────────────────────────────────────────────────────
 
 function DelegateModal({
@@ -416,8 +448,12 @@ export default function DRepProfilePage({
   const { submitTx } = useTx()
 
   const { profile, isLoading, isLoadingMeta, error } = useDRepProfile(drepId, network)
-  const [votePage, setVotePage] = useState(1)
   const canonicalId = profile?.id ?? drepId
+  const { stats: drepStats, loading: statsLoading } = useDRepStats(
+    profile?.isRegistered ? canonicalId : null,
+    network,
+  )
+  const [votePage, setVotePage] = useState(1)
   const { votes, total, limit, isLoading: isLoadingVotes, error: voteError } =
     useDRepVotingHistory(canonicalId, network, votePage)
 
@@ -571,26 +607,46 @@ export default function DRepProfilePage({
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="bg-bg-secondary rounded-xl p-3 border border-border-subtle space-y-0.5">
-          {profile.votingPower != null && profile.votingPower > 0 ? (
-            <>
-              <p className="text-xs text-text-muted">Active Voting Power</p>
-              <p className="text-lg font-bold text-text-primary">
-                {formatAda(profile.votingPower)} ₳
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-xs text-text-muted">Active Voting Power</p>
-              <p className="text-lg font-bold text-text-primary">
-                {profile.isRegistered ? "0 ₳" : "—"}
-              </p>
-              {profile.isRegistered && (
-                <p className="text-[10px] text-text-muted">chưa có delegator</p>
-              )}
-            </>
-          )}
+        {/* Stats grid */}
+        <div className="bg-bg-secondary rounded-xl border border-border-subtle divide-y divide-border-subtle">
+          <div className="grid grid-cols-3 divide-x divide-border-subtle">
+            <StatCell
+              label="Active Voting Power"
+              value={drepStats ? `${formatAda(drepStats.activeVotingPower)} ₳` : profile.votingPower != null ? `${formatAda(profile.votingPower)} ₳` : null}
+              loading={statsLoading && !drepStats}
+              fallback={profile.isRegistered ? "0 ₳" : "—"}
+            />
+            <StatCell
+              label="Live Voting Power"
+              value={drepStats ? `${formatAda(drepStats.liveVotingPower)} ₳` : null}
+              loading={statsLoading}
+            />
+            <StatCell
+              label="Delegators"
+              value={drepStats ? drepStats.delegatorCount.toLocaleString() : null}
+              loading={statsLoading}
+            />
+          </div>
+          <div className="grid grid-cols-3 divide-x divide-border-subtle">
+            <StatCell
+              label="Influence Power"
+              value={drepStats ? `${drepStats.influencePower.toFixed(2)}%` : null}
+              loading={statsLoading}
+              highlight
+            />
+            <StatCell
+              label="Voted"
+              value={drepStats ? `${drepStats.votedPercent.toFixed(2)}%` : null}
+              loading={statsLoading}
+              highlight
+            />
+            <StatCell
+              label="Not Voted"
+              value={drepStats ? `${drepStats.notVotedPercent.toFixed(2)}%` : null}
+              loading={statsLoading}
+              danger={!!drepStats && drepStats.notVotedPercent > 10}
+            />
+          </div>
         </div>
 
         {/* CTA buttons */}
