@@ -140,13 +140,18 @@ data class DRepKoiosStats(
     val liveVotingPower: Long,
     val delegatorCount: Int,
     val votedCount: Int,
+    val totalGaCount: Int,
 )
 
 /**
- * Fetch DRep live stats from Koios in 2 calls:
+ * Fetch DRep live stats from Koios in 4 calls:
  *  1. drep_info       → liveVotingPower (amount field)
  *  2. drep_delegators → delegatorCount via Content-Range header (limit=0, count=exact)
  *  3. drep_votes      → votedCount (paginated, limit=1000)
+ *  4. proposal_list   → totalGaCount via Content-Range header (accurate denominator for voted%)
+ *
+ * Using proposal_list for the denominator avoids inflated voted% when our DB snapshot
+ * only covers a fraction of the chain's historical governance actions.
  * Returns null on total failure so callers can fall back gracefully.
  */
 suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStats? {
@@ -166,9 +171,8 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
             parameter("limit", 0)
             header("Prefer", "count=exact")
         }
-        // Content-Range: */N  or  0-0/N
-        val contentRange = delegResp.headers["Content-Range"] ?: ""
-        val delegatorCount = contentRange.substringAfterLast("/").toIntOrNull() ?: 0
+        val delegatorCount = delegResp.headers["Content-Range"]
+            ?.substringAfterLast("/")?.toIntOrNull() ?: 0
 
         // ── 3. voted count from drep_votes (paginate until done) ──────────────
         var votedCount = 0
@@ -186,7 +190,15 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
             offset += limit
         }
 
-        DRepKoiosStats(liveVotingPower, delegatorCount, votedCount)
+        // ── 4. total GA count from proposal_list (accurate chain-wide denominator) ──
+        val proposalResp = koiosHttp.get("$base/proposal_list") {
+            parameter("limit", 0)
+            header("Prefer", "count=exact")
+        }
+        val totalGaCount = proposalResp.headers["Content-Range"]
+            ?.substringAfterLast("/")?.toIntOrNull() ?: votedCount
+
+        DRepKoiosStats(liveVotingPower, delegatorCount, votedCount, totalGaCount)
     }.onFailure { e ->
         logger.warn { "Koios DRep stats fetch failed for $drepId [$network]: ${e.message}" }
     }.getOrNull()

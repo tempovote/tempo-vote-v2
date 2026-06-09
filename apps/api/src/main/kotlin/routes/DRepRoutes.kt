@@ -195,15 +195,17 @@ fun Route.drepRoutes() {
                         .toInt()
                 }
             }.getOrDefault(0)
-            val liveGaCount = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
-            // DB already includes live proposals (BackgroundPoller syncs them), avoid double-count
-            val totalGaCount = dbGaCount.coerceAtLeast(liveGaCount)
-
             // ── Live stats from Koios ──────────────────────────────────────────
-            val koios = fetchDRepKoiosStats(drepId, network)
+            // Koios only accepts CIP-105 bech32 (drep1y...) — convert from any input format.
+            val cip105Id = credentialHexToDrepIdCip105(credentialHex) ?: drepId
+            val koios = fetchDRepKoiosStats(cip105Id, network)
             val liveVotingPower = koios?.liveVotingPower ?: activeVotingPower
             val delegatorCount  = koios?.delegatorCount  ?: 0
             val votedCount      = koios?.votedCount      ?: 0
+            // Use Koios chain-wide total as denominator — our DB snapshot may be partial.
+            // Fall back to DB count only when Koios call failed entirely.
+            val liveGaCount  = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
+            val totalGaCount = koios?.totalGaCount ?: dbGaCount.coerceAtLeast(liveGaCount)
 
             val votedPercent    = if (totalGaCount > 0) votedCount.toDouble() / totalGaCount * 100.0 else 0.0
             val notVotedPercent = (100.0 - votedPercent).coerceAtLeast(0.0)
