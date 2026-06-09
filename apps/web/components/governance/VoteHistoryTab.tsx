@@ -9,6 +9,7 @@ type RoleTab = "drep" | "cc" | "spo"
 
 const ROLE_LABELS: Record<RoleTab, string> = { drep: "DRep", cc: "CC", spo: "SPO" }
 
+
 function CopyableId({ id, role, name }: { id: string; role: RoleTab; name?: string }) {
   const [copied, setCopied] = useState(false)
 
@@ -58,20 +59,26 @@ function VoteTable({
     .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
     .sort((a, b) => b.votingPower - a.votingPower)
 
-  const headerCls = side === "yes"
-    ? "text-success/70"
-    : "text-danger/70"
-
   const emptyLabel = side === "yes" ? "Không có YES" : "Không có NO / ABSTAIN"
 
   return (
     <div className="flex-1 min-w-0">
       {/* Column header */}
-      <div className={`text-xs font-semibold mb-2 ${headerCls}`}>
-        {side === "yes"
-          ? `YES · ${filtered.length}`
-          : `NO + ABSTAIN · ${filtered.length}`}
-      </div>
+      {side === "yes" ? (
+        <div className="text-xs font-semibold mb-2 text-success/70">
+          YES · {filtered.length}
+        </div>
+      ) : (
+        <div className="text-xs font-semibold mb-2 flex items-center gap-2">
+          <span className="text-danger/70">
+            NO · {votes.filter((v) => v.vote === "no").length}
+          </span>
+          <span className="text-text-muted/40">|</span>
+          <span className="text-text-muted/70">
+            ABSTAIN · {votes.filter((v) => v.vote === "abstain").length}
+          </span>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <p className="text-xs text-text-muted py-3 text-center">{emptyLabel}</p>
@@ -92,7 +99,9 @@ function VoteTable({
                             : "text-success"
             const voteLabel = isNo ? "NO" : isAbstain ? "ABS" : "YES"
 
-            const resolvedName = v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined
+            const resolvedName = role === "cc"
+              ? (v.memberName ?? undefined)
+              : (v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined)
             const nameLoading  = role === "drep" && v.anchorUrl && resolvedName === undefined
 
             return (
