@@ -13,6 +13,8 @@ import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
 import vote.tempo.cardano.fetchPoolInfo
+import vote.tempo.cardano.fetchDelegatorCount
+import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.buildRationalesMap
 import vote.tempo.cardano.parseProposals
 import vote.tempo.db.GovernanceActionDao
@@ -103,11 +105,27 @@ private suspend fun pollNetwork(network: Network) {
             // Persist snapshot to DB — marks disappeared proposals with final status
             // so the list endpoint can serve a complete history (expired / enacted / dropped).
             GovernanceActionDao.sync(parsed, network.name.lowercase(), epoch)
+
+            // Pre-warm delegator counts for the top 200 DReps by active voting power.
+            // Called sequentially (not concurrently) so we never burst Koios.
+            // Results are stored in CardanoCache.drepDelegatorCounts and served to the
+            // leaderboard endpoint — no Koios calls needed at request time.
+            val delegCounts = mutableMapOf<String, Int>()
+            val top200 = stakeCtx.stakeMap.entries
+                .sortedByDescending { it.value }
+                .take(200)
+            for ((credHex, _) in top200) {
+                val cip105Id = credentialHexToDrepIdCip105(credHex) ?: continue
+                delegCounts[credHex] = fetchDelegatorCount(cip105Id, network)
+            }
+            CardanoCache.drepDelegatorCounts.put(network.name, delegCounts)
+            // Invalidate leaderboard cache so next request uses fresh delegator counts
+            CardanoCache.leaderboard.invalidateAll()
         }
         // Success — reset backoff
         consecutiveFailures.remove(network)
         nextPollTime.remove(network)
-        logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions + DB sync" }
+        logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions + delegator counts + DB sync" }
     }.onFailure { e ->
         val failures = (consecutiveFailures[network] ?: 0) + 1
         consecutiveFailures[network] = failures
