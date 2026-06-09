@@ -234,26 +234,24 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
         }
 
         "treasuryWithdrawals" -> buildJsonObject {
-            val withdrawals = action["withdrawals"]?.jsonArray ?: JsonArray(emptyList())
+            // Ogmios: withdrawals is a JsonObject { stakeAddress → { ada: { lovelace: N } } }
+            val withdrawalsObj = action["withdrawals"]?.jsonObject ?: JsonObject(emptyMap())
             put("withdrawals", buildJsonArray {
-                for (w in withdrawals) {
-                    val wObj = w.jsonObject
-                    // stake address: credential hash
-                    val credHash = wObj["stake"]?.jsonObject
-                        ?.get("credential")?.jsonObject
-                        ?.get("hash")?.jsonPrimitive?.contentOrNull
-                    val lovelace = wObj["ada"]?.jsonObject?.get("lovelace")?.jsonPrimitive?.longOrNull
-                        ?: wObj["value"]?.jsonObject?.let { extractLovelace(it) }
-                        ?: 0L
-                    if (credHash != null) {
-                        add(buildJsonObject {
-                            put("stakeCredential", credHash)
-                            put("lovelace", lovelace)
-                        })
-                    }
+                for ((stakeAddress, valueEl) in withdrawalsObj) {
+                    val lovelace = runCatching {
+                        val v = valueEl.jsonObject
+                        v["ada"]?.jsonObject?.get("lovelace")?.jsonPrimitive?.longOrNull
+                            ?: v["lovelace"]?.jsonPrimitive?.longOrNull
+                            ?: 0L
+                    }.getOrDefault(0L)
+                    add(buildJsonObject {
+                        put("stakeCredential", stakeAddress)
+                        put("lovelace", lovelace)
+                    })
                 }
             })
-            action["guardrails"]?.let { put("guardrailsHash", it) }
+            action["guardrails"]?.jsonObject?.get("hash")?.jsonPrimitive?.contentOrNull
+                ?.let { put("guardrailsHash", it) }
             addPrevActionId(this, action)
         }
 
