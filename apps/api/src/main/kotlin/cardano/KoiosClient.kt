@@ -59,7 +59,8 @@ suspend fun fetchPoolInfo(bech32PoolIds: List<String>, network: Network): Map<St
         for (item in body) {
             val obj      = item.jsonObject
             val bech32Id = obj["pool_id_bech32"]?.jsonPrimitive?.contentOrNull ?: continue
-            val name     = obj["meta_json"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+            // meta_json may be JsonNull (no pool metadata) — cast safely to avoid IllegalArgumentException
+            val name     = (obj["meta_json"] as? JsonObject)?.get("name")?.jsonPrimitive?.contentOrNull
             val power    = obj["voting_power"]?.jsonPrimitive?.longOrNull ?: 0L
             val info     = PoolInfo(name = name, votingPower = power)
             result[bech32Id] = info
