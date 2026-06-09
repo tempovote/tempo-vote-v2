@@ -9,7 +9,8 @@ data class VoteEntry(
     val id: String,           // credential hex for DRep/CC; poolId for SPO
     val vote: String,         // "yes" | "no" | "abstain"
     val votingPower: Long = 0L,  // lovelace (DRep only; 0 for CC/SPO)
-    val anchorUrl: String? = null, // DRep CIP-119 registration anchor — for name resolution
+    val anchorUrl: String? = null,    // DRep CIP-119 registration anchor — for name resolution
+    val memberName: String? = null,   // CC member display name — resolved via hot→cold credential mapping
 )
 
 @Serializable
@@ -76,8 +77,25 @@ data class VoteCounts(
     val total: Int get() = yes + no + abstain
 }
 
-/** Parsed CC context from `queryLedgerState/constitutionalCommittee`. */
-data class CCContext(val activeMembers: Int, val quorum: Double) {
+// Hardcoded CC cold-credential → member name. Keys are raw 28-byte hex (56 chars, no CIP-129 prefix).
+// Cardanoscan shows cold creds with a 1-byte CIP-129 prefix (0x12 = key, 0x13 = script) — strip it to get the key here.
+// Update manually when CC membership changes.
+private val CC_COLD_NAMES: Map<String, String> = mapOf(
+    "16feefc225e06f75a3c917f4aa50acffde7631ea0355721f2ac12542" to "Cardano Curia",
+    "1980dbf1ad624b0cb5410359b5ab14d008561994a6c2b6c53fabec00" to "Tingvard",
+    "84aebcfd3e00d0f87af918fc4b5e00135f407e379893df7e7d392c6a" to "Eastern Cardano Council",
+    "9752e4306e5ae864441d21064f791174c8b626199b8e7a45f9e03b45" to "Ace Alliance",
+    "9cc3f387623f45dae6a68b7096b0c2e403d8601a82dc40221ead41e2" to "Cardano Japan Council",
+    "13493790d9b03483a1e1e684ea4faf1ee48a58f402574e7f2246f4d4" to "Philuplc",
+    "dc0d6ef49590eb6880a50a00adde17596e6d76f7159572fa1ff85f2a" to "KtorZ",
+)
+
+/**
+ * Parsed CC context from `queryLedgerState/constitutionalCommittee`.
+ * Also carries a runtime hot-credential → member-name map built from CC_COLD_NAMES
+ * so vote entries can be annotated with display names without an extra lookup.
+ */
+data class CCContext(val activeMembers: Int, val quorum: Double, val hotToName: Map<String, String> = emptyMap()) {
     companion object { val EMPTY = CCContext(0, 0.0) }
 }
 
@@ -155,15 +173,52 @@ fun parseCCContext(raw: JsonElement): CCContext {
     val obj = raw as? JsonObject ?: return CCContext.EMPTY
     val members = obj["members"]?.jsonArray ?: return CCContext.EMPTY
 
-    val activeMembers = members.count { entry ->
+    var activeMembers = 0
+    val hotToName = mutableMapOf<String, String>()
+
+    for (entry in members) {
         val member = entry.jsonObject
         val seatActive     = member["status"]?.jsonPrimitive?.contentOrNull == "active"
-        val delegateActive = member["delegate"]?.jsonObject?.get("status")?.jsonPrimitive?.contentOrNull == "authorized"
-        seatActive && delegateActive
+        val delegateObj    = member["delegate"]?.jsonObject
+        val delegateActive = delegateObj?.get("status")?.jsonPrimitive?.contentOrNull == "authorized"
+        if (seatActive && delegateActive) activeMembers++
+
+        // Map hot credential → name via the hardcoded cold credential table.
+        // CC members vote using their HOT credential; Cardanoscan shows the COLD credential.
+        val coldHex = extractCCCredentialHex(member["id"]) ?: continue
+        val name    = CC_COLD_NAMES[coldHex] ?: continue
+        val hotHex  = delegateObj?.let { extractCCCredentialHex(it["id"]) } ?: continue
+        hotToName[hotHex] = name
     }
 
     val quorum = parseRationalString(obj["quorum"]?.jsonPrimitive?.contentOrNull ?: "")
-    return CCContext(activeMembers, quorum)
+    return CCContext(activeMembers, quorum, hotToName)
+}
+
+/**
+ * Extract a raw 28-byte credential hex (56 chars) from a CC member id field.
+ * Handles: plain 56-char hex, 58-char hex with 1-byte CIP-129 prefix (0x12/0x13 cold, 0x02/0x03 hot),
+ * and nested {keyHash/scriptHash: hex} objects. Returns null on unrecognised format.
+ */
+private fun extractCCCredentialHex(elem: JsonElement?): String? {
+    if (elem == null) return null
+    return when {
+        elem is JsonPrimitive -> {
+            val s = elem.contentOrNull ?: return null
+            when (s.length) {
+                56 -> s
+                58 -> s.substring(2)  // strip 1-byte CIP-129 prefix
+                else -> null
+            }
+        }
+        elem is JsonObject -> {
+            val hex = elem["keyHash"]?.jsonPrimitive?.contentOrNull
+                ?: elem["scriptHash"]?.jsonPrimitive?.contentOrNull
+                ?: return null
+            when (hex.length) { 56 -> hex; 58 -> hex.substring(2); else -> null }
+        }
+        else -> null
+    }
 }
 
 /** Parse "p/q" or decimal string → Double. Returns 0.0 on failure. */
@@ -234,7 +289,7 @@ fun mapOgmiosProposal(
     val drepVotes  = aggregateDRepVotes(votes, stakeCtx)
     val spoVotes   = aggregateVotes(votes, "stakePoolOperator")
     val ccVotes    = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
-    val voteEntries = extractVoteEntries(votes, stakeCtx)
+    val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx)
 
     val dtoDetails = extractActionDetails(actionType, action, proposal)
     val status = computeGAStatus(actionType, drepVotes, spoVotes, ccVotes, expiresEpoch, currentEpoch, thresholds)
@@ -385,7 +440,7 @@ private fun addPrevActionId(builder: JsonObjectBuilder, action: JsonObject) {
     }
 }
 
-private fun extractVoteEntries(votes: JsonArray, stakeCtx: DRepStakeContext): List<VoteEntry> =
+private fun extractVoteEntries(votes: JsonArray, stakeCtx: DRepStakeContext, ccCtx: CCContext = CCContext.EMPTY): List<VoteEntry> =
     votes.mapNotNull { entry ->
         val obj  = entry.jsonObject
         val role = obj["issuer"]?.jsonObject?.get("role")?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -397,9 +452,14 @@ private fun extractVoteEntries(votes: JsonArray, stakeCtx: DRepStakeContext): Li
             "stakePoolOperator"       -> "spo"
             else -> return@mapNotNull null
         }
-        val power     = if (shortRole == "drep") stakeCtx.stakeMap[id] ?: 0L else 0L
-        val anchorUrl = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
-        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl)
+        val power      = if (shortRole == "drep") stakeCtx.stakeMap[id] ?: 0L else 0L
+        val anchorUrl  = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
+        // CC votes: strip any CIP-129 prefix before lookup so both 56- and 58-char formats match
+        val memberName = if (shortRole == "cc") {
+            val hex = when (id.length) { 58 -> id.substring(2); else -> id }
+            ccCtx.hotToName[hex] ?: ccCtx.hotToName[id]
+        } else null
+        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl, memberName = memberName)
     }
 
 private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {

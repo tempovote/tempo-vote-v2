@@ -76,10 +76,14 @@ private suspend fun pollNetwork(network: Network) {
             val epoch = q.getCurrentEpoch()
             CardanoCache.currentEpoch.put(network.name, epoch)
 
-            // Build contexts from available caches; fall back to defaults so we never block
-            // on an extra network call here (thresholds + CC are refreshed by their own routes).
+            // Fetch CC state here so hotToName is always available when parsing proposals.
+            // Without this, parsedGovActions would be cached with CCContext.EMPTY after restart
+            // (before any GA detail route triggers getOrFetchCCContext).
+            val ccRaw = runCatching { q.getConstitutionalCommittee() }.getOrNull()
+            if (ccRaw != null) CardanoCache.ccCommittee.put(network.name, ccRaw)
+
             val stakeCtx   = parseDRepStakeContext(dreps)
-            val ccCtx      = CardanoCache.ccCommittee.getIfPresent(network.name)
+            val ccCtx      = ccRaw
                 ?.let { runCatching { parseCCContext(it) }.getOrDefault(CCContext.EMPTY) }
                 ?: CCContext.EMPTY
             val thresholds = CardanoCache.protocolParams.getIfPresent(network.name)

@@ -38,6 +38,7 @@ export const VoteEntrySchema = z.object({
   vote: z.enum(["yes", "no", "abstain"]),
   votingPower: z.number().default(0),
   anchorUrl: z.string().nullable().optional(),
+  memberName: z.string().nullable().optional(),  // CC member display name (resolved via hot→cold credential mapping)
 })
 export type VoteEntry = z.infer<typeof VoteEntrySchema>
 
