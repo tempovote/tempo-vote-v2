@@ -237,12 +237,20 @@ fun Route.drepRoutes() {
 
         // GET /dreps/leaderboard?metric=delegators&limit=5&network=mainnet
         // Returns top N DReps sorted by delegator count.
-        // Fetches Koios stats for top (limit×6) candidates by voting power in parallel.
-        // All stats calls reuse the same 15-min Caffeine cache as /dreps/{id}/stats.
+        // Result is cached 15 min — Koios stats per candidate also reuse drepStats cache.
         get("/leaderboard") {
             val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
             val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
-            val candidateCount = limit * 6
+            val leaderboardKey = "${network.name}:$limit"
+
+            // ── Leaderboard result cache (15 min) ────────────────────────────────
+            CardanoCache.leaderboard.getIfPresent(leaderboardKey)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
+            // Widen candidate pool to reduce chance of missing top-delegator DReps
+            val candidateCount = limit * 10
 
             val listRaw = CardanoCache.drepList.getIfPresent(network.name) ?: run {
                 try {
@@ -288,18 +296,32 @@ fun Route.drepRoutes() {
                 candidates.map { candidate ->
                     async {
                         val cip105Id = credentialHexToDrepIdCip105(candidate.credHex) ?: candidate.id
-                        val koios = fetchDRepKoiosStats(cip105Id, network)
                         val activeVp = stakeCtx?.stakeMap?.get(candidate.credHex) ?: candidate.activeVotingPower
                         val influence = if ((stakeCtx?.totalActiveDRepStake ?: 0L) > 0L)
                             activeVp.toDouble() / stakeCtx!!.totalActiveDRepStake.toDouble() * 100.0
                         else 0.0
+
+                        // Reuse drepStats Caffeine cache (shared with /dreps/{id}/stats)
+                        val statsCacheKey = "${network.name}:${candidate.credHex}"
+                        val cachedStats = CardanoCache.drepStats.getIfPresent(statsCacheKey)
+                        val delegatorCount: Int
+                        val liveVotingPower: Long
+                        if (cachedStats != null) {
+                            delegatorCount  = cachedStats["delegatorCount"]?.jsonPrimitive?.intOrNull ?: 0
+                            liveVotingPower = cachedStats["liveVotingPower"]?.jsonPrimitive?.longOrNull ?: activeVp
+                        } else {
+                            val koios = fetchDRepKoiosStats(cip105Id, network)
+                            delegatorCount  = koios?.delegatorCount  ?: 0
+                            liveVotingPower = koios?.liveVotingPower ?: activeVp
+                        }
+
                         buildJsonObject {
                             put("id", cip105Id)
                             put("credHex", candidate.credHex)
                             put("anchorUrl", candidate.anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
                             put("activeVotingPower", activeVp)
-                            put("liveVotingPower", koios?.liveVotingPower ?: activeVp)
-                            put("delegatorCount", koios?.delegatorCount ?: 0)
+                            put("liveVotingPower", liveVotingPower)
+                            put("delegatorCount", delegatorCount)
                             put("influencePower", influence)
                         }
                     }
@@ -310,7 +332,9 @@ fun Route.drepRoutes() {
                 .sortedByDescending { it["delegatorCount"]?.jsonPrimitive?.intOrNull ?: 0 }
                 .take(limit)
 
-            call.respond(JsonArray(sorted))
+            val resultArray = JsonArray(sorted)
+            CardanoCache.leaderboard.put(leaderboardKey, resultArray)
+            call.respond(resultArray)
         }
 
         // GET /dreps/{drepId}?network=mainnet
