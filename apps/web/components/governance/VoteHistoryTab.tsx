@@ -4,6 +4,8 @@ import { useState } from "react"
 import type { VoteEntry } from "@tempo/types"
 import { credentialHexToDrepId, lovelaceToAda } from "@/lib/governance"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
+import { useRationale } from "@/hooks/useRationale"
+import type { RationaleContent } from "@/hooks/useRationale"
 
 type RoleTab = "drep" | "cc" | "spo"
 
@@ -43,6 +45,199 @@ function CopyableId({ id, role, name }: { id: string; role: RoleTab; name?: stri
     </button>
   )
 }
+
+// ── Rationale modal ─────────────────────────────────────────────────────────
+
+function RationaleModal({
+  rationaleUrl,
+  voterName,
+  vote,
+  onClose,
+}: {
+  rationaleUrl: string
+  voterName?: string
+  vote: string
+  onClose: () => void
+}) {
+  const { state, load } = useRationale(rationaleUrl)
+
+  // kick off fetch when modal mounts
+  if (state.status === "idle") load()
+
+  const voteCls = vote === "yes" ? "text-success" : vote === "no" ? "text-danger" : "text-text-muted"
+  const voteLabel = vote === "yes" ? "YES" : vote === "no" ? "NO" : "ABSTAIN"
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* backdrop */}
+      <div className="absolute inset-0 bg-black/50" />
+
+      <div
+        className="relative z-10 bg-bg-card border border-border-subtle rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* header */}
+        <div className="flex items-start justify-between gap-3 p-4 border-b border-border-subtle shrink-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className={`text-xs font-bold ${voteCls}`}>{voteLabel}</span>
+              <span className="text-xs text-text-muted">·</span>
+              <span className="text-xs text-text-muted">Rationale</span>
+            </div>
+            {voterName && (
+              <p className="text-sm font-medium text-text-primary truncate">{voterName}</p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* body */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-4 scrollbar-thin">
+          {state.status === "loading" && (
+            <div className="space-y-2.5">
+              <div className="h-3 w-3/4 rounded bg-bg-elevated animate-pulse" />
+              <div className="h-3 w-full rounded bg-bg-elevated animate-pulse" />
+              <div className="h-3 w-5/6 rounded bg-bg-elevated animate-pulse" />
+              <div className="h-3 w-2/3 rounded bg-bg-elevated animate-pulse" />
+            </div>
+          )}
+
+          {state.status === "error" && (
+            <p className="text-sm text-text-muted text-center py-4">
+              Không tải được nội dung rationale.{" "}
+              <a
+                href={rationaleUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent underline"
+              >
+                Mở trực tiếp
+              </a>
+            </p>
+          )}
+
+          {state.status === "done" && (
+            <RationaleBody content={state.content} rationaleUrl={rationaleUrl} />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RationaleBody({ content, rationaleUrl }: { content: RationaleContent; rationaleUrl: string }) {
+  const hasContent = content.title || content.comment
+
+  if (!hasContent) {
+    return (
+      <p className="text-sm text-text-muted text-center py-4">
+        Không có nội dung text.{" "}
+        <a
+          href={rationaleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent underline"
+        >
+          Xem tài liệu gốc
+        </a>
+      </p>
+    )
+  }
+
+  return (
+    <>
+      {content.title && (
+        <div>
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">Tiêu đề</h4>
+          <p className="text-sm text-text-primary">{content.title}</p>
+        </div>
+      )}
+
+      {content.comment && (
+        <div>
+          {content.title && (
+            <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">Nội dung</h4>
+          )}
+          <p className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">{content.comment}</p>
+        </div>
+      )}
+
+      {content.references && content.references.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1.5">Tài liệu tham chiếu</h4>
+          <ul className="space-y-1">
+            {content.references.map((ref, i) => (
+              <li key={i} className="text-xs">
+                {ref.uri ? (
+                  <a
+                    href={ref.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent hover:underline break-all"
+                  >
+                    {ref.label ?? ref.uri}
+                  </a>
+                ) : (
+                  <span className="text-text-secondary">{ref.label}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Vote row ─────────────────────────────────────────────────────────────────
+
+function RationaleButton({
+  rationaleUrl,
+  vote,
+  voterName,
+}: {
+  rationaleUrl: string
+  vote: string
+  voterName?: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="Xem Rationale"
+        className="shrink-0 text-text-muted hover:text-accent transition-colors"
+      >
+        {/* chat bubble icon */}
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </button>
+
+      {open && (
+        <RationaleModal
+          rationaleUrl={rationaleUrl}
+          voterName={voterName}
+          vote={vote}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+// ── Vote table ────────────────────────────────────────────────────────────────
 
 function VoteTable({
   votes,
@@ -125,6 +320,13 @@ function VoteTable({
                   <span className={`text-[11px] font-bold ${voteCls} w-7 text-right`}>
                     {voteLabel}
                   </span>
+                  {v.rationaleUrl && (
+                    <RationaleButton
+                      rationaleUrl={v.rationaleUrl}
+                      vote={v.vote}
+                      voterName={resolvedName}
+                    />
+                  )}
                 </div>
               </div>
             )

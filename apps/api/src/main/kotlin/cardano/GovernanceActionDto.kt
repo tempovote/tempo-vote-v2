@@ -12,6 +12,7 @@ data class VoteEntry(
     val vote: String,         // "yes" | "no" | "abstain"
     val votingPower: Long = 0L,  // lovelace (DRep + SPO from Koios; 0 for CC)
     val anchorUrl: String? = null,    // DRep CIP-119 registration anchor — for name resolution
+    val rationaleUrl: String? = null, // per-vote anchor URL (CIP-100) — voter's rationale for this vote
     val memberName: String? = null,   // CC member display name — resolved via hot→cold credential mapping
     val poolName: String? = null,     // SPO pool display name — resolved from Koios meta_json.name
 )
@@ -489,13 +490,14 @@ private fun extractVoteEntries(
             "spo"  -> poolInfoMap[id]?.votingPower ?: 0L
             else   -> 0L
         }
-        val anchorUrl  = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
-        val memberName = if (shortRole == "cc") {
+        val anchorUrl   = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
+        val rationaleUrl = obj["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+        val memberName  = if (shortRole == "cc") {
             val hex = when (id.length) { 58 -> id.substring(2); else -> id }
             ccCtx.hotToName[hex] ?: ccCtx.hotToName[id]
         } else null
-        val poolName   = if (shortRole == "spo") poolInfoMap[id]?.name else null
-        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl, memberName = memberName, poolName = poolName)
+        val poolName    = if (shortRole == "spo") poolInfoMap[id]?.name else null
+        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl, rationaleUrl = rationaleUrl, memberName = memberName, poolName = poolName)
     }
 
 private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {
