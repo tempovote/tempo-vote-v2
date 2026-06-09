@@ -3,14 +3,18 @@
 import { useState, useEffect } from "react"
 import { resolveAnchorUrls } from "@/lib/governance"
 
-// GA anchor metadata is immutable (content addressed on-chain).
-// Cache titles in a module-level Map (session) and localStorage (cross-reload).
-const STORAGE_KEY = "tempo:anchor-titles"
-const MAX_ENTRIES  = 500
+// v2: stores {v, t} objects so we can apply TTL to both hits and misses.
+// Changing the key drops the old format gracefully (old key is simply ignored).
+const STORAGE_KEY  = "tempo:anchor-titles-v2"
+const TTL_HIT  = 7 * 24 * 60 * 60 * 1000  // 7 days  — found names rarely change
+const TTL_MISS = 1 * 24 * 60 * 60 * 1000  // 1 day   — re-check missing names daily
+const MAX_ENTRIES = 600
 
-// session cache: anchorUrl → title (null = fetched but no title found)
+interface StoredEntry { v: string | null; t: number }
+
+// session cache: anchorUrl → title (null = fetched, no title found)
 const sessionCache = new Map<string, string | null>()
-// in-flight dedup: prevents duplicate IPFS fetches when multiple cards mount simultaneously
+// in-flight dedup: prevents duplicate fetches when multiple cards mount simultaneously
 const inFlight     = new Map<string, Promise<string | null>>()
 
 function loadFromStorage(): void {
@@ -18,27 +22,34 @@ function loadFromStorage(): void {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return
     const stored = JSON.parse(raw) as Record<string, unknown>
-    for (const [k, v] of Object.entries(stored)) {
-      if (typeof v === "string") sessionCache.set(k, v)
+    const now = Date.now()
+    for (const [k, raw] of Object.entries(stored)) {
+      if (!raw || typeof raw !== "object") continue
+      const entry = raw as StoredEntry
+      const ttl = entry.v !== null ? TTL_HIT : TTL_MISS
+      if (now - entry.t > ttl) continue  // expired — will re-fetch
+      sessionCache.set(k, entry.v)
     }
   } catch { /* ignore parse errors / private browsing */ }
 }
 
-function saveToStorage(key: string, value: string): void {
+function saveToStorage(key: string, value: string | null): void {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    const store: Record<string, string> = raw ? JSON.parse(raw) : {}
+    const store: Record<string, StoredEntry> = raw ? JSON.parse(raw) : {}
     const keys = Object.keys(store)
     if (keys.length >= MAX_ENTRIES) {
-      // Simple FIFO eviction — remove oldest 25% when full
-      keys.slice(0, Math.floor(MAX_ENTRIES / 4)).forEach(k => delete store[k])
+      // Evict oldest 25% by timestamp
+      keys
+        .sort((a, b) => (store[a]?.t ?? 0) - (store[b]?.t ?? 0))
+        .slice(0, Math.floor(MAX_ENTRIES / 4))
+        .forEach((k) => delete store[k])
     }
-    store[key] = value
+    store[key] = { v: value, t: Date.now() }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
   } catch { /* storage full or private browsing — non-fatal */ }
 }
 
-// Populate session cache from localStorage on module load (browser only)
 if (typeof window !== "undefined") loadFromStorage()
 
 function extractTitle(data: unknown): string | null {
@@ -72,17 +83,16 @@ async function fetchTitle(anchorUrl: string): Promise<string | null> {
   }
 
   const result = await tryFetch(urls)
-  // Write to both caches before resolving so concurrent subscribers see the result
+  // Cache both hits (name found) and misses (null) — misses use shorter TTL
   sessionCache.set(anchorUrl, result)
-  if (result !== null) saveToStorage(anchorUrl, result)
+  saveToStorage(anchorUrl, result)
   return result
 }
 
 /**
  * Batch-resolve anchor titles for a list of URLs.
- * Uses the same session/localStorage cache and in-flight dedup as useAnchorTitle.
- * Re-renders the consumer whenever a new title is resolved, so search filters
- * using the returned map stay up to date as IPFS fetches complete.
+ * Uses session cache (per page load) backed by localStorage (TTL: 7d hit / 1d miss).
+ * Re-renders the consumer as each title resolves, so lists update progressively.
  */
 export function useAnchorTitlesMap(
   urls: (string | null | undefined)[],
@@ -94,7 +104,7 @@ export function useAnchorTitlesMap(
     for (const url of urls) {
       if (!url) continue
       const cached = sessionCache.get(url)
-      if (cached) m.set(url, cached)
+      if (cached != null) m.set(url, cached)
     }
     return m
   })
@@ -104,11 +114,10 @@ export function useAnchorTitlesMap(
     for (const url of urls) {
       if (!url) continue
       if (sessionCache.has(url)) {
+        // Already in session cache (hit or miss) — update map if it's a hit
         const t = sessionCache.get(url)
         if (t != null)
-          setMap((prev) =>
-            prev.get(url) === t ? prev : new Map([...prev, [url, t]]),
-          )
+          setMap((prev) => prev.get(url) === t ? prev : new Map([...prev, [url, t]]))
         continue
       }
       let p = inFlight.get(url)
@@ -124,11 +133,7 @@ export function useAnchorTitlesMap(
         )
       })
     }
-    return () => {
-      cancelled = true
-    }
-    // urlsKey is a stable serialisation of the url list; changing it means a
-    // genuinely different set of anchors (new page of actions loaded, etc.)
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlsKey])
 
@@ -142,13 +147,11 @@ export function useAnchorTitle(anchorUrl: string | null | undefined): string | n
     const url = anchorUrl ?? null
     if (!url) return
 
-    // Session cache hit (includes entries loaded from localStorage on init)
     if (sessionCache.has(url)) {
       setTitle(sessionCache.get(url) ?? null)
       return
     }
 
-    // Deduplicate: re-use an in-flight fetch instead of starting a new one
     let p = inFlight.get(url)
     if (!p) {
       p = fetchTitle(url)

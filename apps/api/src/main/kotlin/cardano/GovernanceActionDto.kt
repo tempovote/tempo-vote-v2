@@ -9,6 +9,7 @@ data class VoteEntry(
     val id: String,           // credential hex for DRep/CC; poolId for SPO
     val vote: String,         // "yes" | "no" | "abstain"
     val votingPower: Long = 0L,  // lovelace (DRep only; 0 for CC/SPO)
+    val anchorUrl: String? = null, // DRep CIP-119 registration anchor — for name resolution
 )
 
 @Serializable
@@ -91,6 +92,8 @@ data class DRepStakeContext(
     val autoNoConfidenceStake: Long,
     /** = Σ(stakeMap.values) + autoNoConfidenceStake — the ratification denominator. */
     val totalActiveDRepStake: Long,
+    /** credentialHex → CIP-119 anchor URL (for DRep name resolution). */
+    val anchorMap: Map<String, String> = emptyMap(),
 ) {
     companion object {
         val EMPTY = DRepStakeContext(emptyMap(), 0L, 0L, 0L)
@@ -110,7 +113,8 @@ fun parseDRepStakeContext(raw: JsonElement): DRepStakeContext {
         else -> return DRepStakeContext.EMPTY
     }
 
-    val stakeMap = mutableMapOf<String, Long>()
+    val stakeMap  = mutableMapOf<String, Long>()
+    val anchorMap = mutableMapOf<String, String>()
     var autoAbstainStake = 0L
     var autoNoConfidenceStake = 0L
 
@@ -125,13 +129,17 @@ fun parseDRepStakeContext(raw: JsonElement): DRepStakeContext {
             "registered"   -> {
                 val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: continue
                 stakeMap[id] = stake
+                // CIP-119 anchor URL — may appear under "metadata" or "anchor"
+                val url = (obj["metadata"] ?: obj["anchor"])?.jsonObject
+                    ?.get("url")?.jsonPrimitive?.contentOrNull
+                if (url != null) anchorMap[id] = url
             }
         }
     }
 
     val totalActiveDRepStake = stakeMap.values.sumOf { it } + autoNoConfidenceStake
 
-    return DRepStakeContext(stakeMap, autoAbstainStake, autoNoConfidenceStake, totalActiveDRepStake)
+    return DRepStakeContext(stakeMap, autoAbstainStake, autoNoConfidenceStake, totalActiveDRepStake, anchorMap)
 }
 
 /**
@@ -389,8 +397,9 @@ private fun extractVoteEntries(votes: JsonArray, stakeCtx: DRepStakeContext): Li
             "stakePoolOperator"       -> "spo"
             else -> return@mapNotNull null
         }
-        val power = if (shortRole == "drep") stakeCtx.stakeMap[id] ?: 0L else 0L
-        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power)
+        val power     = if (shortRole == "drep") stakeCtx.stakeMap[id] ?: 0L else 0L
+        val anchorUrl = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
+        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl)
     }
 
 private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {

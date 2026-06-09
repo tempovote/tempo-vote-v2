@@ -37,6 +37,7 @@ export const VoteEntrySchema = z.object({
   id: z.string(),
   vote: z.enum(["yes", "no", "abstain"]),
   votingPower: z.number().default(0),
+  anchorUrl: z.string().nullable().optional(),
 })
 export type VoteEntry = z.infer<typeof VoteEntrySchema>
 

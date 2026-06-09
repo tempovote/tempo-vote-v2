@@ -3,12 +3,13 @@
 import { useState } from "react"
 import type { VoteEntry } from "@tempo/types"
 import { credentialHexToDrepId, lovelaceToAda } from "@/lib/governance"
+import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 
 type RoleTab = "drep" | "cc" | "spo"
 
 const ROLE_LABELS: Record<RoleTab, string> = { drep: "DRep", cc: "CC", spo: "SPO" }
 
-function CopyableId({ id, role }: { id: string; role: RoleTab }) {
+function CopyableId({ id, role, name }: { id: string; role: RoleTab; name?: string }) {
   const [copied, setCopied] = useState(false)
 
   const display = role === "drep" ? credentialHexToDrepId(id) : id
@@ -27,10 +28,17 @@ function CopyableId({ id, role }: { id: string; role: RoleTab }) {
     <button
       onClick={copy}
       title={display}
-      className="font-mono text-xs text-text-secondary hover:text-text-primary transition-colors text-left truncate max-w-full"
+      className="text-left min-w-0 flex flex-col gap-0.5"
     >
-      {truncated}
-      {copied && <span className="ml-1 text-success text-[10px]">✓</span>}
+      {name && (
+        <span className="text-xs font-medium text-text-primary truncate leading-tight">
+          {name}
+        </span>
+      )}
+      <span className="font-mono text-[11px] text-text-muted hover:text-text-secondary transition-colors truncate leading-tight">
+        {truncated}
+        {copied && <span className="ml-1 text-success text-[10px]">✓</span>}
+      </span>
     </button>
   )
 }
@@ -39,10 +47,12 @@ function VoteTable({
   votes,
   role,
   side,
+  namesMap,
 }: {
   votes: VoteEntry[]
   role: RoleTab
   side: "yes" | "no-abstain"
+  namesMap: ReadonlyMap<string, string>
 }) {
   const filtered = votes
     .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
@@ -66,13 +76,14 @@ function VoteTable({
       {filtered.length === 0 ? (
         <p className="text-xs text-text-muted py-3 text-center">{emptyLabel}</p>
       ) : (
-        <div className="divide-y divide-border-subtle">
+        <div>
           {/* Table header */}
           <div className="grid grid-cols-[1fr_auto] gap-2 pb-1.5 text-[11px] text-text-muted font-medium">
             <span>ID</span>
             <span className="text-right">VP / Vote</span>
           </div>
-          {/* Rows */}
+          {/* Scrollable rows — max ~50 visible */}
+          <div className="overflow-y-auto max-h-[500px] divide-y divide-border-subtle pr-1 scrollbar-thin">
           {filtered.map((v, i) => {
             const isNo      = v.vote === "no"
             const isAbstain = v.vote === "abstain"
@@ -81,9 +92,19 @@ function VoteTable({
                             : "text-success"
             const voteLabel = isNo ? "NO" : isAbstain ? "ABS" : "YES"
 
+            const resolvedName = v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined
+            const nameLoading  = role === "drep" && v.anchorUrl && resolvedName === undefined
+
             return (
-              <div key={i} className="grid grid-cols-[1fr_auto] gap-2 items-center py-2">
-                <CopyableId id={v.id} role={role} />
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-2 items-start py-2">
+                {nameLoading ? (
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <div className="h-2.5 w-24 rounded bg-bg-elevated animate-pulse" />
+                    <CopyableId id={v.id} role={role} />
+                  </div>
+                ) : (
+                  <CopyableId id={v.id} role={role} name={resolvedName} />
+                )}
                 <div className="flex items-center gap-1.5 justify-end shrink-0">
                   {v.votingPower > 0 && (
                     <span className="text-[11px] text-text-muted tabular-nums">
@@ -97,6 +118,7 @@ function VoteTable({
               </div>
             )
           })}
+          </div>
         </div>
       )}
     </div>
@@ -113,6 +135,12 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
   }
 
   const roleVotes = votes.filter((v) => v.role === role)
+
+  // Batch-resolve DRep names from CIP-119 anchor documents
+  const drepAnchorUrls = votes
+    .filter((v) => v.role === "drep" && v.anchorUrl)
+    .map((v) => v.anchorUrl!)
+  const namesMap = useAnchorTitlesMap(drepAnchorUrls)
 
   return (
     <div className="space-y-4">
@@ -143,9 +171,9 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
         </p>
       ) : (
         <div className="flex gap-5">
-          <VoteTable votes={roleVotes} role={role} side="yes" />
+          <VoteTable votes={roleVotes} role={role} side="yes" namesMap={namesMap} />
           <div className="w-px bg-border-subtle shrink-0" />
-          <VoteTable votes={roleVotes} role={role} side="no-abstain" />
+          <VoteTable votes={roleVotes} role={role} side="no-abstain" namesMap={namesMap} />
         </div>
       )}
     </div>
