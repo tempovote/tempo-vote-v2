@@ -55,11 +55,21 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
         mandateExpiresEpoch?: number | null
         id: string
         name: string | null
+        imageUrl?: string | null
+        motivations?: string | null
+        objectives?: string | null
+        qualifications?: string | null
+        references?: Array<{ "@type": string; label: string; uri: string }> | null
+        metaFetched?: boolean
         anchorUrl: string | null
         votingPower: number | null
         stakeKeyBalance: number | null
       }) => {
         if (cancelled) return
+
+        // API already resolves metadata server-side (bypasses CORS restrictions).
+        // metaFetched=true means the API fetched the anchor (even if all fields were empty strings).
+        const apiHasMeta = data.metaFetched === true || data.motivations != null || data.objectives != null || data.qualifications != null
 
         const base: DRepFullProfile = {
           isRegistered: data.isRegistered ?? false,
@@ -70,25 +80,34 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
           anchorUrl: data.anchorUrl ?? null,
           votingPower: data.votingPower ?? null,
           stakeKeyBalance: data.stakeKeyBalance ?? null,
-          givenName: null,
-          motivations: null,
-          objectives: null,
-          qualifications: null,
-          imageUrl: null,
-          references: null,
+          givenName: data.name ?? null,
+          motivations: data.motivations ?? null,
+          objectives: data.objectives ?? null,
+          qualifications: data.qualifications ?? null,
+          imageUrl: data.imageUrl ?? null,
+          references: data.references ?? null,
         }
         setProfile(base)
         setIsLoading(false)
 
-        // Fetch CIP-119 metadata from IPFS if anchor is available
-        if (data.anchorUrl) {
+        // Skip browser CIP-119 fetch if API already provided all metadata (avoids CORS failure).
+        // Still fetch for DReps where API returned null (no anchor or anchor returned no data) —
+        // some IPFS-hosted DReps may have metadata the server fetch missed.
+        if (data.anchorUrl && !apiHasMeta) {
           setIsLoadingMeta(true)
           fetchCip119(data.anchorUrl).then((meta) => {
             if (cancelled) return
             setIsLoadingMeta(false)
             if (meta) {
               setProfile((prev) =>
-                prev ? { ...prev, ...meta } : prev
+                prev ? {
+                  ...prev, ...meta,
+                  imageUrl: meta.imageUrl ?? prev.imageUrl,
+                  motivations: meta.motivations ?? prev.motivations,
+                  objectives: meta.objectives ?? prev.objectives,
+                  qualifications: meta.qualifications ?? prev.qualifications,
+                  references: meta.references ?? prev.references,
+                } : prev
               )
             }
           })

@@ -15,6 +15,7 @@ data class VoteEntry(
     val rationaleUrl: String? = null, // per-vote anchor URL (CIP-100) — voter's rationale for this vote
     val memberName: String? = null,   // CC member display name — resolved via hot→cold credential mapping
     val poolName: String? = null,     // SPO pool display name — resolved from Koios meta_json.name
+    val voterName: String? = null,    // DRep display name — resolved server-side from drepInfo cache (bypasses CORS)
 )
 
 @Serializable

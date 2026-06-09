@@ -7,6 +7,8 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.SortOrder
@@ -328,7 +330,39 @@ fun Route.drepRoutes() {
                 .sortedByDescending { it["delegatorCount"]?.jsonPrimitive?.intOrNull ?: 0 }
                 .take(limit)
 
-            val resultArray = JsonArray(sorted)
+            // Fetch name + imageUrl server-side for the final top-N DReps.
+            // Done after sort+take so we only make `limit` metadata calls (not candidateCount).
+            // Checks drepInfo cache first (populated by profile page visits); falls back to
+            // fetchDRepMeta so CORS-restricted hosts (e.g. everstake.one) still work.
+            val withMeta = coroutineScope {
+                sorted.map { entry ->
+                    async {
+                        val credHex = entry["credHex"]?.jsonPrimitive?.contentOrNull
+                        val anchor  = entry["anchorUrl"]?.jsonPrimitive?.contentOrNull
+                        val cached  = credHex?.let { CardanoCache.drepInfo.getIfPresent("${network.name}:$it") }
+                        val cachedName     = cached?.get("name")?.jsonPrimitive?.contentOrNull
+                        val cachedImageUrl = cached?.get("imageUrl")?.jsonPrimitive?.contentOrNull
+                        val meta = if ((cachedName == null || cachedImageUrl == null) && anchor != null)
+                            fetchDRepMeta(anchor) else null
+                        val name     = cachedName     ?: meta?.name
+                        val imageUrl = cachedImageUrl ?: meta?.imageUrl
+                        // Populate drepInfo cache so vote history can resolve this DRep's name
+                        if (credHex != null && (name != null || imageUrl != null) && cached == null) {
+                            CardanoCache.drepInfo.put("${network.name}:$credHex", buildJsonObject {
+                                put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                            })
+                        }
+                        buildJsonObject {
+                            entry.forEach { (k, v) -> put(k, v) }
+                            put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                        }
+                    }
+                }.map { it.await() }
+            }
+
+            val resultArray = JsonArray(withMeta)
             CardanoCache.leaderboard.put(leaderboardKey, resultArray)
             call.respond(resultArray)
         }
@@ -346,11 +380,14 @@ fun Route.drepRoutes() {
             val credentialHex = drepIdToCredentialHex(drepId)
             val cacheKey = "${network.name}:$credentialHex"
 
-            // 1. drepInfo cache
-            CardanoCache.drepInfo.getIfPresent(cacheKey)?.let { cached ->
-                call.respond(cached)
-                return@get
-            }
+            // 1. drepInfo cache — only use full profile entries (those with isRegistered).
+            //    Partial entries written by the leaderboard (name+imageUrl only) are skipped.
+            CardanoCache.drepInfo.getIfPresent(cacheKey)
+                ?.takeIf { it.containsKey("isRegistered") }
+                ?.let { cached ->
+                    call.respond(cached)
+                    return@get
+                }
 
             // 2. Search the pre-warmed drepList — zero Ogmios connections, instant response.
             // The BackgroundPoller fills drepList 3 s after startup and refreshes every 5 min.
@@ -485,10 +522,8 @@ private suspend fun buildDRepResponse(
     }
 
     val anchorUrl = listEntry["anchorUrl"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull
-    val drepName = anchorUrl?.let { fetchDRepName(it) }
+    val meta = anchorUrl?.let { fetchDRepMeta(it) }
     val votingPower = listEntry["votingPower"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.longOrNull ?: 0L
-    // stakeKeyBalance requires Kupo UTxO query — rewardAccountSummaries only returns deposit/rewards,
-    // not actual wallet balance. Return null until Kupo integration is added.
     val stakeKeyBalance: Long? = null
     val mandateEpoch = listEntry["mandateEpoch"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.intOrNull
     val currentEpoch = runCatching { OgmiosStateQueries(network).getCurrentEpoch() }.getOrNull()
@@ -499,7 +534,14 @@ private suspend fun buildDRepResponse(
         put("active", isActive)
         put("mandateExpiresEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
         put("id", canonicalId)
-        put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("name", meta?.name?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("imageUrl", meta?.imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("motivations",    meta?.motivations?.let    { JsonPrimitive(it) } ?: JsonNull)
+        put("objectives",     meta?.objectives?.let     { JsonPrimitive(it) } ?: JsonNull)
+        put("qualifications", meta?.qualifications?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("references",     meta?.references ?: JsonNull)
+        // true = API fetched the anchor document (even if all fields were empty); skip browser fallback
+        put("metaFetched", JsonPrimitive(meta != null))
         put("anchorUrl", listEntry["anchorUrl"]!!)
         put("votingPower", JsonPrimitive(votingPower))
         put("stakeKeyBalance", stakeKeyBalance?.let { JsonPrimitive(it) } ?: JsonNull)
@@ -621,12 +663,29 @@ private fun buildCandidateUrls(anchorUrl: String): List<String> {
     return (origIfHttps + IPFS_GATEWAYS_BE.map { "${it}${cid}" }).distinct()
 }
 
+private data class DRepMeta(
+    val name: String?,
+    val imageUrl: String?,
+    val motivations: String? = null,
+    val objectives: String? = null,
+    val qualifications: String? = null,
+    val references: JsonArray? = null,
+)
+
+/** Extract plain string or JSON-LD {"@value": "..."} wrapper → nullable String. */
+private fun extractMetaStr(el: JsonElement?): String? {
+    if (el == null || el is JsonNull) return null
+    if (el is JsonPrimitive) return el.contentOrNull?.takeIf { it.isNotBlank() }
+    if (el is JsonObject) return el["@value"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    return null
+}
+
 /**
- * Fetch DRep metadata from anchor URL and extract the given name.
- * Supports CIP-119 format: { body: { givenName: "..." } }
- * Tries multiple IPFS gateways with short timeout each.
+ * Fetch DRep metadata from anchor URL and extract name, image URL, and CIP-119 body fields.
+ * Runs server-side so CORS restrictions on the metadata host don't apply.
+ * Supports CIP-119: { body: { givenName, image, motivations, objectives, qualifications, references } }
  */
-private suspend fun fetchDRepName(anchorUrl: String): String? {
+private suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
     val candidates = buildCandidateUrls(anchorUrl)
     for (url in candidates) {
         try {
@@ -634,9 +693,46 @@ private suspend fun fetchDRepName(anchorUrl: String): String? {
                 val response = httpClient.get(url)
                 if (!response.status.isSuccess()) return@withTimeout null
                 val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-                json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
-                    ?: json["givenName"]?.jsonPrimitive?.contentOrNull
-                    ?: json["name"]?.jsonPrimitive?.contentOrNull
+                val body = json["body"]?.jsonObject ?: json
+
+                val name = extractMetaStr(body["givenName"])
+                    ?: extractMetaStr(json["givenName"])
+                    ?: extractMetaStr(json["name"])
+
+                val imageNode = body["image"]
+                val imageUrl = when {
+                    imageNode == null || imageNode is JsonNull -> null
+                    imageNode is JsonPrimitive -> imageNode.contentOrNull
+                    imageNode is JsonObject ->
+                        imageNode["contentUrl"]?.jsonPrimitive?.contentOrNull
+                            ?: imageNode["url"]?.jsonPrimitive?.contentOrNull
+                            ?: imageNode["@id"]?.jsonPrimitive?.contentOrNull
+                    else -> null
+                }
+
+                val motivations    = extractMetaStr(body["motivations"])
+                val objectives     = extractMetaStr(body["objectives"])
+                val qualifications = extractMetaStr(body["qualifications"])
+
+                val references = body["references"]?.let { if (it is JsonNull) null else it as? JsonArray }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { arr ->
+                        JsonArray(arr.mapNotNull { el ->
+                            val obj = el as? JsonObject ?: return@mapNotNull null
+                            val label = extractMetaStr(obj["label"]) ?: return@mapNotNull null
+                            val uri   = extractMetaStr(obj["uri"])   ?: return@mapNotNull null
+                            buildJsonObject {
+                                obj["@type"]?.let { put("@type", it) }
+                                put("label", JsonPrimitive(label))
+                                put("uri",   JsonPrimitive(uri))
+                            }
+                        })
+                    }
+                    ?.takeIf { it.isNotEmpty() }
+
+                if (name == null && imageUrl == null && motivations == null
+                    && objectives == null && qualifications == null) null
+                else DRepMeta(name, imageUrl, motivations, objectives, qualifications, references)
             }
             if (result != null) return result
         } catch (_: Exception) {

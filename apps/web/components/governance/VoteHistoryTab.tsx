@@ -359,12 +359,14 @@ function VoteTable({
                             : "text-success"
             const voteLabel = isNo ? "NO" : isAbstain ? "ABS" : "YES"
 
+            // Server-side voterName (bypasses CORS) takes priority;
+            // fall back to browser-fetched name for CORS-friendly hosts.
             const resolvedName = role === "cc"
               ? (v.memberName ?? undefined)
               : role === "spo"
                 ? (v.poolName ?? undefined)
-                : (v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined)
-            const nameLoading  = role === "drep" && v.anchorUrl && resolvedName === undefined
+                : (v.voterName ?? (v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined))
+            const nameLoading  = role === "drep" && v.anchorUrl && !v.voterName && resolvedName === undefined
 
             return (
               <div key={i} className="grid grid-cols-[1fr_auto] gap-2 items-start py-2">
@@ -414,9 +416,9 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
 
   const roleVotes = votes.filter((v) => v.role === role)
 
-  // Batch-resolve DRep names from CIP-119 anchor documents
+  // Browser-fetch names for DReps without a server-side voterName (CORS-friendly hosts resolve fine)
   const drepAnchorUrls = votes
-    .filter((v) => v.role === "drep" && v.anchorUrl)
+    .filter((v) => v.role === "drep" && v.anchorUrl && !v.voterName)
     .map((v) => v.anchorUrl!)
   const namesMap = useAnchorTitlesMap(drepAnchorUrls)
 

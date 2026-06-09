@@ -7,6 +7,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 export interface DRepLeaderboardEntry {
   id: string
   credHex: string
+  name: string | null
+  imageUrl: string | null
   anchorUrl: string | null
   activeVotingPower: number
   liveVotingPower: number
@@ -14,9 +16,10 @@ export interface DRepLeaderboardEntry {
   influencePower: number
 }
 
-// Module-level cache: survives page navigation within the same browser tab.
-// TTL matches backend cache (15 min) so a page visit within the window is instant.
-const LEADERBOARD_TTL = 15 * 60 * 1000
+// Short module-level cache: survives page navigation within the same tab.
+// Kept short (2 min) so a DelegatorPoller refresh (15-min cycle) is visible
+// within ~2 min of the backend cache being invalidated.
+const LEADERBOARD_TTL = 2 * 60 * 1000
 interface CacheEntry { entries: DRepLeaderboardEntry[]; ts: number }
 const leaderboardCache = new Map<string, CacheEntry>()
 
