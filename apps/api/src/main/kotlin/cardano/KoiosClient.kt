@@ -153,6 +153,52 @@ data class DRepKoiosStats(
 )
 
 /**
+ * Lightweight stats returned by the batch drep_info endpoint.
+ * Used by the leaderboard to avoid N×individual-Koios-calls bursts.
+ */
+data class DRepBasicInfo(
+    val liveVotingPower: Long,
+    val delegatorCount: Int,
+)
+
+/**
+ * Batch-fetch DRep voting power and delegator count from Koios.
+ * Koios /drep_info accepts up to [batchSize] DRep IDs per POST, returning `amount`
+ * (live voting power) and `delegator_count` for each — no per-DRep round-trips needed.
+ * Returns a map of bech32 DRep ID → DRepBasicInfo; absent entries mean Koios didn't
+ * return data for that DRep (inactive / retired).
+ */
+suspend fun fetchDRepInfoBatch(
+    drepIds: List<String>,
+    network: Network,
+    batchSize: Int = 100,
+): Map<String, DRepBasicInfo> {
+    if (drepIds.isEmpty()) return emptyMap()
+    val result = mutableMapOf<String, DRepBasicInfo>()
+    drepIds.chunked(batchSize).forEach { batch ->
+        runCatching {
+            val response = koiosHttp.post("${koiosBaseUrl(network)}/drep_info") {
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject {
+                    putJsonArray("_drep_ids") { batch.forEach { add(it) } }
+                })
+            }
+            val body = response.jsonArray()
+            for (item in body) {
+                val obj    = item.jsonObject
+                val id     = obj["drep_id"]?.jsonPrimitive?.contentOrNull ?: continue
+                val power  = obj["amount"]?.jsonPrimitive?.longOrNull ?: 0L
+                val delCnt = obj["delegator_count"]?.jsonPrimitive?.intOrNull ?: 0
+                result[id] = DRepBasicInfo(liveVotingPower = power, delegatorCount = delCnt)
+            }
+        }.onFailure { e ->
+            logger.warn { "Koios drep_info batch failed for ${batch.size} DReps [$network]: ${e.message}" }
+        }
+    }
+    return result
+}
+
+/**
  * Fetch DRep live stats from Koios in 4 calls:
  *  1. drep_info       → liveVotingPower (amount field)
  *  2. drep_delegators → delegatorCount via Content-Range header (limit=0, count=exact)
