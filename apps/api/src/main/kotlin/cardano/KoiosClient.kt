@@ -61,7 +61,7 @@ suspend fun fetchPoolInfo(bech32PoolIds: List<String>, network: Network): Map<St
             contentType(ContentType.Application.Json)
             setBody(buildJsonObject {
                 putJsonArray("_pool_bech32_ids") { toFetch.forEach { add(it) } }
-            })
+            }.toString())
         }
         val body: JsonArray = response.jsonArray()
 
@@ -181,7 +181,7 @@ suspend fun fetchDRepInfoBatch(
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject {
                     putJsonArray("_drep_ids") { batch.forEach { add(it) } }
-                })
+                }.toString())
             }
             val body = response.jsonArray()
             for (item in body) {
