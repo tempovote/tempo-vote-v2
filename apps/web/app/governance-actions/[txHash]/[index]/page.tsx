@@ -16,6 +16,7 @@ import { getJwt, authHeader } from "@/lib/api"
 import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
 import { ActionDetailCard } from "@/components/governance/ActionDetailCard"
 import { GaStatusBadge } from "@/components/governance/GaStatusBadge"
+import { GaDetailTabs } from "@/components/governance/GaDetailTabs"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -534,6 +535,9 @@ export default function GovernanceActionDetailPage({
             <h2 className="font-semibold text-base">Kết quả bỏ phiếu</h2>
             <VoteResultsPanel action={action} />
           </div>
+
+          {/* Vote history + Metadata tabs */}
+          <GaDetailTabs action={action} />
 
           {/* Vote action */}
           <div className="animate-slide-up">

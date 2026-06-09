@@ -4,6 +4,14 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 @Serializable
+data class VoteEntry(
+    val role: String,         // "drep" | "cc" | "spo"
+    val id: String,           // credential hex for DRep/CC; poolId for SPO
+    val vote: String,         // "yes" | "no" | "abstain"
+    val votingPower: Long = 0L,  // lovelace (DRep only; 0 for CC/SPO)
+)
+
+@Serializable
 data class GovernanceActionDto(
     val txHash: String,
     val index: Int,
@@ -16,8 +24,9 @@ data class GovernanceActionDto(
     val drepVotes: DRepVoteStats,
     val spoVotes: VoteCounts,
     val ccVotes: VoteCounts,
-    val details: JsonElement? = null,  // type-specific action body — see extractActionDetails()
-    val status: String = "active",     // computed by computeGAStatus()
+    val votes: List<VoteEntry> = emptyList(),  // individual votes for vote history display
+    val details: JsonElement? = null,           // type-specific action body — see extractActionDetails()
+    val status: String = "active",              // computed by computeGAStatus()
 )
 
 /**
@@ -214,9 +223,10 @@ fun mapOgmiosProposal(
     // votes is an array of { issuer: { role, from, id }, vote: "yes"|"no"|"abstain" }
     val votes = obj["votes"]?.jsonArray ?: JsonArray(emptyList())
 
-    val drepVotes = aggregateDRepVotes(votes, stakeCtx)
-    val spoVotes  = aggregateVotes(votes, "stakePoolOperator")
-    val ccVotes   = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
+    val drepVotes  = aggregateDRepVotes(votes, stakeCtx)
+    val spoVotes   = aggregateVotes(votes, "stakePoolOperator")
+    val ccVotes    = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
+    val voteEntries = extractVoteEntries(votes, stakeCtx)
 
     val dtoDetails = extractActionDetails(actionType, action, proposal)
     val status = computeGAStatus(actionType, drepVotes, spoVotes, ccVotes, expiresEpoch, currentEpoch, thresholds)
@@ -233,6 +243,7 @@ fun mapOgmiosProposal(
         drepVotes = drepVotes,
         spoVotes = spoVotes,
         ccVotes = ccVotes,
+        votes = voteEntries,
         details = dtoDetails,
         status = status,
     )
@@ -365,6 +376,22 @@ private fun addPrevActionId(builder: JsonObjectBuilder, action: JsonObject) {
         if (prevIdx != null) builder.put("prevActionIndex", prevIdx)
     }
 }
+
+private fun extractVoteEntries(votes: JsonArray, stakeCtx: DRepStakeContext): List<VoteEntry> =
+    votes.mapNotNull { entry ->
+        val obj  = entry.jsonObject
+        val role = obj["issuer"]?.jsonObject?.get("role")?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        val id   = obj["issuer"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        val vote = obj["vote"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        val shortRole = when (role) {
+            "delegateRepresentative" -> "drep"
+            "constitutionalCommittee" -> "cc"
+            "stakePoolOperator"       -> "spo"
+            else -> return@mapNotNull null
+        }
+        val power = if (shortRole == "drep") stakeCtx.stakeMap[id] ?: 0L else 0L
+        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power)
+    }
 
 private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {
     var yes = 0; var no = 0; var abstain = 0

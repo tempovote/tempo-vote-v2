@@ -32,6 +32,14 @@ export const DRepVoteStatsSchema = VoteCountsSchema.extend({
 })
 export type DRepVoteStats = z.infer<typeof DRepVoteStatsSchema>
 
+export const VoteEntrySchema = z.object({
+  role: z.enum(["drep", "cc", "spo"]),
+  id: z.string(),
+  vote: z.enum(["yes", "no", "abstain"]),
+  votingPower: z.number().default(0),
+})
+export type VoteEntry = z.infer<typeof VoteEntrySchema>
+
 export const GovernanceActionSchema = z.object({
   txHash: z.string(),
   index: z.number().int(),
@@ -44,8 +52,9 @@ export const GovernanceActionSchema = z.object({
   drepVotes: DRepVoteStatsSchema,
   spoVotes: VoteCountsSchema,
   ccVotes: VoteCountsSchema,
-  details: z.unknown().nullable().optional(),  // type-specific action body from extractActionDetails()
-  status: z.string().default("active"),        // computed by backend: active | ratified | expired | enacted | dropped
+  votes: z.array(VoteEntrySchema).default([]),  // individual votes for vote history display
+  details: z.unknown().nullable().optional(),    // type-specific action body from extractActionDetails()
+  status: z.string().default("active"),          // computed by backend: active | ratified | expired | enacted | dropped
 })
 export type GovernanceAction = z.infer<typeof GovernanceActionSchema>
 
