@@ -27,7 +27,9 @@ private const val MAX_BACKOFF_MS          = 30 * 60 * 1_000L  // 30 minutes max 
 private const val STARTUP_DELAY_MS        = 3_000L
 // Delegator counts run on a separate, slower cycle: wait for first Ogmios poll to populate
 // stakeMap, then refresh every 15 min sequentially. 200 DReps × ~200 ms/call ≈ 40 s total.
-private const val DELEGATOR_POLL_DELAY_MS = 2 * 60 * 1_000L   // wait 2 min after startup (first Ogmios poll is ~3 min, give it time)
+// 5-min startup delay (vs 3 min for Ogmios) ensures getDelegateRepresentatives (~2 min on mainnet)
+// completes before the first delegator fetch attempt — avoids a guaranteed skip on cold start.
+private const val DELEGATOR_POLL_DELAY_MS    = 5 * 60 * 1_000L  // wait 5 min after startup
 private const val DELEGATOR_POLL_INTERVAL_MS = 15 * 60 * 1_000L // 15 min cadence
 
 // Per-network state for exponential backoff
@@ -150,7 +152,7 @@ private suspend fun pollDelegatorCountsForNetwork(network: Network) {
     val stakeMap = CardanoCache.drepList.getIfPresent(network.name)
         ?.let { runCatching { parseDRepStakeContext(it).stakeMap }.getOrNull() }
         ?: run {
-            logger.debug { "DelegatorPoller [$network] skipped — drepList not yet cached" }
+            logger.info { "DelegatorPoller [$network] skipped — drepList not yet cached" }
             return
         }
 
@@ -166,5 +168,5 @@ private suspend fun pollDelegatorCountsForNetwork(network: Network) {
 
     CardanoCache.drepDelegatorCounts.put(network.name, counts)
     CardanoCache.leaderboard.invalidateAll()
-    logger.debug { "DelegatorPoller [$network] refreshed delegator counts for $fetched DReps" }
+    logger.info { "DelegatorPoller [$network] refreshed delegator counts for $fetched DReps" }
 }
