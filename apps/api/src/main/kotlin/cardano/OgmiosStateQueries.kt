@@ -154,8 +154,8 @@ fun credentialHexToDrepIdCip105(credentialHex: String): String? =
     }.getOrNull()
 
 private const val HTTP_TIMEOUT_MS = 20_000L
-// delegateRepresentatives returns 1.5MB+ on mainnet (10k+ DReps) — needs a longer window.
-private const val HEAVY_QUERY_TIMEOUT_MS = 120_000L
+// delegateRepresentatives returns ~8 MB on mainnet (10k+ DReps) and takes ~2 min to download.
+private const val HEAVY_QUERY_TIMEOUT_MS = 300_000L
 
 class OgmiosStateQueries(private val network: Network) {
 
