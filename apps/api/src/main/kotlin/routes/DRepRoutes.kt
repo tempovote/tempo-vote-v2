@@ -380,11 +380,14 @@ fun Route.drepRoutes() {
             val credentialHex = drepIdToCredentialHex(drepId)
             val cacheKey = "${network.name}:$credentialHex"
 
-            // 1. drepInfo cache
-            CardanoCache.drepInfo.getIfPresent(cacheKey)?.let { cached ->
-                call.respond(cached)
-                return@get
-            }
+            // 1. drepInfo cache — only use full profile entries (those with isRegistered).
+            //    Partial entries written by the leaderboard (name+imageUrl only) are skipped.
+            CardanoCache.drepInfo.getIfPresent(cacheKey)
+                ?.takeIf { it.containsKey("isRegistered") }
+                ?.let { cached ->
+                    call.respond(cached)
+                    return@get
+                }
 
             // 2. Search the pre-warmed drepList — zero Ogmios connections, instant response.
             // The BackgroundPoller fills drepList 3 s after startup and refreshes every 5 min.
