@@ -7,6 +7,9 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.SortOrder
@@ -27,6 +30,13 @@ import vote.tempo.db.DrepVotes
 import vote.tempo.db.GovernanceActionSnapshots
 
 private val httpClient = HttpClient(CIO)
+
+private data class DRepCandidate(
+    val id: String,
+    val credHex: String,
+    val anchorUrl: String?,
+    val activeVotingPower: Long,
+)
 
 /**
  * GET /dreps/{drepId}?network=mainnet
@@ -223,6 +233,84 @@ fun Route.drepRoutes() {
 
             if (koios != null) CardanoCache.drepStats.put(cacheKey, result)
             call.respond(result)
+        }
+
+        // GET /dreps/leaderboard?metric=delegators&limit=5&network=mainnet
+        // Returns top N DReps sorted by delegator count.
+        // Fetches Koios stats for top (limit×6) candidates by voting power in parallel.
+        // All stats calls reuse the same 15-min Caffeine cache as /dreps/{id}/stats.
+        get("/leaderboard") {
+            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
+            val candidateCount = limit * 6
+
+            val listRaw = CardanoCache.drepList.getIfPresent(network.name) ?: run {
+                try {
+                    val r = OgmiosStateQueries(network).getDelegateRepresentatives()
+                    CardanoCache.drepList.put(network.name, r)
+                    r
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
+                        put("error", "DRep list unavailable: ${e.message}")
+                    })
+                    return@get
+                }
+            }
+
+            val drepsArray: JsonArray = when {
+                listRaw is JsonArray -> listRaw
+                listRaw is JsonObject && listRaw["delegateRepresentatives"] is JsonArray ->
+                    listRaw["delegateRepresentatives"]!!.jsonArray
+                else -> JsonArray(emptyList())
+            }
+
+            val stakeCtx = runCatching { parseDRepStakeContext(listRaw) }.getOrNull()
+
+            val candidates = drepsArray
+                .mapNotNull { entry ->
+                    runCatching {
+                        val obj = entry.jsonObject
+                        if (obj["type"]?.jsonPrimitive?.contentOrNull != "registered") return@mapNotNull null
+                        val rawId = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                        val credHex = if (rawId.startsWith("drep"))
+                            drepIdToCredentialHex(rawId)
+                        else rawId
+                        val anchorUrl = obj["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                            ?: obj["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        val stake = extractStakeLovelace(obj["stake"]) ?: 0L
+                        DRepCandidate(rawId, credHex, anchorUrl, stake)
+                    }.getOrNull()
+                }
+                .sortedByDescending { it.activeVotingPower }
+                .take(candidateCount)
+
+            val results = coroutineScope {
+                candidates.map { candidate ->
+                    async {
+                        val cip105Id = credentialHexToDrepIdCip105(candidate.credHex) ?: candidate.id
+                        val koios = fetchDRepKoiosStats(cip105Id, network)
+                        val activeVp = stakeCtx?.stakeMap?.get(candidate.credHex) ?: candidate.activeVotingPower
+                        val influence = if ((stakeCtx?.totalActiveDRepStake ?: 0L) > 0L)
+                            activeVp.toDouble() / stakeCtx!!.totalActiveDRepStake.toDouble() * 100.0
+                        else 0.0
+                        buildJsonObject {
+                            put("id", cip105Id)
+                            put("credHex", candidate.credHex)
+                            put("anchorUrl", candidate.anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("activeVotingPower", activeVp)
+                            put("liveVotingPower", koios?.liveVotingPower ?: activeVp)
+                            put("delegatorCount", koios?.delegatorCount ?: 0)
+                            put("influencePower", influence)
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            val sorted = results
+                .sortedByDescending { it["delegatorCount"]?.jsonPrimitive?.intOrNull ?: 0 }
+                .take(limit)
+
+            call.respond(JsonArray(sorted))
         }
 
         // GET /dreps/{drepId}?network=mainnet

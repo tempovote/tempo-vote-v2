@@ -3,44 +3,41 @@
 import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import {
-  mockRegions,
-  mockTopDRepsByDelegators,
-  mockTopDRepsByVotingPower,
-  mockTopDRepsByChange,
-} from "@/lib/mock-data"
-import DRepList from "@/components/drep/DRepList"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepList } from "@/hooks/useDRepList"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
+import { useDRepLeaderboard } from "@/hooks/useDRepLeaderboard"
 import { lovelaceToAda } from "@/lib/governance"
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from "recharts"
 
 function looksLikeDrepId(q: string): boolean {
   const t = q.trim()
   return t.toLowerCase().startsWith("drep1") || /^[0-9a-f]{56}$/i.test(t)
 }
 
-const votingPowerPieData = mockRegions.map((r) => ({
-  name: r.name,
-  value: r.votingPowerPercent,
-  color: r.color,
-}))
+function avatarGradient(credHex: string): string {
+  const palettes: [string, string][] = [
+    ["#6366f1", "#a855f7"],
+    ["#14b8a6", "#6366f1"],
+    ["#f59e0b", "#ef4444"],
+    ["#10b981", "#14b8a6"],
+    ["#ec4899", "#a855f7"],
+    ["#3b82f6", "#6366f1"],
+  ]
+  const idx = parseInt(credHex.slice(0, 2), 16) % palettes.length
+  return `linear-gradient(135deg, ${palettes[idx]![0]}, ${palettes[idx]![1]})`
+}
 
-const ccMembersPieData = mockRegions
-  .filter((r) => r.ccMembers > 0)
-  .map((r) => ({
-    name: r.name,
-    value: r.ccMembersPercent,
-    color: r.color,
-  }))
+function SkeletonRow() {
+  return (
+    <tr className="border-b border-border-subtle">
+      {[...Array(5)].map((_, i) => (
+        <td key={i} className="py-3 px-4">
+          <div className="h-4 rounded bg-bg-card-hover animate-pulse" style={{ width: i === 1 ? "60%" : "40%" }} />
+        </td>
+      ))}
+    </tr>
+  )
+}
 
 export default function DRepsPage() {
   const router = useRouter()
@@ -51,18 +48,14 @@ export default function DRepsPage() {
   const isIdQuery = looksLikeDrepId(inputValue)
   const nameQ = isIdQuery ? "" : q
 
-  // Real DRep list — fetch once per network, ready when user starts searching
   const { dreps, isLoading: isDrepsLoading } = useDRepList(network)
+  const { entries: leaderboard, loading: leaderboardLoading } = useDRepLeaderboard(network, 5)
 
-  // Batch-fetch DRep names from IPFS anchors only while user is name-searching.
-  // Lazy-load top 150 by voting power (already sorted desc) to avoid IPFS overload.
-  // Fetch names for ALL DReps when user is searching by name (not just top 150).
-  // Newly registered DReps have low voting power and would be cut off by a slice limit.
-  // Session cache + in-flight dedup prevent redundant IPFS requests across re-renders.
+  // Combine anchor URLs for a single name-resolution pass
   const anchorUrlsForSearch = nameQ.length >= 2 ? dreps.map((d) => d.anchorUrl) : []
-  const namesMap = useAnchorTitlesMap(anchorUrlsForSearch)
+  const leaderboardAnchorUrls = leaderboard.map((e) => e.anchorUrl)
+  const namesMap = useAnchorTitlesMap([...anchorUrlsForSearch, ...leaderboardAnchorUrls])
 
-  // Filter real DReps by ID fragment or by loaded name
   const searchResults = nameQ
     ? dreps.filter((d) => {
         const name = d.anchorUrl ? (namesMap.get(d.anchorUrl) ?? "") : ""
@@ -86,141 +79,13 @@ export default function DRepsPage() {
     [isIdQuery, handleNavigateToId],
   )
 
-  // Count how many anchor URLs still need name resolution
   const anchorWithUrl = anchorUrlsForSearch.filter(Boolean).length
   const namesLoaded = namesMap.size
   const namesStillLoading = nameQ && namesLoaded < anchorWithUrl
 
   return (
     <div className="page-container-wide space-y-10">
-      {/* Header */}
       <h1 className="text-2xl font-bold animate-fade-in">DReps</h1>
-
-      {/* Charts row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up">
-        {/* Voting Power by Region */}
-        <div className="card-static">
-          <h3 className="text-sm font-semibold text-center mb-4">
-            DRep Voting Power by Region
-          </h3>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={votingPowerPieData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  innerRadius={40}
-                  dataKey="value"
-                  strokeWidth={2}
-                  stroke="#0a0e1a"
-                >
-                  {votingPowerPieData.map((entry, idx) => (
-                    <Cell key={idx} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#141929",
-                    border: "1px solid #252d4a",
-                    borderRadius: "8px",
-                    color: "#f1f5f9",
-                    fontSize: "12px",
-                  }}
-                  formatter={(value: number) => [`${value}%`, "Share"]}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: "11px", color: "#94a3b8" }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* CC Members by Region */}
-        <div className="card-static">
-          <h3 className="text-sm font-semibold text-center mb-4">
-            CC Members by Region ⓘ
-          </h3>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={ccMembersPieData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  innerRadius={40}
-                  dataKey="value"
-                  strokeWidth={2}
-                  stroke="#0a0e1a"
-                >
-                  {ccMembersPieData.map((entry, idx) => (
-                    <Cell key={idx} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#141929",
-                    border: "1px solid #252d4a",
-                    borderRadius: "8px",
-                    color: "#f1f5f9",
-                    fontSize: "12px",
-                  }}
-                  formatter={(value: number) => [`${value}%`, "Share"]}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: "11px", color: "#94a3b8" }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Region table */}
-      <div className="card-static !p-0 overflow-hidden animate-slide-up">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border-default text-text-muted text-left">
-                <th className="py-3 px-4 font-medium">Region</th>
-                <th className="py-3 px-4 font-medium text-right">Voting Power</th>
-                <th className="py-3 px-4 font-medium text-right">CC Members</th>
-                <th className="py-3 px-4 font-medium text-right">DRep Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockRegions.map((region) => (
-                <tr
-                  key={region.name}
-                  className="border-b border-border-subtle hover:bg-bg-card-hover transition-colors"
-                >
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-3 h-3 rounded-full shrink-0"
-                        style={{ backgroundColor: region.color }}
-                      />
-                      {region.name}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-right text-text-secondary">
-                    {region.votingPower}
-                  </td>
-                  <td className="py-3 px-4 text-right text-text-secondary">
-                    {region.ccMembers} ({region.ccMembersPercent}%)
-                  </td>
-                  <td className="py-3 px-4 text-right text-text-secondary">
-                    {region.drepCount} ({region.drepCountPercent}%)
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       {/* Explore DRep search */}
       <div className="space-y-4 animate-fade-in">
@@ -254,7 +119,6 @@ export default function DRepsPage() {
           </button>
         </div>
 
-        {/* ID shortcut — show profile link as soon as query looks like a DRep ID */}
         {isIdQuery && (
           <Link
             href={`/dreps/${encodeURIComponent(inputValue.trim())}`}
@@ -268,10 +132,9 @@ export default function DRepsPage() {
         )}
       </div>
 
-      {/* DRep Lists */}
+      {/* Search results or leaderboards */}
       <div className="space-y-10">
         {nameQ ? (
-          /* Real search results from on-chain data */
           <div className="space-y-4 animate-fade-in">
             <div className="flex items-center gap-3">
               <h3 className="text-base font-semibold">Kết quả tìm kiếm</h3>
@@ -304,9 +167,7 @@ export default function DRepsPage() {
             ) : (
               <div className="space-y-3">
                 {searchResults.slice(0, 30).map((drep) => {
-                  const name = drep.anchorUrl
-                    ? (namesMap.get(drep.anchorUrl) ?? null)
-                    : null
+                  const name = drep.anchorUrl ? (namesMap.get(drep.anchorUrl) ?? null) : null
                   const label = typeof name === "string" ? name : drep.id
                   const initial = label.charAt(4).toUpperCase() || "D"
                   return (
@@ -350,21 +211,75 @@ export default function DRepsPage() {
             )}
           </div>
         ) : (
-          /* Mock top-lists when not searching */
-          <>
-            <DRepList
-              title="Top DReps with the most delegators"
-              dreps={mockTopDRepsByDelegators}
-            />
-            <DRepList
-              title="Top DReps with the largest voting power"
-              dreps={mockTopDRepsByVotingPower}
-            />
-            <DRepList
-              title="Top DReps with the largest voting power change"
-              dreps={mockTopDRepsByChange}
-            />
-          </>
+          /* Leaderboards when not searching */
+          <div className="space-y-4 animate-slide-up">
+            <h2 className="text-xl font-bold">Top 5 DReps with the most delegators</h2>
+            <div className="card-static !p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border-default text-text-muted text-left">
+                      <th className="py-3 px-4 font-medium w-8">#</th>
+                      <th className="py-3 px-4 font-medium">DRep</th>
+                      <th className="py-3 px-4 font-medium text-right">Delegators</th>
+                      <th className="py-3 px-4 font-medium text-right">Active VP</th>
+                      <th className="py-3 px-4 font-medium text-right">Influence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboardLoading
+                      ? [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
+                      : leaderboard.map((entry, i) => {
+                          const name = entry.anchorUrl ? (namesMap.get(entry.anchorUrl) ?? null) : null
+                          const label = name ?? entry.id
+                          const initial = (name ? label.charAt(0) : label.charAt(5)).toUpperCase()
+                          return (
+                            <tr
+                              key={entry.id}
+                              className="border-b border-border-subtle hover:bg-bg-card-hover transition-colors"
+                            >
+                              <td className="py-3 px-4 text-text-muted text-xs font-mono">{i + 1}</td>
+                              <td className="py-3 px-4">
+                                <Link
+                                  href={`/dreps/${encodeURIComponent(entry.id)}`}
+                                  className="flex items-center gap-3 hover:text-accent-light transition-colors group"
+                                >
+                                  <div
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+                                    style={{ background: avatarGradient(entry.credHex) }}
+                                  >
+                                    {initial}
+                                  </div>
+                                  <div className="min-w-0">
+                                    {name ? (
+                                      <div className="font-medium text-sm truncate group-hover:text-accent-light">
+                                        {name}
+                                      </div>
+                                    ) : (
+                                      <div className="font-mono text-xs text-text-muted truncate">
+                                        {entry.id.slice(0, 24)}…
+                                      </div>
+                                    )}
+                                  </div>
+                                </Link>
+                              </td>
+                              <td className="py-3 px-4 text-right font-semibold text-accent-light">
+                                {entry.delegatorCount.toLocaleString()}
+                              </td>
+                              <td className="py-3 px-4 text-right text-text-secondary">
+                                {lovelaceToAda(entry.activeVotingPower)} ₳
+                              </td>
+                              <td className="py-3 px-4 text-right text-text-secondary">
+                                {entry.influencePower.toFixed(2)}%
+                              </td>
+                            </tr>
+                          )
+                        })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

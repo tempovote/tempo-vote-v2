@@ -126,7 +126,7 @@ function extractIpfsCid(url: string): string | null {
   const after = url.split("/ipfs/")[1]
   if (!after) return null
   const m = /^(Qm[1-9A-HJ-NP-Za-km-z]{44,}|baf[0-9A-Za-z]{50,})/.exec(after)
-  return m ? m[1] : null
+  return m?.[1] ?? null
 }
 
 // Resolve any URL to a list of candidate HTTPS URLs to try in order (IPFS gateway fallback).
