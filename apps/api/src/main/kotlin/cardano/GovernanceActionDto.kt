@@ -16,6 +16,7 @@ data class GovernanceActionDto(
     val drepVotes: DRepVoteStats,
     val spoVotes: VoteCounts,
     val ccVotes: VoteCounts,
+    val details: JsonElement? = null,  // type-specific action body — see extractActionDetails()
 )
 
 /**
@@ -202,8 +203,137 @@ fun mapOgmiosProposal(
         drepVotes = drepVotes,
         spoVotes = spoVotes,
         ccVotes = ccVotes,
+        details = extractActionDetails(actionType, action, proposal),
     )
 }.getOrNull()
+
+/**
+ * Extract type-specific fields from the Ogmios action body.
+ * Returns null for types with no extra data (infoAction, noConfidence).
+ */
+private fun extractActionDetails(actionType: String, action: JsonObject, proposal: JsonObject): JsonElement? {
+    return when (actionType) {
+
+        "hardForkInitiation" -> buildJsonObject {
+            action["version"]?.jsonObject?.let { v ->
+                v["major"]?.jsonPrimitive?.intOrNull?.let { put("versionMajor", it) }
+                v["minor"]?.jsonPrimitive?.intOrNull?.let { put("versionMinor", it) }
+            }
+            addPrevActionId(this, action)
+        }
+
+        "newConstitution" -> buildJsonObject {
+            action["constitution"]?.jsonObject?.let { c ->
+                c["anchor"]?.jsonObject?.let { a ->
+                    a["url"]?.jsonPrimitive?.contentOrNull?.let  { put("constitutionUrl", it) }
+                    a["hash"]?.jsonPrimitive?.contentOrNull?.let { put("constitutionHash", it) }
+                }
+                c["script"]?.jsonPrimitive?.contentOrNull?.let { put("guardrailsHash", it) }
+            }
+            addPrevActionId(this, action)
+        }
+
+        "treasuryWithdrawals" -> buildJsonObject {
+            // Ogmios: withdrawals is a JsonObject { stakeAddress → { ada: { lovelace: N } } }
+            val withdrawalsObj = action["withdrawals"]?.jsonObject ?: JsonObject(emptyMap())
+            put("withdrawals", buildJsonArray {
+                for ((stakeAddress, valueEl) in withdrawalsObj) {
+                    val lovelace = runCatching {
+                        val v = valueEl.jsonObject
+                        v["ada"]?.jsonObject?.get("lovelace")?.jsonPrimitive?.longOrNull
+                            ?: v["lovelace"]?.jsonPrimitive?.longOrNull
+                            ?: 0L
+                    }.getOrDefault(0L)
+                    add(buildJsonObject {
+                        put("stakeCredential", stakeAddress)
+                        put("lovelace", lovelace)
+                    })
+                }
+            })
+            action["guardrails"]?.jsonObject?.get("hash")?.jsonPrimitive?.contentOrNull
+                ?.let { put("guardrailsHash", it) }
+            addPrevActionId(this, action)
+        }
+
+        "updateCommittee" -> buildJsonObject {
+            // Quorum threshold
+            action["quorum"]?.let { q ->
+                when {
+                    q is JsonObject -> {
+                        val n = q["numerator"]?.jsonPrimitive?.intOrNull
+                        val d = q["denominator"]?.jsonPrimitive?.intOrNull
+                        if (n != null && d != null) {
+                            put("quorumNumerator", n)
+                            put("quorumDenominator", d)
+                        }
+                    }
+                    q is JsonPrimitive -> q.doubleOrNull?.let { put("quorumRate", it) }
+                    else -> {}
+                }
+            }
+            // Added members: [{credential: {hash}, bound: {epoch}}]
+            val added = action["members"]?.jsonObject?.get("added")?.jsonArray
+                ?: action["members"]?.jsonArray  // some versions use flat array
+                ?: JsonArray(emptyList())
+            put("addedMembers", buildJsonArray {
+                for (m in added) {
+                    val mObj = m.jsonObject
+                    val cred = mObj["credential"]?.jsonObject?.get("hash")?.jsonPrimitive?.contentOrNull
+                        ?: mObj["id"]?.jsonPrimitive?.contentOrNull
+                    val epoch = mObj["bound"]?.jsonObject?.get("epoch")?.jsonPrimitive?.intOrNull
+                        ?: mObj["epoch"]?.jsonPrimitive?.intOrNull
+                    if (cred != null) {
+                        add(buildJsonObject {
+                            put("credential", cred)
+                            if (epoch != null) put("termEpoch", epoch)
+                        })
+                    }
+                }
+            })
+            // Removed members: list of credential hashes
+            val removed = action["members"]?.jsonObject?.get("removed")?.jsonArray
+                ?: JsonArray(emptyList())
+            put("removedMembers", buildJsonArray {
+                for (r in removed) {
+                    val rObj = r.jsonObject
+                    val cred = rObj["credential"]?.jsonObject?.get("hash")?.jsonPrimitive?.contentOrNull
+                        ?: rObj["id"]?.jsonPrimitive?.contentOrNull
+                    if (cred != null) add(JsonPrimitive(cred))
+                }
+            })
+            addPrevActionId(this, action)
+        }
+
+        "protocolParametersUpdate" -> buildJsonObject {
+            // Pass through the full parameters object — FE maps keys to labels
+            action["parameters"]?.let { put("parameters", it) }
+            action["guardrails"]?.let { g ->
+                val hash = when {
+                    g is JsonPrimitive -> g.contentOrNull
+                    g is JsonObject    -> g["hash"]?.jsonPrimitive?.contentOrNull
+                    else -> null
+                }
+                if (hash != null) put("guardrailsHash", hash)
+            }
+            addPrevActionId(this, action)
+        }
+
+        else -> null  // infoAction, noConfidence — no extra data
+    }
+}
+
+/** Append previousActionId fields (txHash + index) if present in the action body. */
+private fun addPrevActionId(builder: JsonObjectBuilder, action: JsonObject) {
+    val prev = action["previousAction"]?.jsonObject
+        ?: action["ancestor"]?.jsonObject
+        ?: return
+    val prevTx = prev["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+    val prevIdx = prev["index"]?.jsonPrimitive?.intOrNull
+    if (prevTx != null) {
+        builder.put("prevActionTxHash", prevTx)
+        if (prevIdx != null) builder.put("prevActionIndex", prevIdx)
+    }
+}
 
 private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {
     var yes = 0; var no = 0; var abstain = 0

@@ -44,8 +44,55 @@ export const GovernanceActionSchema = z.object({
   drepVotes: DRepVoteStatsSchema,
   spoVotes: VoteCountsSchema,
   ccVotes: VoteCountsSchema,
+  details: z.unknown().nullable().optional(),  // type-specific action body from extractActionDetails()
 })
 export type GovernanceAction = z.infer<typeof GovernanceActionSchema>
+
+// ── Typed action details (narrowed from details: unknown) ────────────────────
+
+export type HardForkDetails = {
+  versionMajor?: number
+  versionMinor?: number
+  prevActionTxHash?: string
+  prevActionIndex?: number
+}
+
+export type NewConstitutionDetails = {
+  constitutionUrl?: string
+  constitutionHash?: string
+  guardrailsHash?: string
+  prevActionTxHash?: string
+  prevActionIndex?: number
+}
+
+export type TreasuryWithdrawalRow = {
+  stakeCredential: string
+  lovelace: number
+}
+export type TreasuryWithdrawalDetails = {
+  withdrawals: TreasuryWithdrawalRow[]
+  guardrailsHash?: string
+  prevActionTxHash?: string
+  prevActionIndex?: number
+}
+
+export type CommitteeMember = { credential: string; termEpoch?: number }
+export type UpdateCommitteeDetails = {
+  quorumNumerator?: number
+  quorumDenominator?: number
+  quorumRate?: number
+  addedMembers: CommitteeMember[]
+  removedMembers: string[]
+  prevActionTxHash?: string
+  prevActionIndex?: number
+}
+
+export type ProtocolParamChangeDetails = {
+  parameters?: Record<string, unknown>
+  guardrailsHash?: string
+  prevActionTxHash?: string
+  prevActionIndex?: number
+}
 
 export const GovernanceActionListSchema = z.array(GovernanceActionSchema)
 
