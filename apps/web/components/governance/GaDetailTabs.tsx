@@ -12,8 +12,8 @@ export function GaDetailTabs({ action }: { action: GovernanceAction }) {
   const [tab, setTab] = useState<Tab>("votes")
 
   const TABS: { id: Tab; label: string; show: boolean }[] = [
-    { id: "votes",    label: "Lịch sử Phiếu",  show: true },
-    { id: "metadata", label: "Metadata GA",     show: hasMetadata },
+    { id: "votes",    label: "Votes",    show: true },
+    { id: "metadata", label: "Metadata", show: hasMetadata },
   ]
 
   const visibleTabs = TABS.filter((t) => t.show)

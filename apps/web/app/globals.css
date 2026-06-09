@@ -732,3 +732,47 @@ body {
   color: var(--color-text-muted);
   margin: 0.5em 0;
 }
+
+/* GA Metadata tab — markdown rendered from CIP-108 anchor documents */
+.prose-metadata p { margin: 0 0 0.6em; }
+.prose-metadata p:last-child { margin-bottom: 0; }
+.prose-metadata strong { color: var(--color-text-primary); font-weight: 600; }
+.prose-metadata em { font-style: italic; }
+.prose-metadata h1, .prose-metadata h2, .prose-metadata h3, .prose-metadata h4 {
+  color: var(--color-text-primary);
+  font-weight: 700;
+  margin: 0.8em 0 0.3em;
+  line-height: 1.3;
+}
+.prose-metadata h1 { font-size: 1.05em; }
+.prose-metadata h2 { font-size: 0.95em; }
+.prose-metadata h3, .prose-metadata h4 { font-size: 0.875em; }
+.prose-metadata ul, .prose-metadata ol {
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+.prose-metadata li { margin: 0.2em 0; }
+.prose-metadata a { color: var(--color-accent-light); text-decoration: underline; }
+.prose-metadata a:hover { opacity: 0.8; }
+.prose-metadata code {
+  font-family: monospace;
+  font-size: 0.82em;
+  background: var(--color-bg-primary);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.prose-metadata pre {
+  background: var(--color-bg-primary);
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.prose-metadata pre code { background: none; padding: 0; }
+.prose-metadata blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 0.8em;
+  color: var(--color-text-muted);
+  margin: 0.5em 0;
+}
+.prose-metadata hr { border-color: var(--color-border-subtle); margin: 1em 0; }

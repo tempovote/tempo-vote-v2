@@ -1,7 +1,20 @@
 "use client"
 
+import { marked } from "marked"
 import { useAnchorMetadata } from "@/hooks/useAnchorMetadata"
 import { resolveAnchorUrl } from "@/lib/governance"
+
+function MarkdownSection({ text }: { text: string }) {
+  const html = marked.parse(text, { async: false }) as string
+  return (
+    <div
+      // anchor content is fetched from IPFS/anchor URLs — not user-supplied input
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: html }}
+      className="prose-metadata text-sm text-text-secondary leading-relaxed"
+    />
+  )
+}
 
 export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
   const { data, loading, error } = useAnchorMetadata(anchorUrl)
@@ -64,7 +77,7 @@ export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
         return (
           <div key={key} className="space-y-2">
             <h3 className="text-sm font-semibold text-text-primary">{label}</h3>
-            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{text}</p>
+            <MarkdownSection text={text} />
           </div>
         )
       })}
