@@ -198,7 +198,9 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
         val totalGaCount = proposalResp.headers["Content-Range"]
             ?.substringAfterLast("/")?.toIntOrNull() ?: votedCount
 
-        DRepKoiosStats(liveVotingPower, delegatorCount, votedCount, totalGaCount)
+        // totalGaCount comes from proposal_list (active only); drep_votes includes expired/ratified.
+        // Use max so voted% never exceeds 100% due to the active-only window.
+        DRepKoiosStats(liveVotingPower, delegatorCount, votedCount, maxOf(totalGaCount, votedCount))
     }.onFailure { e ->
         logger.warn { "Koios DRep stats fetch failed for $drepId [$network]: ${e.message}" }
     }.getOrNull()
