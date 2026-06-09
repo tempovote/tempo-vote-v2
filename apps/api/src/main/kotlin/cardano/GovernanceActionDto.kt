@@ -17,6 +17,7 @@ data class GovernanceActionDto(
     val spoVotes: VoteCounts,
     val ccVotes: VoteCounts,
     val details: JsonElement? = null,  // type-specific action body — see extractActionDetails()
+    val status: String = "active",     // computed by computeGAStatus()
 )
 
 /**
@@ -166,6 +167,8 @@ fun mapOgmiosProposal(
     obj: JsonObject,
     stakeCtx: DRepStakeContext = DRepStakeContext.EMPTY,
     ccCtx: CCContext = CCContext.EMPTY,
+    thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
+    currentEpoch: Int = 0,
 ): GovernanceActionDto? = runCatching {
     val proposal = obj["proposal"]?.jsonObject ?: return null
     val txHash = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return null
@@ -191,6 +194,9 @@ fun mapOgmiosProposal(
     val spoVotes  = aggregateVotes(votes, "stakePoolOperator")
     val ccVotes   = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
 
+    val dtoDetails = extractActionDetails(actionType, action, proposal)
+    val status = computeGAStatus(actionType, drepVotes, spoVotes, ccVotes, expiresEpoch, currentEpoch, thresholds)
+
     GovernanceActionDto(
         txHash = txHash,
         index = index,
@@ -203,7 +209,8 @@ fun mapOgmiosProposal(
         drepVotes = drepVotes,
         spoVotes = spoVotes,
         ccVotes = ccVotes,
-        details = extractActionDetails(actionType, action, proposal),
+        details = dtoDetails,
+        status = status,
     )
 }.getOrNull()
 

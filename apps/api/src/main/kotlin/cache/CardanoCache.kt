@@ -42,6 +42,11 @@ object CardanoCache {
         .expireAfterWrite(30, TimeUnit.MINUTES)
         .build<String, JsonElement>()
 
+    /** Current epoch per network — TTL 30 min (epoch ≥ 1 day on all networks). */
+    val currentEpoch = Caffeine.newBuilder()
+        .expireAfterWrite(30, TimeUnit.MINUTES)
+        .build<String, Int>()
+
     // ── Per-entity data ───────────────────────────────────────────────────────
 
     /**

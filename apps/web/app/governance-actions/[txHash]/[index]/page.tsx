@@ -15,6 +15,7 @@ import { resolveAnchorUrl, getActionTypeLabel } from "@/lib/governance"
 import { getJwt, authHeader } from "@/lib/api"
 import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
 import { ActionDetailCard } from "@/components/governance/ActionDetailCard"
+import { GaStatusBadge } from "@/components/governance/GaStatusBadge"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -479,7 +480,7 @@ export default function GovernanceActionDetailPage({
             {/* Title + type badge */}
             <div className="space-y-2">
               <div className="flex items-start gap-3 flex-wrap">
-                <span className="badge badge-active shrink-0">Active</span>
+                <GaStatusBadge status={action.status} />
                 <span className="text-xs text-text-muted bg-bg-elevated px-2 py-0.5 rounded-full shrink-0">
                   {getActionTypeLabel(action.actionType)}
                 </span>
