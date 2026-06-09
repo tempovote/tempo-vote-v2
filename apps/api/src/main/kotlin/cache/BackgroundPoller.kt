@@ -63,6 +63,7 @@ private suspend fun pollNetwork(network: Network) {
 
             val gas = q.getGovernanceProposals()
             CardanoCache.govActions.put(network.name, gas)
+            CardanoCache.parsedGovActions.invalidate(network.name)
         }
         // Success — reset backoff
         consecutiveFailures.remove(network)

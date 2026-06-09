@@ -193,27 +193,35 @@ fun Route.governanceRoutes() {
 }
 
 /**
- * Fetch governance proposals — try cache first, fall back to Ogmios.
- * Also fetches DRep stake context, CC context, governance thresholds,
- * and current epoch for accurate status computation.
+ * Fetch governance proposals — try parsed cache first, then raw cache, then Ogmios.
+ *
+ * Fast path (cache hit): single cache lookup, no JSON parsing, no context fetches.
+ * Slow path (cache miss): fetch all context caches (each cached independently), parse
+ * proposals once, store result in parsedGovActions for subsequent requests.
+ *
+ * parsedGovActions is invalidated by BackgroundPoller whenever raw govActions data
+ * is refreshed, so parsed proposals never lag more than one polling cycle behind on-chain state.
  */
 private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> {
+    CardanoCache.parsedGovActions.getIfPresent(network.name)?.let { return it }
+
     val stakeCtx   = getOrFetchDRepStakeContext(network)
     val ccCtx      = getOrFetchCCContext(network)
     val thresholds = getOrFetchGovernanceThresholds(network)
     val epoch      = getOrFetchCurrentEpoch(network)
 
-    CardanoCache.govActions.getIfPresent(network.name)?.let { cached ->
-        return parseProposalsFromCache(cached, stakeCtx, ccCtx, thresholds, epoch)
-    }
+    val raw = CardanoCache.govActions.getIfPresent(network.name)
+        ?: try {
+            val fetched = OgmiosStateQueries(network).getGovernanceProposals()
+            CardanoCache.govActions.put(network.name, fetched)
+            fetched
+        } catch (e: Exception) {
+            return emptyList()
+        }
 
-    return try {
-        val raw = OgmiosStateQueries(network).getGovernanceProposals()
-        CardanoCache.govActions.put(network.name, raw)
-        parseProposalsFromCache(raw, stakeCtx, ccCtx, thresholds, epoch)
-    } catch (e: Exception) {
-        emptyList()
-    }
+    val parsed = parseProposalsFromCache(raw, stakeCtx, ccCtx, thresholds, epoch)
+    CardanoCache.parsedGovActions.put(network.name, parsed)
+    return parsed
 }
 
 /**
