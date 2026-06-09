@@ -9,6 +9,7 @@ import { useAnchorTitle } from "@/hooks/useAnchorTitle"
 import { ActionIdChip } from "./ActionIdChip"
 import VoteResultsPanel from "./VoteResultsPanel"
 import { getActionTypeLabel } from "@/lib/governance"
+import { GaStatusBadge } from "./GaStatusBadge"
 
 interface Props {
   action: GovernanceAction
@@ -60,7 +61,7 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
             <span className="text-text-primary font-medium">Epoch {action.expiresEpoch}</span>
           </span>
           <span className="text-text-muted">·</span>
-          <span className="badge badge-active">Active</span>
+          <GaStatusBadge status={action.status} />
           <span className="text-text-muted">·</span>
           <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-bg-elevated text-text-secondary border border-border-subtle">
             {getActionTypeLabel(action.actionType)}

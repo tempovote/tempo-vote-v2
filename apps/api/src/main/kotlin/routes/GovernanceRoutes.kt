@@ -11,10 +11,12 @@ import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.CCContext
+import vote.tempo.cardano.GovernanceThresholds
 import vote.tempo.cardano.mapOgmiosProposal
 import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.parseCCContext
 import vote.tempo.cardano.parseDRepStakeContext
+import vote.tempo.cardano.parseGovernanceThresholds
 
 /**
  * GET /governance/chain-info?network=preprod|mainnet
@@ -192,20 +194,23 @@ fun Route.governanceRoutes() {
 
 /**
  * Fetch governance proposals — try cache first, fall back to Ogmios.
- * Also fetches DRep stake context and active CC member count for accurate vote display.
+ * Also fetches DRep stake context, CC context, governance thresholds,
+ * and current epoch for accurate status computation.
  */
 private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> {
-    val stakeCtx = getOrFetchDRepStakeContext(network)
-    val ccCtx = getOrFetchCCContext(network)
+    val stakeCtx   = getOrFetchDRepStakeContext(network)
+    val ccCtx      = getOrFetchCCContext(network)
+    val thresholds = getOrFetchGovernanceThresholds(network)
+    val epoch      = getOrFetchCurrentEpoch(network)
 
     CardanoCache.govActions.getIfPresent(network.name)?.let { cached ->
-        return parseProposalsFromCache(cached, stakeCtx, ccCtx)
+        return parseProposalsFromCache(cached, stakeCtx, ccCtx, thresholds, epoch)
     }
 
     return try {
         val raw = OgmiosStateQueries(network).getGovernanceProposals()
         CardanoCache.govActions.put(network.name, raw)
-        parseProposalsFromCache(raw, stakeCtx, ccCtx)
+        parseProposalsFromCache(raw, stakeCtx, ccCtx, thresholds, epoch)
     } catch (e: Exception) {
         emptyList()
     }
@@ -229,6 +234,40 @@ private suspend fun getOrFetchDRepStakeContext(network: Network): DRepStakeConte
 }
 
 /**
+ * Fetch governance voting thresholds from cache; falls back to Ogmios, then DEFAULT.
+ * Protocol params change only at epoch boundaries — cached for 24 hours.
+ */
+private suspend fun getOrFetchGovernanceThresholds(network: Network): GovernanceThresholds {
+    val cached = CardanoCache.protocolParams.getIfPresent(network.name)
+    if (cached != null) return runCatching { parseGovernanceThresholds(cached.jsonObject) }
+        .getOrDefault(GovernanceThresholds.DEFAULT)
+
+    return try {
+        val raw = OgmiosStateQueries(network).getProtocolParameters()
+        CardanoCache.protocolParams.put(network.name, raw)
+        parseGovernanceThresholds(raw)
+    } catch (e: Exception) {
+        GovernanceThresholds.DEFAULT
+    }
+}
+
+/**
+ * Fetch current epoch from cache; falls back to Ogmios, then 0.
+ * Epoch changes at most once per day — cached for 30 minutes.
+ */
+private suspend fun getOrFetchCurrentEpoch(network: Network): Int {
+    CardanoCache.currentEpoch.getIfPresent(network.name)?.let { return it }
+
+    return try {
+        val epoch = OgmiosStateQueries(network).getCurrentEpoch()
+        CardanoCache.currentEpoch.put(network.name, epoch)
+        epoch
+    } catch (e: Exception) {
+        0
+    }
+}
+
+/**
  * Fetch CC context (N_Active + quorum) from cache; falls back to Ogmios, then EMPTY.
  */
 private suspend fun getOrFetchCCContext(network: Network): CCContext {
@@ -246,8 +285,10 @@ private suspend fun getOrFetchCCContext(network: Network): CCContext {
 
 private fun parseProposalsFromCache(
     raw: JsonElement,
-    stakeCtx: DRepStakeContext,
-    ccCtx: CCContext = CCContext.EMPTY,
+    stakeCtx:   DRepStakeContext,
+    ccCtx:      CCContext = CCContext.EMPTY,
+    thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
+    currentEpoch: Int = 0,
 ): List<GovernanceActionDto> {
     val array = when (raw) {
         is JsonArray  -> raw
@@ -257,6 +298,6 @@ private fun parseProposalsFromCache(
         else          -> return emptyList()
     }
     return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx) }.getOrNull()
+        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch) }.getOrNull()
     }
 }
