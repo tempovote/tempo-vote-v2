@@ -20,7 +20,7 @@ import vote.tempo.db.GovernanceActionDao
 private val logger = KotlinLogging.logger("BackgroundPoller")
 
 private const val POLL_INTERVAL_MS = 5 * 60 * 1_000L    // 5 minutes (normal cadence)
-private const val QUERY_TIMEOUT_MS = 60_000L             // 60 s hard cap per network poll
+private const val QUERY_TIMEOUT_MS = 180_000L            // 3 min cap — accommodates large delegateRepresentatives response on mainnet
 private const val MAX_BACKOFF_MS   = 30 * 60 * 1_000L   // 30 minutes max backoff
 private const val STARTUP_DELAY_MS = 3_000L
 
