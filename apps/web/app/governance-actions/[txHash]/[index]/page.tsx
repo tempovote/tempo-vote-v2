@@ -14,6 +14,7 @@ import { GovernanceActionSchema, type GovernanceAction } from "@tempo/types"
 import { resolveAnchorUrl, getActionTypeLabel } from "@/lib/governance"
 import { getJwt, authHeader } from "@/lib/api"
 import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
+import { ActionDetailCard } from "@/components/governance/ActionDetailCard"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -523,6 +524,9 @@ export default function GovernanceActionDetailPage({
               </div>
             )}
           </div>
+
+          {/* Type-specific detail card */}
+          <ActionDetailCard action={action} />
 
           {/* Vote results card */}
           <div className="card-static space-y-3 animate-fade-in">
