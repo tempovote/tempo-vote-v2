@@ -97,4 +97,13 @@ object CardanoCache {
         .expireAfterWrite(24, TimeUnit.HOURS)
         .maximumSize(500)
         .build<String, Map<String, String>>()  // key: "NETWORK:txHash#index"
+
+    /**
+     * DRep activity stats fetched from Koios (delegatorCount, liveVotingPower, votedCount).
+     * TTL 15 min: delegators and votes change at most a few times per day.
+     */
+    val drepStats = Caffeine.newBuilder()
+        .expireAfterWrite(15, TimeUnit.MINUTES)
+        .maximumSize(2_000)
+        .build<String, kotlinx.serialization.json.JsonObject>()  // key: "NETWORK:credentialHex"
 }

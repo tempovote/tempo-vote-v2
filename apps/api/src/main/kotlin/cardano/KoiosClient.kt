@@ -136,6 +136,76 @@ suspend fun buildRationalesMap(raw: JsonElement, network: Network): Map<String, 
     return result
 }
 
+data class DRepKoiosStats(
+    val liveVotingPower: Long,
+    val delegatorCount: Int,
+    val votedCount: Int,
+    val totalGaCount: Int,
+)
+
+/**
+ * Fetch DRep live stats from Koios in 4 calls:
+ *  1. drep_info       → liveVotingPower (amount field)
+ *  2. drep_delegators → delegatorCount via Content-Range header (limit=0, count=exact)
+ *  3. drep_votes      → votedCount (paginated, limit=1000)
+ *  4. proposal_list   → totalGaCount via Content-Range header (accurate denominator for voted%)
+ *
+ * Using proposal_list for the denominator avoids inflated voted% when our DB snapshot
+ * only covers a fraction of the chain's historical governance actions.
+ * Returns null on total failure so callers can fall back gracefully.
+ */
+suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStats? {
+    val base = koiosBaseUrl(network)
+    return runCatching {
+        // ── 1. live voting power from drep_info ───────────────────────────────
+        val infoResp = koiosHttp.get("$base/drep_info") {
+            parameter("_drep_ids", "{$drepId}")
+        }
+        val infoBody: JsonArray = infoResp.body()
+        val liveVotingPower = infoBody.firstOrNull()?.jsonObject
+            ?.get("amount")?.jsonPrimitive?.longOrNull ?: 0L
+
+        // ── 2. delegator count via Content-Range header (zero data rows) ──────
+        val delegResp = koiosHttp.get("$base/drep_delegators") {
+            parameter("_drep_id", drepId)
+            parameter("limit", 0)
+            header("Prefer", "count=exact")
+        }
+        val delegatorCount = delegResp.headers["Content-Range"]
+            ?.substringAfterLast("/")?.toIntOrNull() ?: 0
+
+        // ── 3. voted count from drep_votes (paginate until done) ──────────────
+        var votedCount = 0
+        var offset = 0
+        val limit = 1000
+        while (true) {
+            val votesResp = koiosHttp.get("$base/drep_votes") {
+                parameter("_drep_id", drepId)
+                parameter("limit",  limit)
+                parameter("offset", offset)
+            }
+            val page: JsonArray = votesResp.body()
+            votedCount += page.size
+            if (page.size < limit) break
+            offset += limit
+        }
+
+        // ── 4. total GA count from proposal_list (accurate chain-wide denominator) ──
+        val proposalResp = koiosHttp.get("$base/proposal_list") {
+            parameter("limit", 0)
+            header("Prefer", "count=exact")
+        }
+        val totalGaCount = proposalResp.headers["Content-Range"]
+            ?.substringAfterLast("/")?.toIntOrNull() ?: votedCount
+
+        // totalGaCount comes from proposal_list (active only); drep_votes includes expired/ratified.
+        // Use max so voted% never exceeds 100% due to the active-only window.
+        DRepKoiosStats(liveVotingPower, delegatorCount, votedCount, maxOf(totalGaCount, votedCount))
+    }.onFailure { e ->
+        logger.warn { "Koios DRep stats fetch failed for $drepId [$network]: ${e.message}" }
+    }.getOrNull()
+}
+
 /**
  * Scan raw Ogmios governanceProposals JSON and collect all unique SPO pool IDs.
  * Ogmios returns pool IDs in bech32 format (pool1...).

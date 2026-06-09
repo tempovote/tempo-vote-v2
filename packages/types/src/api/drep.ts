@@ -27,3 +27,15 @@ export const DRepVotingHistorySchema = z.object({
   limit: z.number().int(),
 })
 export type DRepVotingHistory = z.infer<typeof DRepVotingHistorySchema>
+
+export const DRepStatsSchema = z.object({
+  activeVotingPower: z.number(),    // lovelace — epoch snapshot (Ogmios)
+  liveVotingPower:   z.number(),    // lovelace — real-time sum (Koios)
+  delegatorCount:    z.number().int(),
+  influencePower:    z.number(),    // percent 0-100
+  votedCount:        z.number().int(),
+  totalGaCount:      z.number().int(),
+  votedPercent:      z.number(),    // 0-100
+  notVotedPercent:   z.number(),    // 0-100
+})
+export type DRepStats = z.infer<typeof DRepStatsSchema>
