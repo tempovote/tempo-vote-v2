@@ -162,6 +162,30 @@ private fun parseRationalString(s: String): Double {
     }
 }
 
+/**
+ * Extract and map all proposals from a raw Ogmios governanceProposals response.
+ * Handles both bare JsonArray and wrapped JsonObject shapes from Ogmios.
+ * Items that fail to parse are silently dropped via runCatching.
+ */
+fun parseProposals(
+    raw: JsonElement,
+    stakeCtx: DRepStakeContext = DRepStakeContext.EMPTY,
+    ccCtx: CCContext = CCContext.EMPTY,
+    thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
+    currentEpoch: Int = 0,
+): List<GovernanceActionDto> {
+    val array: JsonArray = when (raw) {
+        is JsonArray  -> raw
+        is JsonObject -> raw["governanceProposals"]?.jsonArray
+            ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+            ?: return emptyList()
+        else          -> return emptyList()
+    }
+    return array.mapNotNull { item ->
+        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch) }.getOrNull()
+    }
+}
+
 /** Map one Ogmios `governanceProposals` item → GovernanceActionDto. Returns null on parse error. */
 fun mapOgmiosProposal(
     obj: JsonObject,
