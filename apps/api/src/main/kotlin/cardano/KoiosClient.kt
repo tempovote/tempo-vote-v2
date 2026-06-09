@@ -197,12 +197,14 @@ suspend fun fetchDRepVotingPowerBatch(
  */
 suspend fun fetchDelegatorCount(drepId: String, network: Network): Int {
     return runCatching {
-        val resp = koiosHttp.get("${koiosBaseUrl(network)}/drep_delegators") {
-            parameter("_drep_id", drepId)
-            parameter("limit", 0)
-            header("Prefer", "count=exact")
+        withTimeout(10_000L) {
+            val resp = koiosHttp.get("${koiosBaseUrl(network)}/drep_delegators") {
+                parameter("_drep_id", drepId)
+                parameter("limit", 0)
+                header("Prefer", "count=exact")
+            }
+            resp.headers["Content-Range"]?.substringAfterLast("/")?.toIntOrNull() ?: 0
         }
-        resp.headers["Content-Range"]?.substringAfterLast("/")?.toIntOrNull() ?: 0
     }.onFailure { e ->
         logger.warn { "Koios drep_delegators count failed for $drepId [$network]: ${e.message}" }
     }.getOrDefault(0)
