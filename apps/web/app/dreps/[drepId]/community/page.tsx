@@ -3,7 +3,7 @@
 import { use, useState, useCallback, useRef, useEffect } from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
@@ -834,9 +834,10 @@ export default function CommunityPage({
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
   const { drepKey, isConnected, isWalletHydrating, reauthenticate } = useWallet()
+  const searchParams = useSearchParams()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState("")
-  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [isFormOpen, setIsFormOpen] = useState(searchParams.get("create") === "true")
   const [alertModal, setAlertModal] = useState<{ type: "success" | "error"; title: string; message: string } | null>(null)
 
   const { profile, isLoading: profileLoading } = useDRepProfile(drepId, network)

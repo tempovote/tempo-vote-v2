@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
+import { useWallet } from "@/hooks/useWallet"
 import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
 import { govActionIdToBech32 } from "@/lib/governance"
@@ -25,6 +27,7 @@ const getStatusPriority = (s: string) => STATUS_SORT_PRIORITY[s] ?? 1
 
 export default function GovernanceActionsPage() {
   const network = useWalletStore((s) => s.selectedNetwork)
+  const { drepKey } = useWallet()
 
   const [activeFilter, setActiveFilter] = useState("")
   const [search, setSearch] = useState("")
@@ -130,7 +133,20 @@ export default function GovernanceActionsPage() {
             Tạo poll trong cộng đồng DRep trước để lấy ý kiến và xây dựng sự ủng hộ.
             Khi đã có đủ sự đồng thuận, bạn có thể gửi lên chain như một Governance Action.
           </p>
-          <button className="btn-primary shrink-0 text-sm">Tạo Poll</button>
+          <Link
+            href={
+              drepKey?.dRepIDCip105
+                ? `/dreps/${drepKey.dRepIDCip105}/community?create=true${network !== "mainnet" ? `&network=${network}` : ""}`
+                : "/dreps"
+            }
+            className="btn-primary shrink-0 text-sm inline-flex items-center gap-1.5"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Internal Poll
+          </Link>
         </div>
       </div>
 
