@@ -5,6 +5,7 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import vote.tempo.cache.CardanoCache
@@ -20,7 +21,11 @@ private val koiosJson = Json { ignoreUnknownKeys = true }
 
 // No ContentNegotiation — parse via bodyAsText() to avoid "SourceByteReadChannel" errors
 // when Koios returns 429/5xx with non-JSON Content-Type.
-private val koiosHttp = HttpClient(CIO)
+// requestTimeout = 0 disables CIO's built-in socket-idle timeout so it doesn't race against
+// coroutine withTimeout() wrappers — same fix applied to OgmiosStateQueries.
+private val koiosHttp = HttpClient(CIO) {
+    engine { requestTimeout = 0 }
+}
 
 private suspend fun HttpResponse.jsonArray(): JsonArray {
     val text = bodyAsText()
@@ -158,9 +163,15 @@ data class DRepKoiosStats(
  * only covers a fraction of the chain's historical governance actions.
  * Returns null on total failure so callers can fall back gracefully.
  */
+// 60 s is enough for the 4 sequential Koios calls (drep_info, drep_delegators,
+// drep_votes pagination, proposal_list). If Koios is under load we'd rather
+// time out cleanly than hang the HTTP request thread indefinitely.
+private const val DREP_STATS_TIMEOUT_MS = 60_000L
+
 suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStats? {
     val base = koiosBaseUrl(network)
     return runCatching {
+      withTimeout(DREP_STATS_TIMEOUT_MS) {
         // ── 1. live voting power from drep_info ───────────────────────────────
         val infoResp = koiosHttp.get("$base/drep_info") {
             parameter("_drep_ids", "{$drepId}")
@@ -205,6 +216,7 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
         // totalGaCount comes from proposal_list (active only); drep_votes includes expired/ratified.
         // Use max so voted% never exceeds 100% due to the active-only window.
         DRepKoiosStats(liveVotingPower, delegatorCount, votedCount, maxOf(totalGaCount, votedCount))
+      }
     }.onFailure { e ->
         logger.warn { "Koios DRep stats fetch failed for $drepId [$network]: ${e.message}" }
     }.getOrNull()
