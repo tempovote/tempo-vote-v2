@@ -113,7 +113,7 @@ object CardanoCache {
      * TTL matches BackgroundPoller interval so stale data is replaced each poll cycle.
      */
     val drepDelegatorCounts = Caffeine.newBuilder()
-        .expireAfterWrite(10, TimeUnit.MINUTES)
+        .expireAfterWrite(20, TimeUnit.MINUTES)
         .build<String, Map<String, Int>>()  // key: network.name
 
     /**
