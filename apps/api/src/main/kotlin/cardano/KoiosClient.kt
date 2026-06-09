@@ -8,10 +8,10 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.*
-import mu.KotlinLogging
+import io.github.oshai.kotlinlogging.KotlinLogging
 import vote.tempo.cache.CardanoCache
 
-private val logger = KotlinLogging.logger {}
+private val logger = KotlinLogging.logger("KoiosClient")
 
 data class PoolInfo(
     val name: String?,

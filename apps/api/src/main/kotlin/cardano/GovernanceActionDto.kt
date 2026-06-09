@@ -318,7 +318,8 @@ fun mapOgmiosProposal(
     val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx, poolInfoMap)
 
     val dtoDetails = extractActionDetails(actionType, action, proposal)
-    val status = computeGAStatus(actionType, drepVotes, spoVotes, ccVotes, expiresEpoch, currentEpoch, thresholds)
+    val spoVoteCounts = VoteCounts(spoVotes.yes, spoVotes.no, spoVotes.abstain)
+    val status = computeGAStatus(actionType, drepVotes, spoVoteCounts, ccVotes, expiresEpoch, currentEpoch, thresholds)
 
     GovernanceActionDto(
         txHash = txHash,
