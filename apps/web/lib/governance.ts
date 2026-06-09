@@ -109,19 +109,46 @@ function buildIpfsGateways(): string[] {
   const pinata = process.env.NEXT_PUBLIC_PINATA_GATEWAY
   // cloudflare-ipfs.com was shut down in 2023 — removed.
   // gateway.pinata.cloud is the most reliable for Pinata-pinned files.
-  const base = ["https://gateway.pinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/"]
+  const base = [
+    "https://gateway.pinata.cloud/ipfs/",
+    "https://ipfs.io/ipfs/",
+    "https://dweb.link/ipfs/",
+    "https://w3s.link/ipfs/",
+    "https://nftstorage.link/ipfs/",
+  ]
   return pinata ? [`${pinata}/ipfs/`, ...base] : base
 }
 
 const IPFS_GATEWAYS = buildIpfsGateways()
 
-// ipfs:// → list of candidate HTTPS URLs (for fallback fetching)
+// Extract CID from the path segment after /ipfs/ — supports CIDv0 (Qm...) and CIDv1 (baf...)
+function extractIpfsCid(url: string): string | null {
+  const after = url.split("/ipfs/")[1]
+  if (!after) return null
+  const m = /^(Qm[1-9A-HJ-NP-Za-km-z]{44,}|baf[0-9A-Za-z]{50,})/.exec(after)
+  return m ? m[1] : null
+}
+
+// Resolve any URL to a list of candidate HTTPS URLs to try in order (IPFS gateway fallback).
+// ipfs://    → all gateways
+// HTTPS with /ipfs/<CID> → original URL first, then remaining gateways with same CID
+// Other HTTPS → [url] unchanged (e.g. raw GitHub, direct API endpoints)
 export function resolveAnchorUrls(url: string | null): string[] {
   if (!url) return []
+
   if (url.startsWith("ipfs://")) {
     const cid = url.slice(7)
     return IPFS_GATEWAYS.map((gw) => `${gw}${cid}`)
   }
+
+  if (url.includes("/ipfs/")) {
+    const cid = extractIpfsCid(url)
+    if (cid) {
+      const others = IPFS_GATEWAYS.map((gw) => `${gw}${cid}`).filter((u) => u !== url)
+      return [url, ...others]
+    }
+  }
+
   return [url]
 }
 

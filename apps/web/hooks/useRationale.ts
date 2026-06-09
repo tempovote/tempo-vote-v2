@@ -4,8 +4,22 @@ import { useState, useCallback } from "react"
 import { resolveAnchorUrls } from "@/lib/governance"
 
 export interface RationaleContent {
-  comment?: string
+  // CIP-100 generic fields
   title?: string
+  comment?: string
+  // CIP-136 CC rationale fields
+  summary?: string
+  rationaleStatement?: string
+  precedentDiscussion?: string
+  counterargumentDiscussion?: string
+  conclusion?: string
+  internalVote?: {
+    constitutional?: number
+    unconstitutional?: number
+    abstain?: number
+    didNotVote?: number
+  }
+  // Common
   references?: Array<{ label?: string; uri?: string }>
 }
 
@@ -21,8 +35,19 @@ function parseRationale(data: unknown): RationaleContent {
   const body = d.body as Record<string, unknown> | undefined
   if (!body) return {}
 
-  const comment = typeof body.comment === "string" ? body.comment : undefined
-  const title   = typeof body.title   === "string" ? body.title   : undefined
+  const str = (key: string): string | undefined =>
+    typeof body[key] === "string" ? (body[key] as string) : undefined
+
+  let internalVote: RationaleContent["internalVote"] | undefined
+  if (body.internalVote && typeof body.internalVote === "object") {
+    const iv = body.internalVote as Record<string, unknown>
+    internalVote = {
+      constitutional:    typeof iv.constitutional    === "number" ? iv.constitutional    : undefined,
+      unconstitutional:  typeof iv.unconstitutional  === "number" ? iv.unconstitutional  : undefined,
+      abstain:           typeof iv.abstain           === "number" ? iv.abstain           : undefined,
+      didNotVote:        typeof iv.didNotVote        === "number" ? iv.didNotVote        : undefined,
+    }
+  }
 
   const rawRefs = Array.isArray(body.references) ? body.references : []
   const references = rawRefs
@@ -33,7 +58,17 @@ function parseRationale(data: unknown): RationaleContent {
     }))
     .filter((r) => r.label || r.uri)
 
-  return { comment, title, references }
+  return {
+    title:                     str("title"),
+    comment:                   str("comment"),
+    summary:                   str("summary"),
+    rationaleStatement:        str("rationaleStatement"),
+    precedentDiscussion:       str("precedentDiscussion"),
+    counterargumentDiscussion: str("counterargumentDiscussion"),
+    conclusion:                str("conclusion"),
+    internalVote,
+    references: references.length > 0 ? references : undefined,
+  }
 }
 
 async function fetchRationale(rationaleUrl: string): Promise<RationaleContent> {
@@ -48,7 +83,8 @@ async function fetchRationale(rationaleUrl: string): Promise<RationaleContent> {
       if (!r.ok) continue
       const data: unknown = await r.json()
       const content = parseRationale(data)
-      if (content.comment || content.title) return content
+      // Accept if any primary text field is present (CIP-100 or CIP-136)
+      if (content.comment || content.title || content.summary || content.rationaleStatement) return content
     } catch {
       // try next gateway
     }
