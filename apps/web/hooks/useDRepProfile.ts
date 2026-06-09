@@ -55,6 +55,7 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
         mandateExpiresEpoch?: number | null
         id: string
         name: string | null
+        imageUrl?: string | null
         anchorUrl: string | null
         votingPower: number | null
         stakeKeyBalance: number | null
@@ -74,13 +75,14 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
           motivations: null,
           objectives: null,
           qualifications: null,
-          imageUrl: null,
+          imageUrl: data.imageUrl ?? null,
           references: null,
         }
         setProfile(base)
         setIsLoading(false)
 
-        // Fetch CIP-119 metadata from IPFS if anchor is available
+        // Fetch full CIP-119 metadata (motivations, objectives, etc.) if anchor is available.
+        // imageUrl is already provided by the API (server-side fetch bypasses CORS restrictions).
         if (data.anchorUrl) {
           setIsLoadingMeta(true)
           fetchCip119(data.anchorUrl).then((meta) => {
@@ -88,7 +90,8 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
             setIsLoadingMeta(false)
             if (meta) {
               setProfile((prev) =>
-                prev ? { ...prev, ...meta } : prev
+                // Keep API-provided imageUrl if the direct fetch also failed to get one
+                prev ? { ...prev, ...meta, imageUrl: meta.imageUrl ?? prev.imageUrl } : prev
               )
             }
           })

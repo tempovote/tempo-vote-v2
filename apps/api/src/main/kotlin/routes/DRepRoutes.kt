@@ -485,10 +485,8 @@ private suspend fun buildDRepResponse(
     }
 
     val anchorUrl = listEntry["anchorUrl"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull
-    val drepName = anchorUrl?.let { fetchDRepName(it) }
+    val meta = anchorUrl?.let { fetchDRepMeta(it) }
     val votingPower = listEntry["votingPower"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.longOrNull ?: 0L
-    // stakeKeyBalance requires Kupo UTxO query — rewardAccountSummaries only returns deposit/rewards,
-    // not actual wallet balance. Return null until Kupo integration is added.
     val stakeKeyBalance: Long? = null
     val mandateEpoch = listEntry["mandateEpoch"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.intOrNull
     val currentEpoch = runCatching { OgmiosStateQueries(network).getCurrentEpoch() }.getOrNull()
@@ -499,7 +497,8 @@ private suspend fun buildDRepResponse(
         put("active", isActive)
         put("mandateExpiresEpoch", mandateEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
         put("id", canonicalId)
-        put("name", drepName?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("name", meta?.name?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("imageUrl", meta?.imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
         put("anchorUrl", listEntry["anchorUrl"]!!)
         put("votingPower", JsonPrimitive(votingPower))
         put("stakeKeyBalance", stakeKeyBalance?.let { JsonPrimitive(it) } ?: JsonNull)
@@ -621,12 +620,14 @@ private fun buildCandidateUrls(anchorUrl: String): List<String> {
     return (origIfHttps + IPFS_GATEWAYS_BE.map { "${it}${cid}" }).distinct()
 }
 
+private data class DRepMeta(val name: String?, val imageUrl: String?)
+
 /**
- * Fetch DRep metadata from anchor URL and extract the given name.
- * Supports CIP-119 format: { body: { givenName: "..." } }
- * Tries multiple IPFS gateways with short timeout each.
+ * Fetch DRep metadata from anchor URL and extract name + image URL.
+ * Runs server-side so CORS restrictions on the metadata host don't apply.
+ * Supports CIP-119: { body: { givenName, image: { contentUrl } | "url" } }
  */
-private suspend fun fetchDRepName(anchorUrl: String): String? {
+private suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
     val candidates = buildCandidateUrls(anchorUrl)
     for (url in candidates) {
         try {
@@ -634,9 +635,25 @@ private suspend fun fetchDRepName(anchorUrl: String): String? {
                 val response = httpClient.get(url)
                 if (!response.status.isSuccess()) return@withTimeout null
                 val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-                json["body"]?.jsonObject?.get("givenName")?.jsonPrimitive?.contentOrNull
+                val body = json["body"]?.jsonObject ?: json
+
+                val name = body["givenName"]?.jsonPrimitive?.contentOrNull
                     ?: json["givenName"]?.jsonPrimitive?.contentOrNull
                     ?: json["name"]?.jsonPrimitive?.contentOrNull
+
+                val imageNode = body["image"]
+                val imageUrl = when {
+                    imageNode == null || imageNode is JsonNull -> null
+                    imageNode is JsonPrimitive -> imageNode.contentOrNull
+                    imageNode is JsonObject ->
+                        imageNode["contentUrl"]?.jsonPrimitive?.contentOrNull
+                            ?: imageNode["url"]?.jsonPrimitive?.contentOrNull
+                            ?: imageNode["@id"]?.jsonPrimitive?.contentOrNull
+                    else -> null
+                }
+
+                if (name == null && imageUrl == null) null
+                else DRepMeta(name, imageUrl)
             }
             if (result != null) return result
         } catch (_: Exception) {
