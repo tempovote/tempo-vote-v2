@@ -106,4 +106,12 @@ object CardanoCache {
         .expireAfterWrite(15, TimeUnit.MINUTES)
         .maximumSize(2_000)
         .build<String, kotlinx.serialization.json.JsonObject>()  // key: "NETWORK:credentialHex"
+
+    /**
+     * Full leaderboard result — computed once, cached 15 min.
+     * Prevents re-computing and re-fetching Koios on every page load.
+     */
+    val leaderboard = Caffeine.newBuilder()
+        .expireAfterWrite(15, TimeUnit.MINUTES)
+        .build<String, JsonElement>()   // key: "NETWORK:limit"
 }
