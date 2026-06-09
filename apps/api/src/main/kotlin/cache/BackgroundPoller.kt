@@ -13,6 +13,7 @@ import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
 import vote.tempo.cardano.fetchPoolInfo
+import vote.tempo.cardano.buildRationalesMap
 import vote.tempo.cardano.parseProposals
 import vote.tempo.db.GovernanceActionDao
 
@@ -94,8 +95,9 @@ private suspend fun pollNetwork(network: Network) {
 
             // Parse proposals and pre-warm the parsed cache so the first API request after
             // a poll cycle is served instantly without re-parsing the raw JSON.
-            val poolInfoMap = fetchPoolInfo(extractSPOPoolIds(gas), network)
-            val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap)
+            val poolInfoMap   = fetchPoolInfo(extractSPOPoolIds(gas), network)
+            val rationalesMap = buildRationalesMap(gas, network)
+            val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap)
             CardanoCache.parsedGovActions.put(network.name, parsed)
 
             // Persist snapshot to DB — marks disappeared proposals with final status

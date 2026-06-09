@@ -18,6 +18,7 @@ import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
 import vote.tempo.cardano.fetchPoolInfo
+import vote.tempo.cardano.buildRationalesMap
 import vote.tempo.cardano.parseProposals
 import vote.tempo.db.GovernanceActionDao
 
@@ -222,8 +223,9 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
                     return emptyList()
                 }
 
-            val poolInfoMap = fetchPoolInfo(extractSPOPoolIds(raw), network)
-            parseProposals(raw, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap)
+            val poolInfoMap   = fetchPoolInfo(extractSPOPoolIds(raw), network)
+            val rationalesMap = buildRationalesMap(raw, network)
+            parseProposals(raw, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap)
                 .also { CardanoCache.parsedGovActions.put(network.name, it) }
         }
 

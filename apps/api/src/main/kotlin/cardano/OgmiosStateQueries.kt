@@ -92,6 +92,13 @@ fun poolIdHexToBech32(hexId: String): String {
     return bech32Encode("pool", bytesToBech32Words(bytes))
 }
 
+/** Convert a governance action (txHash hex + index) to bech32 "gov_action1..." format. */
+fun txHashToGovActionId(txHash: String, index: Int): String {
+    val txHashBytes = txHash.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    val data = txHashBytes + byteArrayOf(index.toByte())
+    return bech32Encode("gov_action", bytesToBech32Words(data))
+}
+
 /**
  * Construct a bech32 stake address from a 28-byte credential hex.
  * Assumes the DRep credential is the same as the wallet's stake key credential —

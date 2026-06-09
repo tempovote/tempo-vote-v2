@@ -271,6 +271,7 @@ fun parseProposals(
     thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
     currentEpoch: Int = 0,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
+    rationalesMap: Map<String, Map<String, String>> = emptyMap(),
 ): List<GovernanceActionDto> {
     val array: JsonArray = when (raw) {
         is JsonArray  -> raw
@@ -280,7 +281,7 @@ fun parseProposals(
         else          -> return emptyList()
     }
     return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch, poolInfoMap) }.getOrNull()
+        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch, poolInfoMap, rationalesMap) }.getOrNull()
     }
 }
 
@@ -292,6 +293,7 @@ fun mapOgmiosProposal(
     thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
     currentEpoch: Int = 0,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
+    rationalesMap: Map<String, Map<String, String>> = emptyMap(),
 ): GovernanceActionDto? = runCatching {
     val proposal = obj["proposal"]?.jsonObject ?: return null
     val txHash = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return null
@@ -313,10 +315,11 @@ fun mapOgmiosProposal(
     // votes is an array of { issuer: { role, from, id }, vote: "yes"|"no"|"abstain" }
     val votes = obj["votes"]?.jsonArray ?: JsonArray(emptyList())
 
+    val rationaleForProposal = rationalesMap["$txHash#$index"] ?: emptyMap()
     val drepVotes  = aggregateDRepVotes(votes, stakeCtx)
     val spoVotes   = aggregateSPOVotes(votes, poolInfoMap)
     val ccVotes    = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
-    val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx, poolInfoMap)
+    val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx, poolInfoMap, rationaleForProposal)
 
     val dtoDetails = extractActionDetails(actionType, action, proposal)
     val spoVoteCounts = VoteCounts(spoVotes.yes, spoVotes.no, spoVotes.abstain)
@@ -473,6 +476,7 @@ private fun extractVoteEntries(
     stakeCtx: DRepStakeContext,
     ccCtx: CCContext = CCContext.EMPTY,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
+    rationaleMap: Map<String, String> = emptyMap(),
 ): List<VoteEntry> =
     votes.mapNotNull { entry ->
         val obj  = entry.jsonObject
@@ -491,7 +495,7 @@ private fun extractVoteEntries(
             else   -> 0L
         }
         val anchorUrl   = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
-        val rationaleUrl = obj["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+        val rationaleUrl = rationaleMap[id]
         val memberName  = if (shortRole == "cc") {
             val hex = when (id.length) { 58 -> id.substring(2); else -> id }
             ccCtx.hotToName[hex] ?: ccCtx.hotToName[id]

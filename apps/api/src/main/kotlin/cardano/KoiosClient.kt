@@ -74,6 +74,69 @@ suspend fun fetchPoolInfo(bech32PoolIds: List<String>, network: Network): Map<St
 }
 
 /**
+ * Fetch rationale URLs (CIP-100 meta_url) for all votes on a specific governance action.
+ * Ogmios does not return per-vote anchor fields; Koios proposal_votes fills that gap.
+ * Returns Map<voterKey, rationaleUrl> where voterKey is credential hex (DRep/CC) or bech32 pool ID (SPO).
+ */
+suspend fun fetchProposalVoteRationales(txHash: String, index: Int, network: Network): Map<String, String> {
+    val cacheKey = "${network.name}:$txHash#$index"
+    CardanoCache.proposalRationales.getIfPresent(cacheKey)?.let { return it }
+
+    val govActionId = txHashToGovActionId(txHash, index)
+    val result = mutableMapOf<String, String>()
+
+    runCatching {
+        var offset = 0
+        val limit  = 1000
+        while (true) {
+            val response = koiosHttp.get("${koiosBaseUrl(network)}/proposal_votes") {
+                parameter("_proposal_id", govActionId)
+                parameter("limit",  limit)
+                parameter("offset", offset)
+            }
+            val page: JsonArray = response.body()
+            for (item in page) {
+                val obj    = item.jsonObject
+                val metaUrl = obj["meta_url"]?.jsonPrimitive?.contentOrNull ?: continue
+                // voter_hex = credential hex (DRep/CC). Also index voter_id (bech32) for SPO pool1...
+                obj["voter_hex"]?.jsonPrimitive?.contentOrNull?.let { result[it] = metaUrl }
+                obj["voter_id"]?.jsonPrimitive?.contentOrNull?.let  { result[it] = metaUrl }
+            }
+            if (page.size < limit) break
+            offset += limit
+        }
+    }.onFailure { e ->
+        logger.warn { "Koios proposal_votes fetch failed for $txHash#$index [$network]: ${e.message}" }
+    }
+
+    CardanoCache.proposalRationales.put(cacheKey, result)
+    return result
+}
+
+/**
+ * Fetch rationale maps for all proposals in a raw Ogmios governanceProposals response.
+ * Returns Map<"txHash#index", Map<voterKey, rationaleUrl>>.
+ */
+suspend fun buildRationalesMap(raw: JsonElement, network: Network): Map<String, Map<String, String>> {
+    val array: JsonArray = when (raw) {
+        is JsonArray  -> raw
+        is JsonObject -> raw["governanceProposals"]?.jsonArray
+            ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+            ?: return emptyMap()
+        else          -> return emptyMap()
+    }
+    val result = mutableMapOf<String, Map<String, String>>()
+    for (item in array) {
+        val proposal = item.jsonObject["proposal"]?.jsonObject ?: continue
+        val txHash   = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull ?: continue
+        val index    = proposal["index"]?.jsonPrimitive?.int ?: 0
+        val rationales = fetchProposalVoteRationales(txHash, index, network)
+        if (rationales.isNotEmpty()) result["$txHash#$index"] = rationales
+    }
+    return result
+}
+
+/**
  * Scan raw Ogmios governanceProposals JSON and collect all unique SPO pool IDs.
  * Ogmios returns pool IDs in bech32 format (pool1...).
  */
