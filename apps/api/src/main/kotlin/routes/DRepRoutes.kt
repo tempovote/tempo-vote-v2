@@ -714,6 +714,19 @@ private suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
 
                 val references = body["references"]?.let { if (it is JsonNull) null else it as? JsonArray }
                     ?.takeIf { it.isNotEmpty() }
+                    ?.let { arr ->
+                        JsonArray(arr.mapNotNull { el ->
+                            val obj = el as? JsonObject ?: return@mapNotNull null
+                            val label = extractMetaStr(obj["label"]) ?: return@mapNotNull null
+                            val uri   = extractMetaStr(obj["uri"])   ?: return@mapNotNull null
+                            buildJsonObject {
+                                obj["@type"]?.let { put("@type", it) }
+                                put("label", JsonPrimitive(label))
+                                put("uri",   JsonPrimitive(uri))
+                            }
+                        })
+                    }
+                    ?.takeIf { it.isNotEmpty() }
 
                 if (name == null && imageUrl == null && motivations == null
                     && objectives == null && qualifications == null) null
