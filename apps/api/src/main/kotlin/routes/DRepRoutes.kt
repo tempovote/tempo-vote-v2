@@ -7,6 +7,9 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.SortOrder
@@ -20,7 +23,8 @@ import vote.tempo.cardano.actionTypeLabel
 import vote.tempo.cardano.credentialHexToStakeAddress
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
-import vote.tempo.cardano.fetchDRepInfoBatch
+import vote.tempo.cardano.fetchDRepVotingPowerBatch
+import vote.tempo.cardano.fetchDelegatorCount
 import vote.tempo.cardano.fetchDRepKoiosStats
 import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.parseDRepStakeContext
@@ -290,37 +294,47 @@ fun Route.drepRoutes() {
                 .sortedByDescending { it.activeVotingPower }
                 .take(candidateCount)
 
-            // Batch-fetch liveVotingPower + delegatorCount for all candidates in 1-2 Koios calls.
-            // Avoids N×individual-requests burst (429 rate limit) that happened with concurrent fetches.
+            // ── Step 1: batch-fetch liveVotingPower for all candidates (1-2 Koios calls) ──
+            // Koios /drep_info does not include delegator_count, so we key by credential hex
+            // (`hex` field) which is stable — drep_id in the response uses CIP-129 bech32,
+            // different from the CIP-105 IDs we generate.
             val allCip105Ids = candidates.map { credentialHexToDrepIdCip105(it.credHex) ?: it.id }
-            val batchInfo = fetchDRepInfoBatch(allCip105Ids, network)
+            val vpByCredHex  = fetchDRepVotingPowerBatch(allCip105Ids, network)
 
-            val results = candidates.mapIndexed { idx, candidate ->
-                val cip105Id = allCip105Ids[idx]
-                val activeVp = stakeCtx?.stakeMap?.get(candidate.credHex) ?: candidate.activeVotingPower
-                val influence = if ((stakeCtx?.totalActiveDRepStake ?: 0L) > 0L)
-                    activeVp.toDouble() / stakeCtx!!.totalActiveDRepStake.toDouble() * 100.0
-                else 0.0
+            // ── Step 2: sort candidates by liveVotingPower, narrow to limit×2 pool ──
+            // delegator_count is correlated with voting power; narrowing here keeps
+            // drep_delegators calls to at most limit×2 (≤40) instead of candidateCount (≤200).
+            val narrowed = candidates.mapIndexed { idx, c ->
+                val cip105Id    = allCip105Ids[idx]
+                val activeVp    = stakeCtx?.stakeMap?.get(c.credHex) ?: c.activeVotingPower
+                val liveVp      = vpByCredHex[c.credHex] ?: activeVp
+                Triple(c, cip105Id, Pair(activeVp, liveVp))
+            }.sortedByDescending { it.third.second }.take(limit * 2)
 
-                // Prefer batch result; fall back to drepStats cache (populated by /dreps/{id}/stats)
-                val batchStats = batchInfo[cip105Id]
-                val cachedStats = CardanoCache.drepStats.getIfPresent("${network.name}:${candidate.credHex}")
-                val liveVotingPower = batchStats?.liveVotingPower
-                    ?: cachedStats?.get("liveVotingPower")?.jsonPrimitive?.longOrNull
-                    ?: activeVp
-                val delegatorCount = batchStats?.delegatorCount
-                    ?: cachedStats?.get("delegatorCount")?.jsonPrimitive?.intOrNull
-                    ?: 0
+            // ── Step 3: fetch delegatorCount for narrowed pool (max limit×2 individual calls) ──
+            val results = coroutineScope {
+                narrowed.map { (candidate, cip105Id, vps) ->
+                    async {
+                        val (activeVp, liveVp) = vps
+                        val influence = if ((stakeCtx?.totalActiveDRepStake ?: 0L) > 0L)
+                            activeVp.toDouble() / stakeCtx!!.totalActiveDRepStake.toDouble() * 100.0
+                        else 0.0
 
-                buildJsonObject {
-                    put("id", cip105Id)
-                    put("credHex", candidate.credHex)
-                    put("anchorUrl", candidate.anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                    put("activeVotingPower", activeVp)
-                    put("liveVotingPower", liveVotingPower)
-                    put("delegatorCount", delegatorCount)
-                    put("influencePower", influence)
-                }
+                        val cachedStats = CardanoCache.drepStats.getIfPresent("${network.name}:${candidate.credHex}")
+                        val delegatorCount = cachedStats?.get("delegatorCount")?.jsonPrimitive?.intOrNull
+                            ?: fetchDelegatorCount(cip105Id, network)
+
+                        buildJsonObject {
+                            put("id", cip105Id)
+                            put("credHex", candidate.credHex)
+                            put("anchorUrl", candidate.anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("activeVotingPower", activeVp)
+                            put("liveVotingPower", liveVp)
+                            put("delegatorCount", delegatorCount)
+                            put("influencePower", influence)
+                        }
+                    }
+                }.awaitAll()
             }
 
             val sorted = results
