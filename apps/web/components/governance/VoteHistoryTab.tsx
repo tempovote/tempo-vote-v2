@@ -3,7 +3,6 @@
 import { useState } from "react"
 import type { VoteEntry } from "@tempo/types"
 import { credentialHexToDrepId, lovelaceToAda } from "@/lib/governance"
-import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useRationale } from "@/hooks/useRationale"
 import type { RationaleContent } from "@/hooks/useRationale"
 import { marked } from "marked"
@@ -308,12 +307,10 @@ function VoteTable({
   votes,
   role,
   side,
-  namesMap,
 }: {
   votes: VoteEntry[]
   role: RoleTab
   side: "yes" | "no-abstain"
-  namesMap: ReadonlyMap<string, string>
 }) {
   const filtered = votes
     .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
@@ -363,8 +360,8 @@ function VoteTable({
               ? (v.memberName ?? undefined)
               : role === "spo"
                 ? (v.poolName ?? undefined)
-                : (v.anchorUrl ? namesMap.get(v.anchorUrl) : undefined)
-            const nameLoading  = role === "drep" && v.anchorUrl && resolvedName === undefined
+                : (v.voterName ?? undefined)
+            const nameLoading  = false
 
             return (
               <div key={i} className="grid grid-cols-[1fr_auto] gap-2 items-start py-2">
@@ -414,12 +411,6 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
 
   const roleVotes = votes.filter((v) => v.role === role)
 
-  // Batch-resolve DRep names from CIP-119 anchor documents
-  const drepAnchorUrls = votes
-    .filter((v) => v.role === "drep" && v.anchorUrl)
-    .map((v) => v.anchorUrl!)
-  const namesMap = useAnchorTitlesMap(drepAnchorUrls)
-
   return (
     <div className="space-y-4">
       {/* Role sub-tabs */}
@@ -449,9 +440,9 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
         </p>
       ) : (
         <div className="flex gap-5">
-          <VoteTable votes={roleVotes} role={role} side="yes" namesMap={namesMap} />
+          <VoteTable votes={roleVotes} role={role} side="yes" />
           <div className="w-px bg-border-subtle shrink-0" />
-          <VoteTable votes={roleVotes} role={role} side="no-abstain" namesMap={namesMap} />
+          <VoteTable votes={roleVotes} role={role} side="no-abstain" />
         </div>
       )}
     </div>

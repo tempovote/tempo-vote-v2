@@ -57,6 +57,7 @@ export const VoteEntrySchema = z.object({
   rationaleUrl: z.string().nullable().optional(), // per-vote anchor URL (CIP-100) — voter's rationale
   memberName: z.string().nullable().optional(),  // CC member display name (resolved via hot→cold credential mapping)
   poolName: z.string().nullable().optional(),    // SPO pool display name (from Koios meta_json.name)
+  voterName: z.string().nullable().optional(),   // DRep display name — resolved server-side (bypasses CORS)
 })
 export type VoteEntry = z.infer<typeof VoteEntrySchema>
 

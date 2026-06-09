@@ -234,7 +234,20 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
     val historical = GovernanceActionDao.getHistorical(network.name.lowercase())
         .filter { "${it.txHash}:${it.index}" !in liveKeys }
 
-    return live + historical
+    val all = live + historical
+
+    // Enrich DRep vote entries with names from drepInfo cache (fast HashMap lookup, no network call).
+    // Names are populated when DRep profiles are visited or via the leaderboard endpoint.
+    return all.map { ga ->
+        ga.copy(votes = ga.votes.map { vote ->
+            if (vote.role == "drep") {
+                val nameEl = CardanoCache.drepInfo
+                    .getIfPresent("${network.name}:${vote.id}")?.get("name")
+                val name = if (nameEl is JsonPrimitive) nameEl.contentOrNull else null
+                vote.copy(voterName = name)
+            } else vote
+        })
+    }
 }
 
 /**

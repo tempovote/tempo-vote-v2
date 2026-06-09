@@ -346,6 +346,13 @@ fun Route.drepRoutes() {
                             fetchDRepMeta(anchor) else null
                         val name     = cachedName     ?: meta?.name
                         val imageUrl = cachedImageUrl ?: meta?.imageUrl
+                        // Populate drepInfo cache so vote history can resolve this DRep's name
+                        if (credHex != null && (name != null || imageUrl != null) && cached == null) {
+                            CardanoCache.drepInfo.put("${network.name}:$credHex", buildJsonObject {
+                                put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                            })
+                        }
                         buildJsonObject {
                             entry.forEach { (k, v) -> put(k, v) }
                             put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
