@@ -3,6 +3,7 @@ package vote.tempo.cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import vote.tempo.cardano.GovernanceActionDto
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,10 +28,19 @@ object CardanoCache {
         .expireAfterWrite(10, TimeUnit.MINUTES)
         .build<String, JsonElement>()
 
-    /** All governance actions — refreshed by BackgroundPoller. */
+    /** All governance actions (raw JSON) — refreshed by BackgroundPoller. */
     val govActions = Caffeine.newBuilder()
         .expireAfterWrite(5, TimeUnit.MINUTES)
         .build<String, JsonElement>()
+
+    /**
+     * Parsed + status-computed governance proposals — derived from govActions + context caches.
+     * Invalidated by BackgroundPoller whenever govActions raw data is refreshed, so the parsed
+     * list is never served beyond one polling cycle behind the raw data.
+     */
+    val parsedGovActions = Caffeine.newBuilder()
+        .expireAfterWrite(5, TimeUnit.MINUTES)
+        .build<String, List<GovernanceActionDto>>()
 
     /** Protocol parameters — changes only at epoch boundary. */
     val protocolParams = Caffeine.newBuilder()
@@ -41,6 +51,11 @@ object CardanoCache {
     val ccCommittee = Caffeine.newBuilder()
         .expireAfterWrite(30, TimeUnit.MINUTES)
         .build<String, JsonElement>()
+
+    /** Current epoch per network — TTL 30 min (epoch ≥ 1 day on all networks). */
+    val currentEpoch = Caffeine.newBuilder()
+        .expireAfterWrite(30, TimeUnit.MINUTES)
+        .build<String, Int>()
 
     // ── Per-entity data ───────────────────────────────────────────────────────
 

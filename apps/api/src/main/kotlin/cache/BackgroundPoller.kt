@@ -3,8 +3,16 @@ package vote.tempo.cache
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.*
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.jsonObject
+import vote.tempo.cardano.CCContext
+import vote.tempo.cardano.GovernanceThresholds
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
+import vote.tempo.cardano.parseCCContext
+import vote.tempo.cardano.parseDRepStakeContext
+import vote.tempo.cardano.parseGovernanceThresholds
+import vote.tempo.cardano.parseProposals
+import vote.tempo.db.GovernanceActionDao
 
 private val logger = KotlinLogging.logger("BackgroundPoller")
 
@@ -63,11 +71,34 @@ private suspend fun pollNetwork(network: Network) {
 
             val gas = q.getGovernanceProposals()
             CardanoCache.govActions.put(network.name, gas)
+
+            // Current epoch is needed for status computation and disappeared-proposal detection.
+            val epoch = q.getCurrentEpoch()
+            CardanoCache.currentEpoch.put(network.name, epoch)
+
+            // Build contexts from available caches; fall back to defaults so we never block
+            // on an extra network call here (thresholds + CC are refreshed by their own routes).
+            val stakeCtx   = parseDRepStakeContext(dreps)
+            val ccCtx      = CardanoCache.ccCommittee.getIfPresent(network.name)
+                ?.let { runCatching { parseCCContext(it) }.getOrDefault(CCContext.EMPTY) }
+                ?: CCContext.EMPTY
+            val thresholds = CardanoCache.protocolParams.getIfPresent(network.name)
+                ?.let { runCatching { parseGovernanceThresholds(it.jsonObject) }.getOrDefault(GovernanceThresholds.DEFAULT) }
+                ?: GovernanceThresholds.DEFAULT
+
+            // Parse proposals and pre-warm the parsed cache so the first API request after
+            // a poll cycle is served instantly without re-parsing the raw JSON.
+            val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch)
+            CardanoCache.parsedGovActions.put(network.name, parsed)
+
+            // Persist snapshot to DB — marks disappeared proposals with final status
+            // so the list endpoint can serve a complete history (expired / enacted / dropped).
+            GovernanceActionDao.sync(parsed, network.name.lowercase(), epoch)
         }
         // Success — reset backoff
         consecutiveFailures.remove(network)
         nextPollTime.remove(network)
-        logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions" }
+        logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions + DB sync" }
     }.onFailure { e ->
         val failures = (consecutiveFailures[network] ?: 0) + 1
         consecutiveFailures[network] = failures

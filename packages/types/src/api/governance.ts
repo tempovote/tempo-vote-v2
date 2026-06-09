@@ -45,6 +45,7 @@ export const GovernanceActionSchema = z.object({
   spoVotes: VoteCountsSchema,
   ccVotes: VoteCountsSchema,
   details: z.unknown().nullable().optional(),  // type-specific action body from extractActionDetails()
+  status: z.string().default("active"),        // computed by backend: active | ratified | expired | enacted | dropped
 })
 export type GovernanceAction = z.infer<typeof GovernanceActionSchema>
 

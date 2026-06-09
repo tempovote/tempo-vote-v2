@@ -11,10 +11,13 @@ import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.CCContext
-import vote.tempo.cardano.mapOgmiosProposal
+import vote.tempo.cardano.GovernanceThresholds
 import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.parseCCContext
 import vote.tempo.cardano.parseDRepStakeContext
+import vote.tempo.cardano.parseGovernanceThresholds
+import vote.tempo.cardano.parseProposals
+import vote.tempo.db.GovernanceActionDao
 
 /**
  * GET /governance/chain-info?network=preprod|mainnet
@@ -191,24 +194,41 @@ fun Route.governanceRoutes() {
 }
 
 /**
- * Fetch governance proposals — try cache first, fall back to Ogmios.
- * Also fetches DRep stake context and active CC member count for accurate vote display.
+ * Fetch governance proposals — live from Ogmios (cached) plus historical from DB.
+ *
+ * Live proposals come from parsedGovActions cache (pre-warmed by BackgroundPoller).
+ * Historical proposals (expired / enacted / dropped) come from governance_action_snapshots
+ * in PostgreSQL — these are proposals that have left Ogmios ledger state.
+ *
+ * If the DB is unavailable (e.g. local dev), getHistorical() returns empty list silently.
  */
 private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> {
-    val stakeCtx = getOrFetchDRepStakeContext(network)
-    val ccCtx = getOrFetchCCContext(network)
+    // ── Live proposals (from cache or Ogmios) ──────────────────────────────────
+    val live = CardanoCache.parsedGovActions.getIfPresent(network.name)
+        ?: run {
+            val stakeCtx   = getOrFetchDRepStakeContext(network)
+            val ccCtx      = getOrFetchCCContext(network)
+            val thresholds = getOrFetchGovernanceThresholds(network)
+            val epoch      = getOrFetchCurrentEpoch(network)
 
-    CardanoCache.govActions.getIfPresent(network.name)?.let { cached ->
-        return parseProposalsFromCache(cached, stakeCtx, ccCtx)
-    }
+            val raw = CardanoCache.govActions.getIfPresent(network.name)
+                ?: try {
+                    OgmiosStateQueries(network).getGovernanceProposals()
+                        .also { CardanoCache.govActions.put(network.name, it) }
+                } catch (e: Exception) {
+                    return emptyList()
+                }
 
-    return try {
-        val raw = OgmiosStateQueries(network).getGovernanceProposals()
-        CardanoCache.govActions.put(network.name, raw)
-        parseProposalsFromCache(raw, stakeCtx, ccCtx)
-    } catch (e: Exception) {
-        emptyList()
-    }
+            parseProposals(raw, stakeCtx, ccCtx, thresholds, epoch)
+                .also { CardanoCache.parsedGovActions.put(network.name, it) }
+        }
+
+    // ── Historical proposals (expired / enacted / dropped from DB) ────────────
+    val liveKeys = live.map { "${it.txHash}:${it.index}" }.toSet()
+    val historical = GovernanceActionDao.getHistorical(network.name.lowercase())
+        .filter { "${it.txHash}:${it.index}" !in liveKeys }
+
+    return live + historical
 }
 
 /**
@@ -229,6 +249,40 @@ private suspend fun getOrFetchDRepStakeContext(network: Network): DRepStakeConte
 }
 
 /**
+ * Fetch governance voting thresholds from cache; falls back to Ogmios, then DEFAULT.
+ * Protocol params change only at epoch boundaries — cached for 24 hours.
+ */
+private suspend fun getOrFetchGovernanceThresholds(network: Network): GovernanceThresholds {
+    val cached = CardanoCache.protocolParams.getIfPresent(network.name)
+    if (cached != null) return runCatching { parseGovernanceThresholds(cached.jsonObject) }
+        .getOrDefault(GovernanceThresholds.DEFAULT)
+
+    return try {
+        val raw = OgmiosStateQueries(network).getProtocolParameters()
+        CardanoCache.protocolParams.put(network.name, raw)
+        parseGovernanceThresholds(raw)
+    } catch (e: Exception) {
+        GovernanceThresholds.DEFAULT
+    }
+}
+
+/**
+ * Fetch current epoch from cache; falls back to Ogmios, then 0.
+ * Epoch changes at most once per day — cached for 30 minutes.
+ */
+private suspend fun getOrFetchCurrentEpoch(network: Network): Int {
+    CardanoCache.currentEpoch.getIfPresent(network.name)?.let { return it }
+
+    return try {
+        val epoch = OgmiosStateQueries(network).getCurrentEpoch()
+        CardanoCache.currentEpoch.put(network.name, epoch)
+        epoch
+    } catch (e: Exception) {
+        0
+    }
+}
+
+/**
  * Fetch CC context (N_Active + quorum) from cache; falls back to Ogmios, then EMPTY.
  */
 private suspend fun getOrFetchCCContext(network: Network): CCContext {
@@ -244,19 +298,3 @@ private suspend fun getOrFetchCCContext(network: Network): CCContext {
     }
 }
 
-private fun parseProposalsFromCache(
-    raw: JsonElement,
-    stakeCtx: DRepStakeContext,
-    ccCtx: CCContext = CCContext.EMPTY,
-): List<GovernanceActionDto> {
-    val array = when (raw) {
-        is JsonArray  -> raw
-        is JsonObject -> raw["governanceProposals"]?.jsonArray
-            ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
-            ?: return emptyList()
-        else          -> return emptyList()
-    }
-    return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx) }.getOrNull()
-    }
-}

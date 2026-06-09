@@ -102,6 +102,24 @@ object IndexerCheckpoint : Table("indexer_checkpoint") {
     override val primaryKey = PrimaryKey(network)
 }
 
+/**
+ * Snapshot of every governance action seen by BackgroundPoller.
+ * Proposals that disappear from Ogmios are marked with final status
+ * (expired / enacted / dropped) so the list endpoint can return history.
+ */
+object GovernanceActionSnapshots : Table("governance_action_snapshots") {
+    val txHash       = varchar("tx_hash", 64)
+    val index        = integer("index")
+    val network      = varchar("network", 10)
+    val expiresEpoch = integer("expires_epoch")
+    val status       = varchar("status", 32).default("active")
+    val snapshotJson = text("snapshot_json")
+    val firstSeenAt  = datetime("first_seen_at").defaultExpression(CurrentDateTime)
+    val lastSeenAt   = datetime("last_seen_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(txHash, index, network)
+}
+
 object AuthSessions : Table("auth_sessions") {
     val id           = uuid("id").autoGenerate()
     val stakeAddress = varchar("stake_address", 128)

@@ -8,15 +8,20 @@ import { govActionIdToBech32 } from "@/lib/governance"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 
 const FILTER_CHIPS = [
-  { label: "Tất cả",           value: "" },
-  { label: "Treasury",         value: "treasuryWithdrawals" },
-  { label: "Protocol Params",  value: "protocolParametersUpdate" },
-  { label: "Hard Fork",        value: "hardForkInitiation" },
-  { label: "Info",             value: "infoAction" },
-  { label: "No Confidence",    value: "noConfidence" },
-  { label: "Update Committee", value: "updateCommittee" },
-  { label: "New Constitution", value: "newConstitution" },
+  { label: "Tất cả",           value: "",             kind: "all"    },
+  { label: "Expired",          value: "expired",      kind: "status" },
+  { label: "Treasury",         value: "treasuryWithdrawals",        kind: "type" },
+  { label: "Protocol Params",  value: "protocolParametersUpdate",   kind: "type" },
+  { label: "Hard Fork",        value: "hardForkInitiation",         kind: "type" },
+  { label: "Info",             value: "infoAction",                 kind: "type" },
+  { label: "No Confidence",    value: "noConfidence",               kind: "type" },
+  { label: "Update Committee", value: "updateCommittee",            kind: "type" },
+  { label: "New Constitution", value: "newConstitution",            kind: "type" },
 ]
+
+// Active/ratified proposals sort before expired; within each group sort by expiry DESC.
+const STATUS_SORT_PRIORITY: Record<string, number> = { active: 0, ratified: 0 }
+const getStatusPriority = (s: string) => STATUS_SORT_PRIORITY[s] ?? 1
 
 export default function GovernanceActionsPage() {
   const network = useWalletStore((s) => s.selectedNetwork)
@@ -24,18 +29,27 @@ export default function GovernanceActionsPage() {
   const [activeFilter, setActiveFilter] = useState("")
   const [search, setSearch] = useState("")
 
-  const { actions, isLoading, error } = useGovernanceActions(
-    network,
-    activeFilter || undefined,
-  )
+  const activeChipKind = FILTER_CHIPS.find((c) => c.value === activeFilter)?.kind ?? "all"
+
+  // Status filters (e.g. "expired") are applied client-side after fetching all proposals.
+  // Type filters are passed to the API to reduce payload size.
+  const typeForApi = activeChipKind === "type" ? activeFilter : undefined
+
+  const { actions, isLoading, error } = useGovernanceActions(network, typeForApi)
+
+  // Client-side status filter
+  const statusFiltered =
+    activeChipKind === "status"
+      ? actions.filter((a) => a.status === activeFilter)
+      : actions
 
   // Batch-resolve anchor titles so we can search by proposal name (from IPFS metadata).
   // Re-renders as titles load in, so filter results stay live while fetches complete.
-  const titlesMap = useAnchorTitlesMap(actions.map((a) => a.anchorUrl))
+  const titlesMap = useAnchorTitlesMap(statusFiltered.map((a) => a.anchorUrl))
 
   const q = search.trim().toLowerCase()
   const visible = [...(q
-    ? actions.filter((a) => {
+    ? statusFiltered.filter((a) => {
         const title = a.anchorUrl ? (titlesMap.get(a.anchorUrl) ?? null) : null
         return (
           a.txHash.toLowerCase().includes(q) ||
@@ -45,8 +59,13 @@ export default function GovernanceActionsPage() {
           (title?.toLowerCase().includes(q) ?? false)
         )
       })
-    : actions
-  )].sort((a, b) => b.expiresEpoch - a.expiresEpoch)
+    : statusFiltered
+  )].sort((a, b) => {
+    const pa = getStatusPriority(a.status)
+    const pb = getStatusPriority(b.status)
+    if (pa !== pb) return pa - pb
+    return b.expiresEpoch - a.expiresEpoch
+  })
 
   return (
     <div className="page-container space-y-6">
