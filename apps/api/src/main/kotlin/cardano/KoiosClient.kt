@@ -153,28 +153,19 @@ data class DRepKoiosStats(
 )
 
 /**
- * Lightweight stats returned by the batch drep_info endpoint.
- * Used by the leaderboard to avoid N×individual-Koios-calls bursts.
+ * Batch-fetch live voting power (amount) from Koios /drep_info.
+ * Koios returns `drep_id` in CIP-129 format (different from our CIP-105 IDs), so
+ * we key the result by `hex` (28-byte credential hex) which is stable across formats.
+ * Note: /drep_info does not return delegator_count — use fetchDelegatorCount() for that.
+ * Returns a map of credentialHex → liveVotingPower (lovelace).
  */
-data class DRepBasicInfo(
-    val liveVotingPower: Long,
-    val delegatorCount: Int,
-)
-
-/**
- * Batch-fetch DRep voting power and delegator count from Koios.
- * Koios /drep_info accepts up to [batchSize] DRep IDs per POST, returning `amount`
- * (live voting power) and `delegator_count` for each — no per-DRep round-trips needed.
- * Returns a map of bech32 DRep ID → DRepBasicInfo; absent entries mean Koios didn't
- * return data for that DRep (inactive / retired).
- */
-suspend fun fetchDRepInfoBatch(
+suspend fun fetchDRepVotingPowerBatch(
     drepIds: List<String>,
     network: Network,
     batchSize: Int = 100,
-): Map<String, DRepBasicInfo> {
+): Map<String, Long> {
     if (drepIds.isEmpty()) return emptyMap()
-    val result = mutableMapOf<String, DRepBasicInfo>()
+    val result = mutableMapOf<String, Long>()
     drepIds.chunked(batchSize).forEach { batch ->
         runCatching {
             val response = koiosHttp.post("${koiosBaseUrl(network)}/drep_info") {
@@ -185,17 +176,36 @@ suspend fun fetchDRepInfoBatch(
             }
             val body = response.jsonArray()
             for (item in body) {
-                val obj    = item.jsonObject
-                val id     = obj["drep_id"]?.jsonPrimitive?.contentOrNull ?: continue
-                val power  = obj["amount"]?.jsonPrimitive?.longOrNull ?: 0L
-                val delCnt = obj["delegator_count"]?.jsonPrimitive?.intOrNull ?: 0
-                result[id] = DRepBasicInfo(liveVotingPower = power, delegatorCount = delCnt)
+                val obj   = item.jsonObject
+                // Key by `hex` (credential hash) — `drep_id` in response uses CIP-129 bech32
+                // which differs from CIP-105 IDs we generate locally.
+                val hex   = obj["hex"]?.jsonPrimitive?.contentOrNull ?: continue
+                val power = obj["amount"]?.jsonPrimitive?.longOrNull ?: 0L
+                result[hex] = power
             }
         }.onFailure { e ->
             logger.warn { "Koios drep_info batch failed for ${batch.size} DReps [$network]: ${e.message}" }
         }
     }
     return result
+}
+
+/**
+ * Fetch the exact delegator count for a single DRep via Content-Range header.
+ * Uses limit=0 to avoid transferring data rows — only the total count matters.
+ * Returns 0 on failure so callers can fall back gracefully.
+ */
+suspend fun fetchDelegatorCount(drepId: String, network: Network): Int {
+    return runCatching {
+        val resp = koiosHttp.get("${koiosBaseUrl(network)}/drep_delegators") {
+            parameter("_drep_id", drepId)
+            parameter("limit", 0)
+            header("Prefer", "count=exact")
+        }
+        resp.headers["Content-Range"]?.substringAfterLast("/")?.toIntOrNull() ?: 0
+    }.onFailure { e ->
+        logger.warn { "Koios drep_delegators count failed for $drepId [$network]: ${e.message}" }
+    }.getOrDefault(0)
 }
 
 /**
