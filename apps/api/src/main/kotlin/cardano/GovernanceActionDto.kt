@@ -3,14 +3,17 @@ package vote.tempo.cardano
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
+// PoolInfo is defined in KoiosClient.kt (same package)
+
 @Serializable
 data class VoteEntry(
     val role: String,         // "drep" | "cc" | "spo"
-    val id: String,           // credential hex for DRep/CC; poolId for SPO
+    val id: String,           // credential hex for DRep/CC; poolId (hex) for SPO
     val vote: String,         // "yes" | "no" | "abstain"
-    val votingPower: Long = 0L,  // lovelace (DRep only; 0 for CC/SPO)
+    val votingPower: Long = 0L,  // lovelace (DRep + SPO from Koios; 0 for CC)
     val anchorUrl: String? = null,    // DRep CIP-119 registration anchor — for name resolution
     val memberName: String? = null,   // CC member display name — resolved via hot→cold credential mapping
+    val poolName: String? = null,     // SPO pool display name — resolved from Koios meta_json.name
 )
 
 @Serializable
@@ -24,7 +27,7 @@ data class GovernanceActionDto(
     val expiresEpoch: Int,
     val deposit: Long,          // lovelace
     val drepVotes: DRepVoteStats,
-    val spoVotes: VoteCounts,
+    val spoVotes: SPOVoteStats,
     val ccVotes: VoteCounts,
     val votes: List<VoteEntry> = emptyList(),  // individual votes for vote history display
     val details: JsonElement? = null,           // type-specific action body — see extractActionDetails()
@@ -73,6 +76,27 @@ data class VoteCounts(
      * 0 = not available; fall back to static UI threshold.
      */
     val quorum: Double = 0.0,
+) {
+    val total: Int get() = yes + no + abstain
+}
+
+/**
+ * SPO vote totals with ADA voting power sourced from Koios `voting_power` field.
+ *
+ * Denominator = totalVotingPower (sum of voting_power for all SPOs that voted).
+ * Unlike DRep, we have no "total registered SPO stake" — only votes cast contribute.
+ */
+@Serializable
+data class SPOVoteStats(
+    val yes: Int,
+    val no: Int,
+    val abstain: Int,
+    /** Lovelace voting_power for SPOs that voted yes/no/abstain. */
+    val yesVotingPower: Long = 0L,
+    val noVotingPower: Long = 0L,
+    val abstainVotingPower: Long = 0L,
+    /** Sum of yesVotingPower + noVotingPower + abstainVotingPower — used as % denominator. */
+    val totalVotingPower: Long = 0L,
 ) {
     val total: Int get() = yes + no + abstain
 }
@@ -245,6 +269,7 @@ fun parseProposals(
     ccCtx: CCContext = CCContext.EMPTY,
     thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
     currentEpoch: Int = 0,
+    poolInfoMap: Map<String, PoolInfo> = emptyMap(),
 ): List<GovernanceActionDto> {
     val array: JsonArray = when (raw) {
         is JsonArray  -> raw
@@ -254,7 +279,7 @@ fun parseProposals(
         else          -> return emptyList()
     }
     return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch) }.getOrNull()
+        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch, poolInfoMap) }.getOrNull()
     }
 }
 
@@ -265,6 +290,7 @@ fun mapOgmiosProposal(
     ccCtx: CCContext = CCContext.EMPTY,
     thresholds: GovernanceThresholds = GovernanceThresholds.DEFAULT,
     currentEpoch: Int = 0,
+    poolInfoMap: Map<String, PoolInfo> = emptyMap(),
 ): GovernanceActionDto? = runCatching {
     val proposal = obj["proposal"]?.jsonObject ?: return null
     val txHash = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return null
@@ -287,12 +313,13 @@ fun mapOgmiosProposal(
     val votes = obj["votes"]?.jsonArray ?: JsonArray(emptyList())
 
     val drepVotes  = aggregateDRepVotes(votes, stakeCtx)
-    val spoVotes   = aggregateVotes(votes, "stakePoolOperator")
+    val spoVotes   = aggregateSPOVotes(votes, poolInfoMap)
     val ccVotes    = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
-    val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx)
+    val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx, poolInfoMap)
 
     val dtoDetails = extractActionDetails(actionType, action, proposal)
-    val status = computeGAStatus(actionType, drepVotes, spoVotes, ccVotes, expiresEpoch, currentEpoch, thresholds)
+    val spoVoteCounts = VoteCounts(spoVotes.yes, spoVotes.no, spoVotes.abstain)
+    val status = computeGAStatus(actionType, drepVotes, spoVoteCounts, ccVotes, expiresEpoch, currentEpoch, thresholds)
 
     GovernanceActionDto(
         txHash = txHash,
@@ -440,7 +467,12 @@ private fun addPrevActionId(builder: JsonObjectBuilder, action: JsonObject) {
     }
 }
 
-private fun extractVoteEntries(votes: JsonArray, stakeCtx: DRepStakeContext, ccCtx: CCContext = CCContext.EMPTY): List<VoteEntry> =
+private fun extractVoteEntries(
+    votes: JsonArray,
+    stakeCtx: DRepStakeContext,
+    ccCtx: CCContext = CCContext.EMPTY,
+    poolInfoMap: Map<String, PoolInfo> = emptyMap(),
+): List<VoteEntry> =
     votes.mapNotNull { entry ->
         val obj  = entry.jsonObject
         val role = obj["issuer"]?.jsonObject?.get("role")?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -452,14 +484,18 @@ private fun extractVoteEntries(votes: JsonArray, stakeCtx: DRepStakeContext, ccC
             "stakePoolOperator"       -> "spo"
             else -> return@mapNotNull null
         }
-        val power      = if (shortRole == "drep") stakeCtx.stakeMap[id] ?: 0L else 0L
+        val power      = when (shortRole) {
+            "drep" -> stakeCtx.stakeMap[id] ?: 0L
+            "spo"  -> poolInfoMap[id]?.votingPower ?: 0L
+            else   -> 0L
+        }
         val anchorUrl  = if (shortRole == "drep") stakeCtx.anchorMap[id] else null
-        // CC votes: strip any CIP-129 prefix before lookup so both 56- and 58-char formats match
         val memberName = if (shortRole == "cc") {
             val hex = when (id.length) { 58 -> id.substring(2); else -> id }
             ccCtx.hotToName[hex] ?: ccCtx.hotToName[id]
         } else null
-        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl, memberName = memberName)
+        val poolName   = if (shortRole == "spo") poolInfoMap[id]?.name else null
+        VoteEntry(role = shortRole, id = id, vote = vote, votingPower = power, anchorUrl = anchorUrl, memberName = memberName, poolName = poolName)
     }
 
 private fun aggregateDRepVotes(votes: JsonArray, stakeCtx: DRepStakeContext): DRepVoteStats {
@@ -506,6 +542,25 @@ private fun aggregateVotes(votes: JsonArray, role: String, activeMemberCount: In
         }
     }
     return VoteCounts(yes, no, abstain, activeMembers = activeMemberCount, quorum = quorum)
+}
+
+private fun aggregateSPOVotes(votes: JsonArray, poolInfoMap: Map<String, PoolInfo>): SPOVoteStats {
+    var yes = 0; var no = 0; var abstain = 0
+    var yesPower = 0L; var noPower = 0L; var abstainPower = 0L
+    for (entry in votes) {
+        val obj  = entry.jsonObject
+        val role = obj["issuer"]?.jsonObject?.get("role")?.jsonPrimitive?.contentOrNull
+        if (role != "stakePoolOperator") continue
+        val id    = obj["issuer"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull ?: continue
+        val power = poolInfoMap[id]?.votingPower ?: 0L
+        when (obj["vote"]?.jsonPrimitive?.contentOrNull) {
+            "yes"     -> { yes++;     yesPower    += power }
+            "no"      -> { no++;      noPower     += power }
+            "abstain" -> { abstain++; abstainPower += power }
+        }
+    }
+    val total = yesPower + noPower + abstainPower
+    return SPOVoteStats(yes, no, abstain, yesPower, noPower, abstainPower, total)
 }
 
 /** Extract lovelace amount — handles { "ada": { "lovelace": N } } and { "lovelace": N } */

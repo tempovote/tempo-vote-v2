@@ -1,5 +1,5 @@
 import { bech32 } from "bech32"
-import type { VoteCounts, DRepVoteStats } from "@tempo/types"
+import type { VoteCounts, DRepVoteStats, SPOVoteStats } from "@tempo/types"
 
 export function lovelaceToAda(lovelace: number): string {
   const ada = lovelace / 1_000_000
@@ -62,6 +62,28 @@ export function computeVotePercent(votes: VoteCounts): {
     ? Math.max(0, 100 - yesPercent - noPercent - abstainPercent)
     : 0
   return { yesPercent, noPercent, abstainPercent, notVotedPercent }
+}
+
+/**
+ * Stake-weighted percentage for SPO votes using Koios voting_power.
+ * Denominator = totalVotingPower (votes-cast only).
+ * Falls back to count-based when no stake data is available.
+ */
+export function computeSPOVotePercent(votes: SPOVoteStats): {
+  yesPercent: number
+  noPercent: number
+  abstainPercent: number
+  notVotedPercent: number
+} {
+  if (votes.totalVotingPower > 0) {
+    const total = votes.totalVotingPower
+    const yesPercent     = Math.round((votes.yesVotingPower     / total) * 100)
+    const noPercent      = Math.round((votes.noVotingPower      / total) * 100)
+    const abstainPercent = Math.round((votes.abstainVotingPower / total) * 100)
+    return { yesPercent, noPercent, abstainPercent, notVotedPercent: 0 }
+  }
+  // Fallback: count-based (same as computeVotePercent with activeMembers = 0)
+  return computeVotePercent(votes as unknown as VoteCounts)
 }
 
 export function getActionTypeLabel(actionType: string): string {

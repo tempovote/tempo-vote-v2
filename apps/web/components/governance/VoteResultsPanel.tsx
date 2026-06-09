@@ -1,5 +1,5 @@
-import type { GovernanceAction, VoteCounts } from "@tempo/types"
-import { computeDRepVotePercent, computeVotePercent, lovelaceToAda, VOTE_THRESHOLDS } from "@/lib/governance"
+import type { GovernanceAction, VoteCounts, SPOVoteStats } from "@tempo/types"
+import { computeDRepVotePercent, computeVotePercent, computeSPOVotePercent, lovelaceToAda, VOTE_THRESHOLDS } from "@/lib/governance"
 
 interface Props {
   action: GovernanceAction
@@ -9,7 +9,7 @@ export default function VoteResultsPanel({ action }: Props) {
   const thresholds = VOTE_THRESHOLDS[action.actionType] ?? {}
 
   const drepPct = computeDRepVotePercent(action.drepVotes, action.actionType)
-  const spoPct  = computeVotePercent(action.spoVotes)
+  const spoPct  = computeSPOVotePercent(action.spoVotes)
   const ccPct   = computeVotePercent(action.ccVotes)
 
   const spoHasVotes = action.spoVotes.yes + action.spoVotes.no + action.spoVotes.abstain > 0
@@ -40,12 +40,10 @@ export default function VoteResultsPanel({ action }: Props) {
       />
 
       {showSpo && (
-        <SimpleVoteRow
-          label="SPO"
+        <SPOVoteRow
           votes={action.spoVotes}
           yesPercent={spoPct.yesPercent}
           noPercent={spoPct.noPercent}
-          notVotedPercent={spoPct.notVotedPercent}
           threshold={thresholds.spo !== undefined ? Math.round(thresholds.spo * 100) : null}
         />
       )}
@@ -164,6 +162,86 @@ function DRepVoteRow({ votes, yesPercent, noPercent, notVotedPercent, yesPower, 
             {" · "}
             <span className="text-danger">{votes.no} No</span>
             {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── SPO row — stake-weighted when Koios data available ──────────────────────
+
+interface SPOVoteRowProps {
+  votes: SPOVoteStats
+  yesPercent: number
+  noPercent: number
+  threshold: number | null
+}
+
+function SPOVoteRow({ votes, yesPercent, noPercent, threshold }: SPOVoteRowProps) {
+  const hasPower = votes.totalVotingPower > 0
+  const showLabelInBar = yesPercent > 12
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-text-secondary w-10 shrink-0">SPO</span>
+        <div className="flex-1 relative">
+          <div className="vote-bar">
+            <div className="vote-bar-yes" style={{ width: `${yesPercent}%` }}>
+              {showLabelInBar && (
+                <span className="text-white text-[10px] font-bold px-1.5 leading-none drop-shadow-sm select-none">
+                  {yesPercent}%
+                </span>
+              )}
+            </div>
+            <div className="vote-bar-no" style={{ width: `${noPercent}%` }} />
+          </div>
+          {threshold !== null && (
+            <div
+              className="absolute z-10 w-[2px] rounded-full"
+              style={{
+                left:       `${threshold}%`,
+                top:        "-2px",
+                bottom:     "-2px",
+                background: "white",
+                boxShadow:  "0 0 0 1px rgba(0,0,0,0.3)",
+              }}
+            />
+          )}
+        </div>
+        {threshold !== null ? (
+          <span className="text-xs text-text-secondary font-semibold w-9 text-right shrink-0">
+            {threshold}%
+          </span>
+        ) : (
+          <span className="w-9 shrink-0" />
+        )}
+      </div>
+
+      <div className="pl-[52px] text-xs text-text-muted space-y-0.5">
+        {hasPower ? (
+          <>
+            <div>
+              <span className="text-success font-medium">{yesPercent}% Yes</span>
+              <span className="text-text-muted"> · {lovelaceToAda(votes.yesVotingPower)} ₳</span>
+              <span className="mx-1.5 text-text-muted/50">·</span>
+              <span className="text-danger font-medium">{noPercent}% No</span>
+              <span className="text-text-muted"> · {lovelaceToAda(votes.noVotingPower)} ₳</span>
+            </div>
+            {votes.abstainVotingPower > 0 && (
+              <div className="text-text-muted/70">
+                Abstain: {lovelaceToAda(votes.abstainVotingPower)} ₳
+              </div>
+            )}
+          </>
+        ) : (
+          <div>
+            <span className="text-success">{votes.yes} Yes ({yesPercent}%)</span>
+            {" · "}
+            <span className="text-danger">{votes.no} No</span>
+            {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
+            {votes.yes + votes.no + votes.abstain > 0 && ` · ${votes.yes + votes.no + votes.abstain} tổng`}
           </div>
         )}
       </div>

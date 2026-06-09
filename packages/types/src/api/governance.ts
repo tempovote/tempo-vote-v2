@@ -32,6 +32,22 @@ export const DRepVoteStatsSchema = VoteCountsSchema.extend({
 })
 export type DRepVoteStats = z.infer<typeof DRepVoteStatsSchema>
 
+/**
+ * SPO vote totals with ADA voting power sourced from Koios `voting_power`.
+ * Denominator = totalVotingPower (votes-cast only; no total registered pool stake available).
+ */
+export const SPOVoteStatsSchema = z.object({
+  yes: z.number().int(),
+  no: z.number().int(),
+  abstain: z.number().int(),
+  yesVotingPower: z.number().default(0),
+  noVotingPower: z.number().default(0),
+  abstainVotingPower: z.number().default(0),
+  /** Sum of all voted SPO voting powers — denominator for stake-weighted percentages. */
+  totalVotingPower: z.number().default(0),
+})
+export type SPOVoteStats = z.infer<typeof SPOVoteStatsSchema>
+
 export const VoteEntrySchema = z.object({
   role: z.enum(["drep", "cc", "spo"]),
   id: z.string(),
@@ -39,6 +55,7 @@ export const VoteEntrySchema = z.object({
   votingPower: z.number().default(0),
   anchorUrl: z.string().nullable().optional(),
   memberName: z.string().nullable().optional(),  // CC member display name (resolved via hot→cold credential mapping)
+  poolName: z.string().nullable().optional(),    // SPO pool display name (from Koios meta_json.name)
 })
 export type VoteEntry = z.infer<typeof VoteEntrySchema>
 
@@ -52,7 +69,7 @@ export const GovernanceActionSchema = z.object({
   expiresEpoch: z.number().int(),
   deposit: z.number(),        // lovelace (Long on backend)
   drepVotes: DRepVoteStatsSchema,
-  spoVotes: VoteCountsSchema,
+  spoVotes: SPOVoteStatsSchema,
   ccVotes: VoteCountsSchema,
   votes: z.array(VoteEntrySchema).default([]),  // individual votes for vote history display
   details: z.unknown().nullable().optional(),    // type-specific action body from extractActionDetails()

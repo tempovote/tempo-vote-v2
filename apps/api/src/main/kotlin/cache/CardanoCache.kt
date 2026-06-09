@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Caffeine
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import vote.tempo.cardano.GovernanceActionDto
+import vote.tempo.cardano.PoolInfo
 import java.util.concurrent.TimeUnit
 
 /**
@@ -77,4 +78,13 @@ object CardanoCache {
         .expireAfterWrite(60, TimeUnit.SECONDS)
         .maximumSize(50_000)
         .build<String, JsonElement>()   // key: "NETWORK:stakeAddress"
+
+    /**
+     * Pool metadata (name, voting_power) fetched from Koios.
+     * Long TTL: pool names rarely change.
+     */
+    val poolInfo = Caffeine.newBuilder()
+        .expireAfterWrite(1, TimeUnit.HOURS)
+        .maximumSize(10_000)
+        .build<String, PoolInfo>()      // key: "NETWORK:bech32PoolId" (pool1...)
 }
