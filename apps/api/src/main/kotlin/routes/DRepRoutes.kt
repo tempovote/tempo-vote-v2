@@ -533,6 +533,10 @@ private suspend fun buildDRepResponse(
         put("id", canonicalId)
         put("name", meta?.name?.let { JsonPrimitive(it) } ?: JsonNull)
         put("imageUrl", meta?.imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("motivations",    meta?.motivations?.let    { JsonPrimitive(it) } ?: JsonNull)
+        put("objectives",     meta?.objectives?.let     { JsonPrimitive(it) } ?: JsonNull)
+        put("qualifications", meta?.qualifications?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("references",     meta?.references ?: JsonNull)
         put("anchorUrl", listEntry["anchorUrl"]!!)
         put("votingPower", JsonPrimitive(votingPower))
         put("stakeKeyBalance", stakeKeyBalance?.let { JsonPrimitive(it) } ?: JsonNull)
@@ -654,12 +658,27 @@ private fun buildCandidateUrls(anchorUrl: String): List<String> {
     return (origIfHttps + IPFS_GATEWAYS_BE.map { "${it}${cid}" }).distinct()
 }
 
-private data class DRepMeta(val name: String?, val imageUrl: String?)
+private data class DRepMeta(
+    val name: String?,
+    val imageUrl: String?,
+    val motivations: String? = null,
+    val objectives: String? = null,
+    val qualifications: String? = null,
+    val references: JsonArray? = null,
+)
+
+/** Extract plain string or JSON-LD {"@value": "..."} wrapper → nullable String. */
+private fun extractMetaStr(el: JsonElement?): String? {
+    if (el == null || el is JsonNull) return null
+    if (el is JsonPrimitive) return el.contentOrNull?.takeIf { it.isNotBlank() }
+    if (el is JsonObject) return el["@value"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    return null
+}
 
 /**
- * Fetch DRep metadata from anchor URL and extract name + image URL.
+ * Fetch DRep metadata from anchor URL and extract name, image URL, and CIP-119 body fields.
  * Runs server-side so CORS restrictions on the metadata host don't apply.
- * Supports CIP-119: { body: { givenName, image: { contentUrl } | "url" } }
+ * Supports CIP-119: { body: { givenName, image, motivations, objectives, qualifications, references } }
  */
 private suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
     val candidates = buildCandidateUrls(anchorUrl)
@@ -671,9 +690,9 @@ private suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
                 val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
                 val body = json["body"]?.jsonObject ?: json
 
-                val name = body["givenName"]?.jsonPrimitive?.contentOrNull
-                    ?: json["givenName"]?.jsonPrimitive?.contentOrNull
-                    ?: json["name"]?.jsonPrimitive?.contentOrNull
+                val name = extractMetaStr(body["givenName"])
+                    ?: extractMetaStr(json["givenName"])
+                    ?: extractMetaStr(json["name"])
 
                 val imageNode = body["image"]
                 val imageUrl = when {
@@ -686,8 +705,16 @@ private suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
                     else -> null
                 }
 
-                if (name == null && imageUrl == null) null
-                else DRepMeta(name, imageUrl)
+                val motivations    = extractMetaStr(body["motivations"])
+                val objectives     = extractMetaStr(body["objectives"])
+                val qualifications = extractMetaStr(body["qualifications"])
+
+                val references = body["references"]?.let { if (it is JsonNull) null else it as? JsonArray }
+                    ?.takeIf { it.isNotEmpty() }
+
+                if (name == null && imageUrl == null && motivations == null
+                    && objectives == null && qualifications == null) null
+                else DRepMeta(name, imageUrl, motivations, objectives, qualifications, references)
             }
             if (result != null) return result
         } catch (_: Exception) {

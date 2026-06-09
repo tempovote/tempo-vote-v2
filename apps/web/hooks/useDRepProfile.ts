@@ -56,11 +56,18 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
         id: string
         name: string | null
         imageUrl?: string | null
+        motivations?: string | null
+        objectives?: string | null
+        qualifications?: string | null
+        references?: Array<{ "@type": string; label: string; uri: string }> | null
         anchorUrl: string | null
         votingPower: number | null
         stakeKeyBalance: number | null
       }) => {
         if (cancelled) return
+
+        // API already resolves metadata server-side (bypasses CORS restrictions).
+        const apiHasMeta = data.motivations != null || data.objectives != null || data.qualifications != null
 
         const base: DRepFullProfile = {
           isRegistered: data.isRegistered ?? false,
@@ -71,27 +78,34 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
           anchorUrl: data.anchorUrl ?? null,
           votingPower: data.votingPower ?? null,
           stakeKeyBalance: data.stakeKeyBalance ?? null,
-          givenName: null,
-          motivations: null,
-          objectives: null,
-          qualifications: null,
+          givenName: data.name ?? null,
+          motivations: data.motivations ?? null,
+          objectives: data.objectives ?? null,
+          qualifications: data.qualifications ?? null,
           imageUrl: data.imageUrl ?? null,
-          references: null,
+          references: data.references ?? null,
         }
         setProfile(base)
         setIsLoading(false)
 
-        // Fetch full CIP-119 metadata (motivations, objectives, etc.) if anchor is available.
-        // imageUrl is already provided by the API (server-side fetch bypasses CORS restrictions).
-        if (data.anchorUrl) {
+        // Skip browser CIP-119 fetch if API already provided all metadata (avoids CORS failure).
+        // Still fetch for DReps where API returned null (no anchor or anchor returned no data) —
+        // some IPFS-hosted DReps may have metadata the server fetch missed.
+        if (data.anchorUrl && !apiHasMeta) {
           setIsLoadingMeta(true)
           fetchCip119(data.anchorUrl).then((meta) => {
             if (cancelled) return
             setIsLoadingMeta(false)
             if (meta) {
               setProfile((prev) =>
-                // Keep API-provided imageUrl if the direct fetch also failed to get one
-                prev ? { ...prev, ...meta, imageUrl: meta.imageUrl ?? prev.imageUrl } : prev
+                prev ? {
+                  ...prev, ...meta,
+                  imageUrl: meta.imageUrl ?? prev.imageUrl,
+                  motivations: meta.motivations ?? prev.motivations,
+                  objectives: meta.objectives ?? prev.objectives,
+                  qualifications: meta.qualifications ?? prev.qualifications,
+                  references: meta.references ?? prev.references,
+                } : prev
               )
             }
           })
