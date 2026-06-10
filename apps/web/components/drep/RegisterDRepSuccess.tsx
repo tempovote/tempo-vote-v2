@@ -56,14 +56,19 @@ export default function RegisterDRepSuccess({
       </div>
 
       {/* Notice */}
-      <div className="notice text-sm text-left">
-        <p className="font-medium text-text-primary mb-1">Chờ xác nhận on-chain</p>
-        <p className="text-text-secondary text-xs">
+      <div className="notice flex-col gap-2 text-left">
+        <div className="flex items-center gap-2">
+          <svg className="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
+          </svg>
+          <p className="font-semibold text-sm text-text-primary">Chờ xác nhận on-chain</p>
+        </div>
+        <p className="text-text-secondary text-xs leading-relaxed">
           Transaction cần khoảng 20–60 giây để được confirm. Sau khi confirm, DRep ID của bạn sẽ
           xuất hiện trong danh sách DRep trên chain và ví sẽ hiển thị trạng thái đã đăng ký.
         </p>
         {selfDelegated && (
-          <p className="text-text-secondary text-xs mt-1.5">
+          <p className="text-text-secondary text-xs leading-relaxed">
             Voting power sẽ được cập nhật tại <span className="text-text-primary font-medium">epoch boundary tiếp theo</span> (~1–5 ngày tùy mạng).
           </p>
         )}
