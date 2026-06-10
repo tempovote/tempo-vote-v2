@@ -205,7 +205,11 @@ fun Route.drepRoutes() {
                 }
             }.getOrDefault(0)
             // ── Live stats from local chain index ─────────────────────────────
-            val delegatorCount  = ChainIndexDao.getDelegatorCount(credentialHex, network.name.lowercase())
+            // Prefer VoteIndexer DB; fall back to Ogmios drepDelegatorCounts cache
+            // (populated by BackgroundPoller from delegateRepresentatives response).
+            val delegatorCountDb = ChainIndexDao.getDelegatorCount(credentialHex, network.name.lowercase())
+            val delegatorCount = if (delegatorCountDb > 0) delegatorCountDb
+                else CardanoCache.drepDelegatorCounts.getIfPresent(network.name)?.get(credentialHex) ?: 0
             val votedCount      = ChainIndexDao.getVotedCount(credentialHex, network.name.lowercase())
             val liveGaCount     = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
             val totalGaCount    = dbGaCount.coerceAtLeast(liveGaCount)
