@@ -7,6 +7,7 @@ import { useWalletStore } from "@/store/wallet"
 import { useDRepList } from "@/hooks/useDRepList"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useDRepLeaderboard } from "@/hooks/useDRepLeaderboard"
+import { useDRepWhaleLeaders } from "@/hooks/useDRepWhaleLeaders"
 import { lovelaceToAda } from "@/lib/governance"
 import DRepAvatar from "@/components/drep/DRepAvatar"
 import CopyableId from "@/components/ui/CopyableId"
@@ -39,6 +40,7 @@ export default function DRepsPage() {
 
   const { dreps, isLoading: isDrepsLoading } = useDRepList(network)
   const { entries: leaderboard, loading: leaderboardLoading } = useDRepLeaderboard(network, 5)
+  const { entries: whaleLeaders, loading: whaleLoading } = useDRepWhaleLeaders(network, 5)
 
   // Only fetch anchor titles for the search list — leaderboard name/imageUrl come from the API.
   const anchorUrlsForSearch = nameQ.length >= 2 ? dreps.map((d) => d.anchorUrl) : []
@@ -195,6 +197,7 @@ export default function DRepsPage() {
           </div>
         ) : (
           /* Leaderboards when not searching */
+          <>
           <div className="space-y-4 animate-slide-up">
             <h2 className="text-xl font-bold">Top 5 DReps with the most delegators</h2>
             <div className="card-static !p-0 overflow-hidden">
@@ -257,6 +260,84 @@ export default function DRepsPage() {
               </div>
             </div>
           </div>
+
+          {/* Whale delegator leaderboard */}
+          <div className="space-y-4 animate-slide-up">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold">Top 5 DReps with the most whale delegators</h2>
+              <span className="text-xs text-text-muted bg-bg-card px-2 py-0.5 rounded-full border border-border-subtle">
+                &gt;1M ₳
+              </span>
+            </div>
+            <div className="card-static !p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border-default text-text-muted text-left">
+                      <th className="py-3 px-4 font-medium w-8">#</th>
+                      <th className="py-3 px-4 font-medium">DRep</th>
+                      <th className="py-3 px-4 font-medium text-right">Whales</th>
+                      <th className="py-3 px-4 font-medium text-right">Total Delegators</th>
+                      <th className="py-3 px-4 font-medium text-right">Active VP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {whaleLoading
+                      ? [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
+                      : whaleLeaders.length === 0
+                        ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-text-muted text-sm">
+                              <div>No whale data available</div>
+                              <div className="text-xs mt-1 opacity-60">Requires <code className="font-mono bg-bg-card px-1 rounded">KOIOS_API_KEY</code> on the API server</div>
+                            </td>
+                          </tr>
+                        )
+                        : whaleLeaders.map((entry, i) => (
+                          <tr
+                            key={entry.id}
+                            className="border-b border-border-subtle hover:bg-bg-card-hover transition-colors"
+                          >
+                            <td className="py-3 px-4 text-text-muted text-xs font-mono">{i + 1}</td>
+                            <td className="py-3 px-4">
+                              <Link
+                                href={`/dreps/${encodeURIComponent(entry.id)}`}
+                                className="flex items-center gap-3 hover:text-accent-light transition-colors group"
+                              >
+                                <DRepAvatar
+                                  name={entry.name}
+                                  imageUrl={entry.imageUrl}
+                                  credHex={entry.credHex}
+                                  size="sm"
+                                />
+                                <div className="min-w-0">
+                                  {entry.name && (
+                                    <div className="font-medium text-sm truncate group-hover:text-accent-light">
+                                      {entry.name}
+                                    </div>
+                                  )}
+                                  <CopyableId id={entry.id} />
+                                </div>
+                              </Link>
+                            </td>
+                            <td className="py-3 px-4 text-right font-semibold text-accent-light">
+                              {entry.whaleCount.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-right text-text-secondary">
+                              {entry.delegatorCount.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-right text-text-secondary">
+                              {lovelaceToAda(entry.activeVotingPower)} ₳
+                            </td>
+                          </tr>
+                        ))
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          </>
         )}
       </div>
     </div>

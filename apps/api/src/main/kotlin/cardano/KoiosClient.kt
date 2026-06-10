@@ -281,6 +281,72 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
 }
 
 /**
+ * Count delegators of a DRep with active stake above [thresholdLovelace] ("whales").
+ *
+ * Primary: server-side PostgREST filter `amount=gt.N&limit=0` with `Prefer: count=exact`.
+ * Returns just the total count via Content-Range header — no row data transferred, so
+ * anonymous-tier row limits do not apply.
+ *
+ * Fallback: if the filter is not supported (old Koios version), paginates descending and
+ * stops early when amount drops below threshold.
+ *
+ * Returns 0 on any Koios error so callers can skip gracefully.
+ */
+suspend fun fetchWhaleDelegatorCount(
+    drepId: String,
+    network: Network,
+    thresholdLovelace: Long = 1_000_000_000_000L,
+): Int {
+    val base = koiosBaseUrl(network)
+    val apiKey = System.getenv("KOIOS_API_KEY")
+
+    return runCatching {
+        withTimeout(15_000L) {
+            // Primary: count-only query with server-side amount filter
+            val countResp = koiosHttp.get("$base/drep_delegators") {
+                parameter("_drep_id", drepId)
+                parameter("amount", "gt.$thresholdLovelace")
+                parameter("limit", 0)
+                header("Prefer", "count=exact")
+                apiKey?.let { header("Authorization", "Bearer $it") }
+            }
+            if (countResp.status.isSuccess()) {
+                countResp.headers["Content-Range"]
+                    ?.substringAfterLast("/")?.toIntOrNull() ?: 0
+            } else {
+                // Fallback: paginate descending and stop when amount < threshold
+                var whaleCount = 0
+                var offset = 0
+                var done = false
+                val pageLimit = 1000
+                while (!done && offset < 10_000) {
+                    val pageResp = koiosHttp.get("$base/drep_delegators") {
+                        parameter("_drep_id", drepId)
+                        parameter("limit", pageLimit)
+                        parameter("offset", offset)
+                        parameter("order", "amount.desc")
+                        apiKey?.let { header("Authorization", "Bearer $it") }
+                    }
+                    if (!pageResp.status.isSuccess()) break
+                    val page = pageResp.jsonArray()
+                    for (item in page) {
+                        val amount = item.jsonObject["amount"]?.jsonPrimitive
+                            ?.contentOrNull?.toLongOrNull() ?: 0L
+                        if (amount < thresholdLovelace) { done = true; break }
+                        whaleCount++
+                    }
+                    if (!done && page.size < pageLimit) done = true
+                    offset += pageLimit
+                }
+                whaleCount
+            }
+        }
+    }.onFailure { e ->
+        logger.warn { "Koios drep_delegators whale count failed for $drepId [$network]: ${e.message}" }
+    }.getOrDefault(0)
+}
+
+/**
  * Scan raw Ogmios governanceProposals JSON and collect all unique SPO pool IDs.
  * Ogmios returns pool IDs in bech32 format (pool1...).
  */

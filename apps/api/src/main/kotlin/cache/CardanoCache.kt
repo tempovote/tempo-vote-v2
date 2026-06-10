@@ -123,4 +123,13 @@ object CardanoCache {
     val leaderboard = Caffeine.newBuilder()
         .expireAfterWrite(15, TimeUnit.MINUTES)
         .build<String, JsonElement>()   // key: "NETWORK:limit"
+
+    /**
+     * Whale delegator leaderboard — top DReps by count of delegators with stake > 1M ADA.
+     * Computed from Koios drep_delegators (sorted amount desc, early-exit at threshold).
+     * Long TTL: whale distribution changes very slowly, computation is Koios-intensive.
+     */
+    val whaleLeaders = Caffeine.newBuilder()
+        .expireAfterWrite(2, TimeUnit.HOURS)
+        .build<String, JsonElement>()   // key: "NETWORK:limit"
 }
