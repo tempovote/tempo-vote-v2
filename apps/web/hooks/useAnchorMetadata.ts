@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import { resolveAnchorUrls } from "@/lib/governance"
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
+
 export interface AnchorReference {
   label: string
   uri: string
@@ -61,10 +63,29 @@ function extractMetadata(raw: unknown): AnchorMetadata | null {
 }
 
 async function fetchMetadata(anchorUrl: string): Promise<AnchorMetadata | null> {
-  const urls = resolveAnchorUrls(anchorUrl)
-  if (urls.length === 0) return null
+  // Primary: server-side proxy — bypasses CORS and client network restrictions.
+  // Fallback: direct browser fetch for environments where proxy is unreachable.
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10_000)
+    const r = await fetch(
+      `${API_URL}/metadata/anchor-content?url=${encodeURIComponent(anchorUrl)}`,
+      { signal: controller.signal },
+    )
+    clearTimeout(timer)
+    if (r.ok) {
+      const data: unknown = await r.json()
+      const meta = extractMetadata(data)
+      cache.set(anchorUrl, meta)
+      return meta
+    }
+  } catch { /* fall through to direct fetch */ }
 
-  const tryFetch = async (remaining: string[]): Promise<AnchorMetadata | null> => {
+  // Fallback: try direct fetch (works when browser has direct internet access)
+  const urls = resolveAnchorUrls(anchorUrl)
+  if (urls.length === 0) { cache.set(anchorUrl, null); return null }
+
+  const tryDirect = async (remaining: string[]): Promise<AnchorMetadata | null> => {
     if (remaining.length === 0) return null
     const [url, ...rest] = remaining as [string, ...string[]]
     try {
@@ -72,16 +93,15 @@ async function fetchMetadata(anchorUrl: string): Promise<AnchorMetadata | null> 
       const timer = setTimeout(() => controller.abort(), 8000)
       const r = await fetch(url, { signal: controller.signal })
       clearTimeout(timer)
-      if (!r.ok) return tryFetch(rest)
+      if (!r.ok) return tryDirect(rest)
       const data: unknown = await r.json()
-      const meta = extractMetadata(data)
-      return meta ?? tryFetch(rest)
+      return extractMetadata(data) ?? tryDirect(rest)
     } catch {
-      return tryFetch(rest)
+      return tryDirect(rest)
     }
   }
 
-  const result = await tryFetch(urls)
+  const result = await tryDirect(urls)
   cache.set(anchorUrl, result)
   return result
 }
