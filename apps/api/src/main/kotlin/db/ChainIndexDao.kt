@@ -13,10 +13,25 @@ object ChainIndexDao {
 
     /**
      * Count current delegators for a DRep.
-     * "Current" = stake credentials whose latest delegation (highest slot) points to this DRep.
+     * Uses DISTINCT ON to resolve the latest delegation per stake credential in SQL,
+     * avoiding a full table scan into memory.
      */
     fun getDelegatorCount(drepCredentialHex: String, network: String): Int = transaction {
-        latestDelegationsByDrep(network)[drepCredentialHex] ?: 0
+        var count = 0
+        exec(
+            """SELECT COUNT(*) FROM (
+                   SELECT DISTINCT ON (stake_credential_hex) drep_credential_hex
+                   FROM idx_delegation_vote
+                   WHERE network = ? AND drep_type IN ('key', 'script')
+                   ORDER BY stake_credential_hex, slot DESC
+               ) latest
+               WHERE drep_credential_hex = ?""",
+            listOf(
+                Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network),
+                Pair<IColumnType<*>, Any?>(VarCharColumnType(56), drepCredentialHex),
+            )
+        ) { rs -> if (rs.next()) count = rs.getInt(1) }
+        count
     }
 
     /**
@@ -25,40 +40,29 @@ object ChainIndexDao {
      */
     fun getDelegatorCounts(drepCredentialHexes: List<String>, network: String): Map<String, Int> {
         if (drepCredentialHexes.isEmpty()) return emptyMap()
-        return transaction {
-            latestDelegationsByDrep(network).filter { it.key in drepCredentialHexes }
-        }
+        return transaction { latestDelegationsByDrep(network).filter { it.key in drepCredentialHexes } }
     }
 
     /**
-     * Compute Map<drepCredentialHex, delegatorCount> by loading all active delegations
-     * and grouping in memory. Keeps only the latest delegation per stake credential.
-     * Conway-era delegation table is small (~hundreds of thousands of rows at most).
+     * Compute Map<drepCredentialHex, delegatorCount> using a PostgreSQL DISTINCT ON query.
+     * Resolves latest delegation per stake credential in the DB engine — result set is at
+     * most one row per active DRep (hundreds), not one row per delegation cert (millions).
      */
     private fun latestDelegationsByDrep(network: String): Map<String, Int> {
-        // Load all delegation rows ordered by slot DESC — first occurrence per stake cred is latest
-        val rows = IdxDelegationVote
-            .selectAll()
-            .where {
-                (IdxDelegationVote.network eq network) and
-                (IdxDelegationVote.drepType inList listOf("key", "script"))
-            }
-            .orderBy(IdxDelegationVote.stakeCredentialHex, SortOrder.ASC)
-            .orderBy(IdxDelegationVote.slot, SortOrder.DESC)
-            .toList()
-
-        // For each stake credential, keep the row with the highest slot (latest delegation)
-        val latestByStake = linkedMapOf<String, String>()  // stakeHex → drepHex
-        for (row in rows) {
-            val stakeHex = row[IdxDelegationVote.stakeCredentialHex]
-            if (!latestByStake.containsKey(stakeHex)) {
-                val drepHex = row[IdxDelegationVote.drepCredentialHex] ?: continue
-                latestByStake[stakeHex] = drepHex
-            }
-        }
-
-        // Aggregate: count delegators per DRep
-        return latestByStake.values.groupingBy { it }.eachCount()
+        val result = mutableMapOf<String, Int>()
+        exec(
+            """SELECT drep_credential_hex, COUNT(*) AS cnt
+               FROM (
+                   SELECT DISTINCT ON (stake_credential_hex) drep_credential_hex
+                   FROM idx_delegation_vote
+                   WHERE network = ? AND drep_type IN ('key', 'script')
+                   ORDER BY stake_credential_hex, slot DESC
+               ) latest
+               WHERE drep_credential_hex IS NOT NULL
+               GROUP BY drep_credential_hex""",
+            listOf(Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network))
+        ) { rs -> while (rs.next()) result[rs.getString(1)] = rs.getInt(2) }
+        return result
     }
 
     /**
@@ -124,6 +128,25 @@ object ChainIndexDao {
             "SELECT COUNT(DISTINCT proposal_tx_hash || '#' || proposal_index) FROM drep_votes WHERE network = ?",
             listOf(Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network)),
         ) { rs -> if (rs.next()) rs.getInt(1) else 0 } ?: 0
+    }
+
+    /**
+     * Returns pools that have a metadata URL but no name yet — these need async fetch.
+     * Returns list of (poolIdHex, metadataUrl).
+     */
+    fun getPoolsNeedingMetadata(network: String): List<Pair<String, String>> = transaction {
+        IdxPoolMetadata
+            .select(IdxPoolMetadata.poolIdHex, IdxPoolMetadata.metadataUrl)
+            .where {
+                (IdxPoolMetadata.network eq network) and
+                IdxPoolMetadata.name.isNull() and
+                IdxPoolMetadata.metadataUrl.isNotNull()
+            }
+            .mapNotNull { row ->
+                val hex = row[IdxPoolMetadata.poolIdHex]
+                val url = row[IdxPoolMetadata.metadataUrl] ?: return@mapNotNull null
+                hex to url
+            }
     }
 
     /** Pool name/ticker by bech32 pool ID. Returns null if not yet indexed. */

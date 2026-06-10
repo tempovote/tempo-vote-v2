@@ -13,6 +13,7 @@ import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
 import vote.tempo.cardano.fetchPoolInfo
+import vote.tempo.cardano.runPoolMetadataFetcher
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.parseProposals
 import vote.tempo.db.ChainIndexDao
@@ -62,7 +63,16 @@ fun Application.startBackgroundPoller() {
         }
     }
 
-    logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min, delegator counts every 15 min (local index)" }
+    // Pool metadata fetcher: fetches name/ticker from metadata URLs stored by VoteIndexer.
+    val activeNetworks = buildList {
+        if (System.getenv("OGMIOS_MAINNET_URL") != null) add("mainnet")
+        if (System.getenv("OGMIOS_PREPROD_URL") != null) add("preprod")
+    }
+    if (activeNetworks.isNotEmpty()) {
+        scope.launch { runPoolMetadataFetcher(activeNetworks) }
+    }
+
+    logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min, delegator counts every 15 min (local index), pool metadata fetch every 1 h" }
 }
 
 private suspend fun pollAllNetworks() {
