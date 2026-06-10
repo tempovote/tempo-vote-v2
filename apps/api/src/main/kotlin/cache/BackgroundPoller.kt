@@ -3,7 +3,7 @@ package vote.tempo.cache
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.*
 import kotlinx.coroutines.*
-import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.*
 import vote.tempo.cardano.CCContext
 import vote.tempo.cardano.GovernanceThresholds
 import vote.tempo.cardano.Network
@@ -13,10 +13,9 @@ import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
 import vote.tempo.cardano.fetchPoolInfo
-import vote.tempo.cardano.fetchDelegatorCount
 import vote.tempo.cardano.credentialHexToDrepIdCip105
-import vote.tempo.cardano.buildRationalesMap
 import vote.tempo.cardano.parseProposals
+import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
 
 private val logger = KotlinLogging.logger("BackgroundPoller")
@@ -54,8 +53,7 @@ fun Application.startBackgroundPoller() {
         }
     }
 
-    // Delegator count poll: separate cycle so sequential Koios calls don't block
-    // the Ogmios poll or eat into its 7-minute timeout.
+    // Delegator count poll: reads local chain index — fast DB query, no Koios rate limit.
     scope.launch {
         delay(DELEGATOR_POLL_DELAY_MS)
         while (isActive) {
@@ -64,7 +62,7 @@ fun Application.startBackgroundPoller() {
         }
     }
 
-    logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min, delegator counts every 15 min" }
+    logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min, delegator counts every 15 min (local index)" }
 }
 
 private suspend fun pollAllNetworks() {
@@ -114,8 +112,11 @@ private suspend fun pollNetwork(network: Network) {
 
             // Parse proposals and pre-warm the parsed cache so the first API request after
             // a poll cycle is served instantly without re-parsing the raw JSON.
-            val poolInfoMap   = fetchPoolInfo(extractSPOPoolIds(gas), network)
-            val rationalesMap = buildRationalesMap(gas, network)
+            // Pool info: local index first, Koios fallback for unknown pools.
+            val spoPoolIds    = extractSPOPoolIds(gas)
+            val poolInfoMap   = buildPoolInfoMap(spoPoolIds, network)
+            // Rationale URLs: local chain index (VoteIndexer populated drep_votes.anchor_url).
+            val rationalesMap = buildLocalRationalesMap(gas, network)
             val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap)
             CardanoCache.parsedGovActions.put(network.name, parsed)
 
@@ -138,10 +139,8 @@ private suspend fun pollNetwork(network: Network) {
 }
 
 /**
- * Fetch delegator counts sequentially for the top 200 DReps on each configured network.
- * Runs on a separate 15-minute cycle so it never blocks the Ogmios poll cycle or
- * contributes to its 7-minute timeout budget.
- * Sequential (not concurrent) to stay well under Koios burst limits.
+ * Delegator counts from local chain index (replaces Koios sequential polling).
+ * Reads idx_delegation_vote populated by VoteIndexer — no rate limits, instant query.
  */
 private suspend fun pollDelegatorCounts() {
     if (System.getenv("OGMIOS_MAINNET_URL") != null) pollDelegatorCountsForNetwork(Network.MAINNET)
@@ -156,17 +155,75 @@ private suspend fun pollDelegatorCountsForNetwork(network: Network) {
             return
         }
 
-    val top200 = stakeMap.entries.sortedByDescending { it.value }.take(200)
-    val counts  = mutableMapOf<String, Int>()
-    var fetched = 0
+    val top200    = stakeMap.entries.sortedByDescending { it.value }.take(200)
+    val credHexes = top200.map { it.key }
 
-    for ((credHex, _) in top200) {
-        val cip105Id = credentialHexToDrepIdCip105(credHex) ?: continue
-        counts[credHex] = fetchDelegatorCount(cip105Id, network)
-        fetched++
+    // Batch query: single DB call for all 200 DReps (no rate limiting needed)
+    val counts = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        ChainIndexDao.getDelegatorCounts(credHexes, network.name.lowercase())
     }
 
     CardanoCache.drepDelegatorCounts.put(network.name, counts)
     CardanoCache.leaderboard.invalidateAll()
-    logger.info { "DelegatorPoller [$network] refreshed delegator counts for $fetched DReps" }
+    logger.info { "DelegatorPoller [$network] refreshed delegator counts for ${counts.size} DReps from local index" }
+}
+
+/**
+ * Build pool info map from local index first; fall back to Koios for pools not yet indexed.
+ */
+private suspend fun buildPoolInfoMap(
+    poolIds: List<String>,
+    network: Network,
+): Map<String, vote.tempo.cardano.PoolInfo> {
+    if (poolIds.isEmpty()) return emptyMap()
+    val result = mutableMapOf<String, vote.tempo.cardano.PoolInfo>()
+    val missing = mutableListOf<String>()
+
+    for (bech32Id in poolIds) {
+        val local = withContext(Dispatchers.IO) {
+            ChainIndexDao.getPoolInfo(bech32Id, network.name.lowercase())
+        }
+        if (local != null) {
+            result[bech32Id] = vote.tempo.cardano.PoolInfo(name = local.first, votingPower = 0L)
+        } else {
+            missing.add(bech32Id)
+        }
+    }
+
+    // Fall back to Koios for pools not yet in local index
+    if (missing.isNotEmpty()) {
+        result.putAll(fetchPoolInfo(missing, network))
+    }
+
+    return result
+}
+
+/**
+ * Build rationale URL map from local chain index (drep_votes.anchor_url).
+ * Extracts proposal IDs from raw Ogmios govActions JSON and queries local DB.
+ */
+private suspend fun buildLocalRationalesMap(
+    raw: JsonElement,
+    network: Network,
+): Map<String, Map<String, String>> {
+    val array: JsonArray = when (raw) {
+        is JsonArray  -> raw
+        is JsonObject ->
+            raw["governanceProposals"]?.jsonArray
+                ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+                ?: return emptyMap()
+        else -> return emptyMap()
+    }
+
+    val proposals = array.mapNotNull { item ->
+        val proposal = item.jsonObject["proposal"]?.jsonObject ?: return@mapNotNull null
+        val txHash   = proposal["transaction"]?.jsonObject?.get("id")
+            ?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        val index    = proposal["index"]?.jsonPrimitive?.intOrNull ?: 0
+        txHash to index
+    }
+
+    return withContext(Dispatchers.IO) {
+        ChainIndexDao.buildRationalesMap(proposals, network.name.lowercase())
+    }
 }

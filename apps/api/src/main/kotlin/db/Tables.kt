@@ -120,6 +120,34 @@ object GovernanceActionSnapshots : Table("governance_action_snapshots") {
     override val primaryKey = PrimaryKey(txHash, index, network)
 }
 
+// =============================================================================
+// Chain index tables — populated by extended VoteIndexer (replaces Koios calls)
+// =============================================================================
+
+object IdxDelegationVote : Table("idx_delegation_vote") {
+    val id                 = long("id").autoIncrement()
+    val network            = varchar("network", 10)
+    val stakeCredentialHex = varchar("stake_credential_hex", 56)
+    val drepCredentialHex  = varchar("drep_credential_hex", 56).nullable()
+    val drepType           = varchar("drep_type", 20)   // 'key' | 'script' | 'abstain' | 'no_confidence'
+    val txHash             = varchar("tx_hash", 64)
+    val slot               = long("slot")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object IdxPoolMetadata : Table("idx_pool_metadata") {
+    val network       = varchar("network", 10)
+    val poolIdBech32  = varchar("pool_id_bech32", 64)
+    val poolIdHex     = varchar("pool_id_hex", 56)
+    val metadataUrl   = text("metadata_url").nullable()
+    val name          = text("name").nullable()
+    val ticker        = varchar("ticker", 16).nullable()
+    val slot          = long("slot")
+
+    override val primaryKey = PrimaryKey(network, poolIdHex)
+}
+
 object AuthSessions : Table("auth_sessions") {
     val id           = uuid("id").autoGenerate()
     val stakeAddress = varchar("stake_address", 128)

@@ -10,20 +10,20 @@ import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.db.DrepVotes
+import vote.tempo.db.IdxDelegationVote
+import vote.tempo.db.IdxPoolMetadata
 import vote.tempo.db.IndexerCheckpoint
 
 private val logger = KotlinLogging.logger("VoteIndexer")
 
-// Conway era start slots — skip all blocks before these (no governance votes exist yet)
+// Conway era start slots — skip all blocks before these
 private val CONWAY_SLOTS = mapOf(
-    "mainnet" to 133_660_800L,   // epoch 507
-    "preprod" to  68_774_400L,   // epoch 163
+    "mainnet" to 133_660_800L,
+    "preprod" to  68_774_400L,
 )
 
-// Slots per epoch for rough epoch estimation from slot number
 private val SLOTS_PER_EPOCH = mapOf("mainnet" to 432_000L, "preprod" to 86_400L)
 
-// How many nextBlock requests to pipeline ahead (reduces round-trip overhead)
 private const val PIPELINE_SIZE = 200
 
 private val wsClient = HttpClient(CIO) {
@@ -31,17 +31,13 @@ private val wsClient = HttpClient(CIO) {
 }
 
 /**
- * Start the chain-sync vote indexer for [network].
+ * Extended chain-sync indexer. Streams blocks from Ogmios and indexes:
+ *  - All governance votes (DRep, CC, SPO) with rationale anchor URLs → drep_votes
+ *  - Vote delegation certificates (Conway) → idx_delegation_vote
+ *  - Stake pool registration metadata → idx_pool_metadata
  *
- * This Ogmios deployment does not support `findIntersect`, so we always start
- * from the genesis block and advance forward.  Pre-Conway blocks are skipped
- * without any DB I/O.  Conway blocks are scanned for `votingProcedures` and
- * any DRep votes are upserted into [DrepVotes].
- *
- * On restart the checkpoint slot is loaded from DB so we avoid re-inserting
- * already-indexed votes (the UPSERT is idempotent, but the DB round-trips add
- * latency).  Even with a checkpoint, we must still stream all blocks from
- * genesis — the checkpoint only suppresses duplicate DB writes.
+ * Starts from genesis but skips pre-Conway blocks cheaply (no DB I/O).
+ * Checkpointing ensures restarts don't duplicate work.
  */
 suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
     val wsUrl = ogmiosUrl
@@ -57,20 +53,19 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
             logger.info { "VoteIndexer [$network] connecting (checkpoint slot=${checkpoint?.first ?: "none"})" }
 
             wsClient.webSocket(wsUrl) {
-                // Prime the pipeline with PIPELINE_SIZE requests upfront
                 var inFlight = 0L
-                repeat(PIPELINE_SIZE) {
-                    sendNextBlock(inFlight++)
-                }
+                repeat(PIPELINE_SIZE) { sendNextBlock(inFlight++) }
 
                 var lastCheckpointMs = System.currentTimeMillis()
                 var blocksProcessed  = 0L
                 var votesInserted    = 0L
+                var delegsInserted   = 0L
+                var poolsInserted    = 0L
 
                 for (frame in incoming) {
                     if (frame !is Frame.Text) continue
                     val msg = parseJson(frame.readText()) ?: run {
-                        sendNextBlock(inFlight++)  // keep pipeline filled
+                        sendNextBlock(inFlight++)
                         continue
                     }
 
@@ -82,7 +77,6 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
 
                     val direction = result["direction"]?.jsonPrimitive?.contentOrNull
                     if (direction == "backward") {
-                        // Ogmios reset to genesis — normal on first connection
                         sendNextBlock(inFlight++)
                         continue
                     }
@@ -96,32 +90,52 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                     val blockHash = block["id"]?.jsonPrimitive?.contentOrNull ?: ""
                     blocksProcessed++
 
-                    // ── Conway era: parse for governance votes ──────────────
                     if (slot >= conwayStartSlot) {
                         val checkpointSlot = checkpoint?.first ?: 0L
 
-                        // If we already indexed past this slot, skip the DB write
-                        // (UPSERT would be idempotent but expensive during catchup)
                         if (slot > checkpointSlot) {
                             val txs = block["transactions"]?.jsonArray ?: JsonArray(emptyList())
                             for (tx in txs) {
-                                val txObj = runCatching { tx.jsonObject }.getOrNull() ?: continue
+                                val txObj  = runCatching { tx.jsonObject }.getOrNull() ?: continue
                                 val txHash = txObj["id"]?.jsonPrimitive?.contentOrNull ?: continue
-                                val votes  = txObj["votes"]?.jsonArray ?: continue
+                                val epoch  = (slot / slotsPerEpoch).toInt()
+
+                                // Governance votes (DRep + CC + SPO)
+                                val votes = txObj["votes"]?.jsonArray ?: JsonArray(emptyList())
                                 for (vp in votes) {
-                                    if (indexVote(network, slot, slotsPerEpoch, txHash, vp.jsonObject)) {
+                                    if (indexVote(network, slot, epoch, txHash, vp.jsonObject))
                                         votesInserted++
+                                }
+
+                                // Certificates: delegation + pool registration
+                                val certs = txObj["certificates"]?.jsonArray ?: JsonArray(emptyList())
+                                for (cert in certs) {
+                                    val certObj = runCatching { cert.jsonObject }.getOrNull() ?: continue
+                                    when (certObj["type"]?.jsonPrimitive?.contentOrNull) {
+                                        "voteDelegation",
+                                        "stakeVoteDelegation",
+                                        "voteRegistrationDelegation",
+                                        "stakeVoteRegistrationDelegation" -> {
+                                            if (indexDelegationCert(network, slot, txHash, certObj))
+                                                delegsInserted++
+                                        }
+                                        "stakePoolRegistration" -> {
+                                            if (indexPoolRegistration(network, slot, certObj))
+                                                poolsInserted++
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        // Checkpoint every 60 s once we're in Conway territory
                         val now = System.currentTimeMillis()
                         if (now - lastCheckpointMs >= 60_000 && blockHash.isNotEmpty()) {
                             saveCheckpoint(network, slot, blockHash)
                             lastCheckpointMs = now
-                            logger.info { "VoteIndexer [$network] slot=$slot blocks=$blocksProcessed votes=$votesInserted" }
+                            logger.info {
+                                "VoteIndexer [$network] slot=$slot blocks=$blocksProcessed " +
+                                "votes=$votesInserted delegs=$delegsInserted pools=$poolsInserted"
+                            }
                         }
                     }
 
@@ -137,29 +151,42 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
     }
 }
 
-// ── DB helpers ───────────────────────────────────────────────────────────────
+// ── Vote indexing ─────────────────────────────────────────────────────────────
 
 private fun indexVote(
     network: String,
     slot: Long,
-    slotsPerEpoch: Long,
+    epoch: Int,
     txHash: String,
     vp: JsonObject,
 ): Boolean {
-    val voter = vp["voter"]?.jsonObject ?: return false
-    if (voter["role"]?.jsonPrimitive?.contentOrNull != "delegateRepresentative") return false
+    val voter  = vp["voter"]?.jsonObject ?: return false
+    val role   = voter["role"]?.jsonPrimitive?.contentOrNull ?: return false
 
-    val voterId = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
-    val credentialHex = runCatching { drepIdToCredentialHex(voterId) }.getOrElse { voterId }
-    if (credentialHex.length != 56) return false
+    // Map all three voter roles to a credential hex
+    val credentialHex: String = when (role) {
+        "delegateRepresentative" -> {
+            val id = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            runCatching { drepIdToCredentialHex(id) }.getOrElse { id }
+                .takeIf { it.length == 56 } ?: return false
+        }
+        "constitutionalCommitteeMember" -> {
+            // CC member identified by hot key credential hex
+            voter["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
+        }
+        "stakePoolOperator" -> {
+            // SPO identified by pool bech32 ID
+            voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+        }
+        else -> return false
+    }
 
-    val actionId = vp["actionId"]?.jsonObject ?: return false
+    val actionId       = vp["actionId"]?.jsonObject ?: return false
     val proposalTxHash = actionId["transaction"]?.jsonObject?.get("id")
         ?.jsonPrimitive?.contentOrNull ?: return false
-    val proposalIndex = actionId["index"]?.jsonPrimitive?.intOrNull ?: 0
-    val vote = vp["vote"]?.jsonPrimitive?.contentOrNull ?: return false
-
-    val epoch = (slot / slotsPerEpoch).toInt()
+    val proposalIndex  = actionId["index"]?.jsonPrimitive?.intOrNull ?: 0
+    val vote           = vp["vote"]?.jsonPrimitive?.contentOrNull ?: return false
+    val anchorUrl      = vp["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
 
     return try {
         transaction {
@@ -179,11 +206,105 @@ private fun indexVote(
                 it[DrepVotes.vote]              = vote
                 it[DrepVotes.epoch]             = epoch
                 it[DrepVotes.slot]              = slot
+                if (anchorUrl != null) it[DrepVotes.anchorUrl] = anchorUrl
             }
         }
         true
     } catch (_: Exception) { false }
 }
+
+// ── Delegation cert indexing ──────────────────────────────────────────────────
+
+private fun indexDelegationCert(
+    network: String,
+    slot: Long,
+    txHash: String,
+    cert: JsonObject,
+): Boolean {
+    // Ogmios 6.x cert formats for Conway delegation:
+    //   voteDelegation            → credential + delegatee
+    //   stakeVoteDelegation       → credential + stake pool + delegatee
+    //   voteRegistrationDelegation         → credential + delegatee + deposit
+    //   stakeVoteRegistrationDelegation    → credential + stake pool + delegatee + deposit
+    val credential = cert["credential"]?.jsonObject ?: return false
+    val stakeHex   = credential["keyHash"]?.jsonPrimitive?.contentOrNull
+        ?: credential["scriptHash"]?.jsonPrimitive?.contentOrNull
+        ?: return false
+
+    val delegatee = cert["delegatee"]?.jsonObject ?: return false
+    val delegateeType = delegatee["type"]?.jsonPrimitive?.contentOrNull ?: return false
+
+    val (drepType, drepHex) = when (delegateeType) {
+        "drep" -> {
+            val drep    = delegatee["drep"]?.jsonObject ?: return false
+            val subType = drep["type"]?.jsonPrimitive?.contentOrNull ?: return false
+            when (subType) {
+                "keyHash"    -> "key"    to drep["keyHash"]?.jsonPrimitive?.contentOrNull
+                "scriptHash" -> "script" to drep["scriptHash"]?.jsonPrimitive?.contentOrNull
+                else         -> return false
+            }
+        }
+        "alwaysAbstain"       -> "abstain"       to null
+        "alwaysNoConfidence"  -> "no_confidence" to null
+        else                  -> return false
+    }
+
+    return try {
+        transaction {
+            IdxDelegationVote.insert {
+                it[IdxDelegationVote.network]            = network
+                it[IdxDelegationVote.stakeCredentialHex] = stakeHex
+                it[IdxDelegationVote.drepCredentialHex]  = drepHex
+                it[IdxDelegationVote.drepType]           = drepType
+                it[IdxDelegationVote.txHash]             = txHash
+                it[IdxDelegationVote.slot]               = slot
+            }
+        }
+        true
+    } catch (_: Exception) { false }
+}
+
+// ── Pool registration indexing ───────────────────────────────────────────────
+
+private fun indexPoolRegistration(
+    network: String,
+    slot: Long,
+    cert: JsonObject,
+): Boolean {
+    // Ogmios 6.x format: certificates[].poolParameters.id (bech32) + .metadata.url
+    val poolParams  = cert["poolParameters"]?.jsonObject ?: return false
+    val poolBech32  = poolParams["id"]?.jsonPrimitive?.contentOrNull ?: return false
+    val metadataUrl = poolParams["metadata"]?.jsonObject?.get("url")
+        ?.jsonPrimitive?.contentOrNull
+
+    // Pool ID hex: decode bech32 → skip for now; store empty, update after name fetch
+    val poolHex = runCatching { bech32ToHex(poolBech32) }.getOrElse { "" }
+        .takeIf { it.isNotEmpty() } ?: poolBech32  // fallback: use bech32 as key
+
+    return try {
+        transaction {
+            IdxPoolMetadata.upsert(IdxPoolMetadata.network, IdxPoolMetadata.poolIdHex) {
+                it[IdxPoolMetadata.network]      = network
+                it[IdxPoolMetadata.poolIdBech32] = poolBech32
+                it[IdxPoolMetadata.poolIdHex]    = poolHex
+                it[IdxPoolMetadata.metadataUrl]  = metadataUrl
+                it[IdxPoolMetadata.slot]         = slot
+            }
+        }
+        true
+    } catch (_: Exception) { false }
+}
+
+// ── bech32 helper ─────────────────────────────────────────────────────────────
+
+private fun bech32ToHex(bech32: String): String {
+    // pool1... → strip hrp + checksum, decode 5-bit groups to bytes
+    // Simple implementation using the bech32 decoding from cardano-client-lib already on classpath
+    val data = com.bloxbean.cardano.client.crypto.Bech32.decode(bech32).data
+    return data.joinToString("") { "%02x".format(it) }
+}
+
+// ── DB helpers ────────────────────────────────────────────────────────────────
 
 private fun loadCheckpoint(network: String): Pair<Long, String>? =
     runCatching {
@@ -207,7 +328,7 @@ private fun saveCheckpoint(network: String, slot: Long, blockHash: String) {
     }
 }
 
-// ── WebSocket helpers ────────────────────────────────────────────────────────
+// ── WebSocket helpers ─────────────────────────────────────────────────────────
 
 private var reqId = 0L
 
