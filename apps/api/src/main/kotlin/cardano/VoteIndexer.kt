@@ -163,20 +163,21 @@ private fun indexVote(
     val voter  = vp["voter"]?.jsonObject ?: return false
     val role   = voter["role"]?.jsonPrimitive?.contentOrNull ?: return false
 
-    // Map all three voter roles to a credential hex
-    val credentialHex: String = when (role) {
+    // Map all three voter roles to a credential hex + short role tag
+    val (credentialHex, voterRole) = when (role) {
         "delegateRepresentative" -> {
             val id = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
-            runCatching { drepIdToCredentialHex(id) }.getOrElse { id }
+            val hex = runCatching { drepIdToCredentialHex(id) }.getOrElse { id }
                 .takeIf { it.length == 56 } ?: return false
+            hex to "drep"
         }
         "constitutionalCommitteeMember" -> {
-            // CC member identified by hot key credential hex
-            voter["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
+            val hex = voter["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
+            hex to "cc"
         }
         "stakePoolOperator" -> {
-            // SPO identified by pool bech32 ID
-            voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            val id = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            id to "spo"
         }
         else -> return false
     }
@@ -186,7 +187,9 @@ private fun indexVote(
         ?.jsonPrimitive?.contentOrNull ?: return false
     val proposalIndex  = actionId["index"]?.jsonPrimitive?.intOrNull ?: 0
     val vote           = vp["vote"]?.jsonPrimitive?.contentOrNull ?: return false
-    val anchorUrl      = vp["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+    val anchor     = vp["anchor"]?.jsonObject
+    val anchorUrl  = anchor?.get("url")?.jsonPrimitive?.contentOrNull
+    val anchorHash = anchor?.get("hash")?.jsonPrimitive?.contentOrNull
 
     return try {
         transaction {
@@ -200,13 +203,15 @@ private fun indexVote(
             ) {
                 it[DrepVotes.network]           = network
                 it[DrepVotes.drepCredentialHex] = credentialHex
+                it[DrepVotes.voterRole]         = voterRole
                 it[DrepVotes.txHash]            = txHash
                 it[DrepVotes.proposalTxHash]    = proposalTxHash
                 it[DrepVotes.proposalIndex]     = proposalIndex
                 it[DrepVotes.vote]              = vote
                 it[DrepVotes.epoch]             = epoch
                 it[DrepVotes.slot]              = slot
-                if (anchorUrl != null) it[DrepVotes.anchorUrl] = anchorUrl
+                if (anchorUrl  != null) it[DrepVotes.anchorUrl]  = anchorUrl
+                if (anchorHash != null) it[DrepVotes.anchorHash] = anchorHash
             }
         }
         true

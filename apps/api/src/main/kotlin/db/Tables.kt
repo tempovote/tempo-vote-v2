@@ -87,8 +87,10 @@ object DrepVotes : Table("drep_votes") {
     val vote              = varchar("vote", 10)
     val epoch             = integer("epoch")
     val slot              = long("slot")
+    val voterRole         = varchar("voter_role", 8).default("drep")   // 'drep' | 'cc' | 'spo'
     val actionType        = varchar("action_type", 64).nullable()
     val anchorUrl         = text("anchor_url").nullable()
+    val anchorHash        = text("anchor_hash").nullable()
     val expiresEpoch      = integer("expires_epoch").nullable()
 
     override val primaryKey = PrimaryKey(id)

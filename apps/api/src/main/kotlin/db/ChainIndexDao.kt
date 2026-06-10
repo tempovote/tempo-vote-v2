@@ -105,13 +105,14 @@ object ChainIndexDao {
         }
     }
 
-    /** Number of governance actions a DRep has voted on. */
+    /** Number of governance actions a DRep has voted on (DRep role only). */
     fun getVotedCount(drepCredentialHex: String, network: String): Int = transaction {
         DrepVotes
             .selectAll()
             .where {
                 (DrepVotes.network eq network) and
-                (DrepVotes.drepCredentialHex eq drepCredentialHex)
+                (DrepVotes.drepCredentialHex eq drepCredentialHex) and
+                (DrepVotes.voterRole eq "drep")
             }
             .count()
             .toInt()
