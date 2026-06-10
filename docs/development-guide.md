@@ -72,6 +72,29 @@ Dùng preprod cho tất cả development và testing:
 - Faucet ADA: https://docs.cardano.org/cardano-testnet/tools/faucet
 - Explorer: https://preprod.cardanoscan.io
 
+## Git Workflow ⚠️
+
+**KHÔNG commit trực tiếp vào `main`.** Mọi thay đổi đều phải thực hiện trên branch riêng và merge qua Pull Request.
+
+```bash
+git checkout main && git pull origin main
+git checkout -b feature/[desc]   # hoặc bug/[desc], hotfix/[desc]
+# ... làm việc ...
+git commit -m "feat: mô tả ngắn"
+git push origin feature/[desc]   # sau đó tạo PR trên GitHub
+```
+
+| Loại thay đổi | Branch | Commit prefix |
+|---------------|--------|---------------|
+| Tính năng mới | `feature/[desc]` | `feat:` |
+| Sửa lỗi | `bug/[desc]` | `fix:` |
+| Refactor | `refactor/[desc]` | `refactor:` |
+| UI/UX | `feature/ui-[desc]` | `style:` |
+| Hotfix khẩn | `hotfix/[desc]` | `fix:` |
+| Tài liệu | `docs/[desc]` | `docs:` |
+
+> Commit trực tiếp vào `main` sẽ bị từ chối. Luôn tạo PR dù thay đổi nhỏ.
+
 ## Thêm tính năng mới
 
 ### Thêm transaction type mới

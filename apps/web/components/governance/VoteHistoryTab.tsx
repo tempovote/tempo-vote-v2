@@ -22,10 +22,21 @@ function CopyableId({ id, role, name }: { id: string; role: RoleTab; name?: stri
     : display
 
   function copy() {
-    navigator.clipboard.writeText(display).then(() => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(display).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+    } else {
+      const el = document.createElement("textarea")
+      el.value = display
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand("copy")
+      document.body.removeChild(el)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    })
+    }
   }
 
   return (
