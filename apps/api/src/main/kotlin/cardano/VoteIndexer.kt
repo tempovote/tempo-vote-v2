@@ -239,16 +239,14 @@ private fun indexDelegationCert(
     val delegatee = cert["delegatee"]?.jsonObject ?: return false
     val delegateeType = delegatee["type"]?.jsonPrimitive?.contentOrNull ?: return false
 
+    // Ogmios 6.x returns the DRep credential inline in delegatee, not wrapped:
+    //   {"type": "keyHash",    "keyHash":    "..."}
+    //   {"type": "scriptHash", "scriptHash": "..."}
+    //   {"type": "alwaysAbstain"}
+    //   {"type": "alwaysNoConfidence"}
     val (drepType, drepHex) = when (delegateeType) {
-        "drep" -> {
-            val drep    = delegatee["drep"]?.jsonObject ?: return false
-            val subType = drep["type"]?.jsonPrimitive?.contentOrNull ?: return false
-            when (subType) {
-                "keyHash"    -> "key"    to drep["keyHash"]?.jsonPrimitive?.contentOrNull
-                "scriptHash" -> "script" to drep["scriptHash"]?.jsonPrimitive?.contentOrNull
-                else         -> return false
-            }
-        }
+        "keyHash"             -> "key"          to delegatee["keyHash"]?.jsonPrimitive?.contentOrNull
+        "scriptHash"          -> "script"       to delegatee["scriptHash"]?.jsonPrimitive?.contentOrNull
         "alwaysAbstain"       -> "abstain"       to null
         "alwaysNoConfidence"  -> "no_confidence" to null
         else                  -> return false
