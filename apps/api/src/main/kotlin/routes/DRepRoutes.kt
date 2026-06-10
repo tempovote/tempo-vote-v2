@@ -210,7 +210,12 @@ fun Route.drepRoutes() {
             val delegatorCountDb = ChainIndexDao.getDelegatorCount(credentialHex, network.name.lowercase())
             val delegatorCount = if (delegatorCountDb > 0) delegatorCountDb
                 else CardanoCache.drepDelegatorCounts.getIfPresent(network.name)?.get(credentialHex) ?: 0
-            val votedCount      = ChainIndexDao.getVotedCount(credentialHex, network.name.lowercase())
+            // Prefer VoteIndexer drep_votes (accurate if synced); fall back to snapshot_json scan
+            // when VoteIndexer hasn't indexed this network yet (e.g. mainnet VoteIndexer not running).
+            val votedCountVi   = ChainIndexDao.getVotedCount(credentialHex, network.name.lowercase())
+            val votedCount = if (votedCountVi > 0) votedCountVi
+                else ChainIndexDao.getVotedCountFromSnapshots(credentialHex, network.name.lowercase())
+
             val liveGaCount     = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
             val totalGaCount    = dbGaCount.coerceAtLeast(liveGaCount)
 

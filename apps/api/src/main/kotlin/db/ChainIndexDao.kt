@@ -124,6 +124,29 @@ object ChainIndexDao {
             .toInt()
     }
 
+    /**
+     * Count governance actions a DRep voted on by scanning snapshot_json.votes[].
+     * Used as fallback when VoteIndexer hasn't synced this network yet.
+     * Snapshot JSON is written by BackgroundPoller for all proposals (active + historical).
+     */
+    fun getVotedCountFromSnapshots(drepCredentialHex: String, network: String): Int = transaction {
+        exec(
+            """
+            SELECT COUNT(*)
+            FROM governance_action_snapshots
+            WHERE network = ?
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(snapshot_json::jsonb->'votes') v
+                WHERE v->>'role' = 'drep' AND v->>'id' = ?
+              )
+            """.trimIndent(),
+            listOf(
+                Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network),
+                Pair<IColumnType<*>, Any?>(VarCharColumnType(56), drepCredentialHex),
+            ),
+        ) { rs -> if (rs.next()) rs.getInt(1) else 0 } ?: 0
+    }
+
     /** Total distinct governance action proposals indexed so far. */
     fun getTotalProposalCount(network: String): Int = transaction {
         exec(
