@@ -3,6 +3,9 @@ package vote.tempo.routes
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.DRepStakeContext
@@ -236,8 +239,36 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
 
     val all = live + historical
 
-    // Enrich DRep vote entries with names from drepInfo cache (fast HashMap lookup, no network call).
-    // Names are populated when DRep profiles are visited or via the leaderboard endpoint.
+    // Collect DRep voters with an anchorUrl but no cached name — fetch server-side (bypasses CORS).
+    // Cap the total wait at 10 s so the endpoint never hangs on slow IPFS gateways.
+    val uncached = all.flatMap { it.votes }
+        .filter { v -> v.role == "drep" && v.anchorUrl != null &&
+            CardanoCache.drepInfo.getIfPresent("${network.name}:${v.id}") == null }
+        .distinctBy { it.id }
+
+    if (uncached.isNotEmpty()) {
+        runCatching {
+            withTimeout(10_000L) {
+                coroutineScope {
+                    uncached.map { vote ->
+                        async {
+                            val meta = runCatching { fetchDRepMeta(vote.anchorUrl!!) }.getOrNull()
+                            val name     = meta?.name
+                            val imageUrl = meta?.imageUrl
+                            if (name != null || imageUrl != null) {
+                                CardanoCache.drepInfo.put("${network.name}:${vote.id}", buildJsonObject {
+                                    put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
+                                    put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                                })
+                            }
+                        }
+                    }.forEach { it.await() }
+                }
+            }
+        }
+    }
+
+    // Enrich all DRep vote entries with names from (now-populated) drepInfo cache.
     return all.map { ga ->
         ga.copy(votes = ga.votes.map { vote ->
             if (vote.role == "drep") {

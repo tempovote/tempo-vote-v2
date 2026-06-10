@@ -28,7 +28,7 @@ import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.DrepVotes
 import vote.tempo.db.GovernanceActionSnapshots
 
-private val httpClient = HttpClient(CIO)
+internal val httpClient = HttpClient(CIO)
 
 private data class DRepCandidate(
     val id: String,
@@ -637,8 +637,8 @@ private suspend fun queryStakeKeyBalance(credentialHex: String, network: Network
         ?: extractStakeLovelace(accountInfo["stake"])
 }.getOrNull()
 
-private val PINATA_GATEWAY = System.getenv("PINATA_GATEWAY") ?: "https://ipfs.io"
-private val IPFS_GATEWAYS_BE = listOf("$PINATA_GATEWAY/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/")
+internal val PINATA_GATEWAY = System.getenv("PINATA_GATEWAY") ?: "https://ipfs.io"
+internal val IPFS_GATEWAYS_BE = listOf("$PINATA_GATEWAY/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/")
 
 /** Extract CID from any IPFS URL form (ipfs:// or https://<gateway>/ipfs/<cid>) */
 private fun extractIpfsCid(url: String): String? {
@@ -653,13 +653,13 @@ private fun extractIpfsCid(url: String): String? {
  * it's the most reliable source. Then fall back to well-known public gateways.
  * If the anchor is an ipfs:// URI, try public gateways only.
  */
-private fun buildCandidateUrls(anchorUrl: String): List<String> {
+internal fun buildCandidateUrls(anchorUrl: String): List<String> {
     val cid = extractIpfsCid(anchorUrl) ?: return listOf(anchorUrl)
     val origIfHttps = if (!anchorUrl.startsWith("ipfs://")) listOf(anchorUrl) else emptyList()
     return (origIfHttps + IPFS_GATEWAYS_BE.map { "${it}${cid}" }).distinct()
 }
 
-private data class DRepMeta(
+internal data class DRepMeta(
     val name: String?,
     val imageUrl: String?,
     val motivations: String? = null,
@@ -669,7 +669,7 @@ private data class DRepMeta(
 )
 
 /** Extract plain string or JSON-LD {"@value": "..."} wrapper → nullable String. */
-private fun extractMetaStr(el: JsonElement?): String? {
+internal fun extractMetaStr(el: JsonElement?): String? {
     if (el == null || el is JsonNull) return null
     if (el is JsonPrimitive) return el.contentOrNull?.takeIf { it.isNotBlank() }
     if (el is JsonObject) return el["@value"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -681,7 +681,7 @@ private fun extractMetaStr(el: JsonElement?): String? {
  * Runs server-side so CORS restrictions on the metadata host don't apply.
  * Supports CIP-119: { body: { givenName, image, motivations, objectives, qualifications, references } }
  */
-private suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
+internal suspend fun fetchDRepMeta(anchorUrl: String): DRepMeta? {
     val candidates = buildCandidateUrls(anchorUrl)
     for (url in candidates) {
         try {
