@@ -22,7 +22,6 @@ import vote.tempo.cardano.actionTypeLabel
 import vote.tempo.cardano.credentialHexToStakeAddress
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
-import vote.tempo.cardano.fetchDRepVotingPowerBatch
 import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.db.ChainIndexDao
@@ -292,14 +291,13 @@ fun Route.drepRoutes() {
             // cache — no Koios calls at request time.
             val delegCounts = CardanoCache.drepDelegatorCounts.getIfPresent(network.name) ?: emptyMap()
 
-            // ── liveVotingPower: batch drep_info for all candidates (1-2 Koios calls) ──
+            // CIP-105 IDs for response field; voting power comes from Ogmios stakeMap directly.
             val allCip105Ids = candidates.map { credentialHexToDrepIdCip105(it.credHex) ?: it.id }
-            val vpByCredHex  = fetchDRepVotingPowerBatch(allCip105Ids, network)
 
             val results = candidates.mapIndexed { idx, candidate ->
                 val cip105Id    = allCip105Ids[idx]
                 val activeVp    = stakeCtx?.stakeMap?.get(candidate.credHex) ?: candidate.activeVotingPower
-                val liveVp      = vpByCredHex[candidate.credHex] ?: activeVp
+                val liveVp      = activeVp  // Ogmios stake IS live voting power in Conway era
                 val influence   = if ((stakeCtx?.totalActiveDRepStake ?: 0L) > 0L)
                     activeVp.toDouble() / stakeCtx!!.totalActiveDRepStake.toDouble() * 100.0
                 else 0.0
