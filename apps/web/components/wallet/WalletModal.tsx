@@ -7,6 +7,7 @@ import { useWallet } from "@/hooks/useWallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { getWalletInfo, CIP95_WALLETS } from "@tempo/wallet-bridge"
 import type { NetworkId } from "@tempo/wallet-bridge"
+import { copyToClipboard } from "@/lib/clipboard"
 
 const IPFS_DISPLAY_GATEWAYS = [
   "https://gateway.pinata.cloud/ipfs/",
@@ -69,7 +70,7 @@ function DRepInfoPanel({ drepName, drepId, imageUrl, onClose }: { drepName: stri
 
   const handleCopyDrepId = useCallback(async () => {
     if (!drepId) return
-    await navigator.clipboard.writeText(drepId)
+    copyToClipboard(drepId)
     setCopiedDrepId(true)
     setTimeout(() => setCopiedDrepId(false), 2000)
   }, [drepId])
@@ -273,7 +274,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
 
   const handleCopyAddress = useCallback(async () => {
     if (!changeAddress) return
-    await navigator.clipboard.writeText(changeAddress)
+    copyToClipboard(changeAddress)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [changeAddress])

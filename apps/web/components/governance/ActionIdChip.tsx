@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { govActionIdToBech32 } from "@/lib/governance"
+import { copyToClipboard } from "@/lib/clipboard"
 
 interface Props {
   txHash: string
@@ -31,10 +32,9 @@ export function ActionIdChip({ txHash, index, size = "sm" }: Props) {
     e.preventDefault()
     e.stopPropagation()
     if (!fullValue) return
-    navigator.clipboard.writeText(fullValue).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
+    copyToClipboard(fullValue)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }, [fullValue])
 
   const toggle = useCallback((e: React.MouseEvent, next: "hex" | "bech32") => {

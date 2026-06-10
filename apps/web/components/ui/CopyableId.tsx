@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { copyToClipboard } from "@/lib/clipboard"
 
 interface Props {
   id: string
@@ -16,10 +17,9 @@ export default function CopyableId({ id, className = "" }: Props) {
   function copy(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    navigator.clipboard.writeText(id).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
+    copyToClipboard(id)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
