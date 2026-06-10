@@ -27,6 +27,14 @@ private val koiosHttp = HttpClient(CIO) {
     engine { requestTimeout = 0 }
 }
 
+// KOIOS_API_KEY env var: set to a Koios JWT token (https://koios.rest/Account) for higher rate limits.
+private val koiosApiKey: String? = System.getenv("KOIOS_API_KEY")?.takeIf { it.isNotBlank() }
+
+// Adds Authorization header to all Koios requests when an API key is configured.
+private fun HttpRequestBuilder.withKoiosAuth() {
+    koiosApiKey?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+}
+
 private suspend fun HttpResponse.jsonArray(): JsonArray {
     val text = bodyAsText()
     if (!status.isSuccess()) throw Exception("HTTP ${status.value}: ${text.take(200)}")
@@ -58,6 +66,7 @@ suspend fun fetchPoolInfo(bech32PoolIds: List<String>, network: Network): Map<St
 
     runCatching {
         val response = koiosHttp.post("${koiosBaseUrl(network)}/pool_info") {
+            withKoiosAuth()
             contentType(ContentType.Application.Json)
             setBody(buildJsonObject {
                 putJsonArray("_pool_bech32_ids") { toFetch.forEach { add(it) } }
@@ -99,6 +108,7 @@ suspend fun fetchProposalVoteRationales(txHash: String, index: Int, network: Net
         val limit  = 1000
         while (true) {
             val response = koiosHttp.get("${koiosBaseUrl(network)}/proposal_votes") {
+                withKoiosAuth()
                 parameter("_proposal_id", govActionId)
                 parameter("limit",  limit)
                 parameter("offset", offset)
@@ -169,6 +179,7 @@ suspend fun fetchDRepVotingPowerBatch(
     drepIds.chunked(batchSize).forEach { batch ->
         runCatching {
             val response = koiosHttp.post("${koiosBaseUrl(network)}/drep_info") {
+                withKoiosAuth()
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject {
                     putJsonArray("_drep_ids") { batch.forEach { add(it) } }
@@ -199,6 +210,7 @@ suspend fun fetchDelegatorCount(drepId: String, network: Network): Int {
     return runCatching {
         withTimeout(10_000L) {
             val resp = koiosHttp.get("${koiosBaseUrl(network)}/drep_delegators") {
+                withKoiosAuth()
                 parameter("_drep_id", drepId)
                 parameter("limit", 0)
                 header("Prefer", "count=exact")
@@ -232,6 +244,7 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
       withTimeout(DREP_STATS_TIMEOUT_MS) {
         // ── 1. live voting power from drep_info ───────────────────────────────
         val infoResp = koiosHttp.get("$base/drep_info") {
+            withKoiosAuth()
             parameter("_drep_ids", "{$drepId}")
         }
         val infoBody: JsonArray = infoResp.jsonArray()
@@ -240,6 +253,7 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
 
         // ── 2. delegator count via Content-Range header (zero data rows) ──────
         val delegResp = koiosHttp.get("$base/drep_delegators") {
+            withKoiosAuth()
             parameter("_drep_id", drepId)
             parameter("limit", 0)
             header("Prefer", "count=exact")
@@ -253,6 +267,7 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
         val limit = 1000
         while (true) {
             val votesResp = koiosHttp.get("$base/drep_votes") {
+                withKoiosAuth()
                 parameter("_drep_id", drepId)
                 parameter("limit",  limit)
                 parameter("offset", offset)
@@ -265,6 +280,7 @@ suspend fun fetchDRepKoiosStats(drepId: String, network: Network): DRepKoiosStat
 
         // ── 4. total GA count from proposal_list (accurate chain-wide denominator) ──
         val proposalResp = koiosHttp.get("$base/proposal_list") {
+            withKoiosAuth()
             parameter("limit", 0)
             header("Prefer", "count=exact")
         }

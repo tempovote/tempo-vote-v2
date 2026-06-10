@@ -164,6 +164,7 @@ private suspend fun pollDelegatorCountsForNetwork(network: Network) {
         val cip105Id = credentialHexToDrepIdCip105(credHex) ?: continue
         counts[credHex] = fetchDelegatorCount(cip105Id, network)
         fetched++
+        delay(500L) // throttle to stay under Koios anonymous rate limit (~2 req/s)
     }
 
     CardanoCache.drepDelegatorCounts.put(network.name, counts)
