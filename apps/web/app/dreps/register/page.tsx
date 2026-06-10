@@ -319,7 +319,7 @@ function friendlyError(msg: string): { title: string; detail: string } {
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 export default function RegisterDRepPage() {
-  const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId } = useWallet()
+  const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId, reauthenticate } = useWallet()
   const { submitTx } = useTx()
   const setDRepStatus = useWalletStore(s => s.setDRepStatus)
 
@@ -407,11 +407,17 @@ export default function RegisterDRepPage() {
       if (!anchor) {
         // Upload metadata to IPFS only if not already done (first attempt or form changed)
         setWizardStep("uploading")
+        setStatusLabel("Đang xác thực ví...")
+
+        let jwt = getJwt()
+        if (!jwt) jwt = await reauthenticate()
+        if (!jwt) throw new Error("Xác thực thất bại — không thể lấy JWT")
+
         setStatusLabel("Đang upload metadata lên IPFS...")
 
         const uploadRes = await fetch(`${API_URL}/metadata/upload`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
+          headers: { "Content-Type": "application/json", ...authHeader(jwt) },
           body: JSON.stringify({
             drepId,
             givenName: formData.givenName,
