@@ -50,18 +50,20 @@ object ChainIndexDao {
      */
     private fun latestDelegationsByDrep(network: String): Map<String, Int> {
         val result = mutableMapOf<String, Int>()
-        exec(
-            """SELECT drep_credential_hex, COUNT(*) AS cnt
-               FROM (
-                   SELECT DISTINCT ON (stake_credential_hex) drep_credential_hex
-                   FROM idx_delegation_vote
-                   WHERE network = ? AND drep_type IN ('key', 'script')
-                   ORDER BY stake_credential_hex, slot DESC
-               ) latest
-               WHERE drep_credential_hex IS NOT NULL
-               GROUP BY drep_credential_hex""",
-            listOf(Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network))
-        ) { rs -> while (rs.next()) result[rs.getString(1)] = rs.getInt(2) }
+        transaction {
+            exec(
+                """SELECT drep_credential_hex, COUNT(*) AS cnt
+                   FROM (
+                       SELECT DISTINCT ON (stake_credential_hex) drep_credential_hex
+                       FROM idx_delegation_vote
+                       WHERE network = ? AND drep_type IN ('key', 'script')
+                       ORDER BY stake_credential_hex, slot DESC
+                   ) latest
+                   WHERE drep_credential_hex IS NOT NULL
+                   GROUP BY drep_credential_hex""",
+                listOf(Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network))
+            ) { rs -> while (rs.next()) result[rs.getString(1)] = rs.getInt(2) }
+        }
         return result
     }
 
