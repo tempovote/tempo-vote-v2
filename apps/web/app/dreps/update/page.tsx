@@ -205,7 +205,7 @@ function friendlyError(msg: string): { title: string; detail: string; requiresRe
 }
 
 export default function UpdateDRepPage() {
-  const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId, isWalletHydrating } = useWallet()
+  const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId, isWalletHydrating, reauthenticate } = useWallet()
   const { submitTx } = useTx()
 
   const drepId = drepKey?.dRepIDCip105 ?? null
@@ -330,11 +330,17 @@ export default function UpdateDRepPage() {
 
       if (!anchor) {
         setWizardStep("uploading")
+        setStatusLabel("Đang xác thực ví...")
+
+        let jwt = getJwt()
+        if (!jwt) jwt = await reauthenticate()
+        if (!jwt) throw new Error("Xác thực thất bại — không thể lấy JWT")
+
         setStatusLabel("Đang upload metadata lên IPFS...")
 
         const uploadRes = await fetch(`${API_URL}/metadata/upload`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
+          headers: { "Content-Type": "application/json", ...authHeader(jwt) },
           body: JSON.stringify({
             drepId,
             givenName: formData.givenName,
