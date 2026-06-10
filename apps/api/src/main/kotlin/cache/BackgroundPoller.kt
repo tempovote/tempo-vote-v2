@@ -9,6 +9,7 @@ import vote.tempo.cardano.GovernanceThresholds
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.parseCCContext
+import vote.tempo.cardano.parseDRepDelegatorCounts
 import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
@@ -25,12 +26,6 @@ private const val POLL_INTERVAL_MS        = 5 * 60 * 1_000L   // 5 min — Ogmio
 private const val QUERY_TIMEOUT_MS        = 420_000L           // 7 min cap — delegateRepresentatives alone takes ~2 min on mainnet (8 MB response)
 private const val MAX_BACKOFF_MS          = 30 * 60 * 1_000L  // 30 minutes max backoff
 private const val STARTUP_DELAY_MS        = 3_000L
-// Delegator counts run on a separate, slower cycle: wait for first Ogmios poll to populate
-// stakeMap, then refresh every 15 min sequentially. 200 DReps × ~200 ms/call ≈ 40 s total.
-// 5-min startup delay (vs 3 min for Ogmios) ensures getDelegateRepresentatives (~2 min on mainnet)
-// completes before the first delegator fetch attempt — avoids a guaranteed skip on cold start.
-private const val DELEGATOR_POLL_DELAY_MS    = 5 * 60 * 1_000L  // wait 5 min after startup
-private const val DELEGATOR_POLL_INTERVAL_MS = 15 * 60 * 1_000L // 15 min cadence
 
 // Per-network state for exponential backoff
 private val consecutiveFailures = mutableMapOf<Network, Int>()
@@ -45,21 +40,14 @@ fun Application.startBackgroundPoller() {
     }
 
     // Main poll: Ogmios state (DRep list, gov actions, CC, epoch, protocol params)
+    // Delegator counts are extracted from the same getDelegateRepresentatives response —
+    // no separate poll cycle needed.
     scope.launch {
         delay(STARTUP_DELAY_MS)
         logger.info { "BackgroundPoller first poll starting" }
         while (isActive) {
             pollAllNetworks()
             delay(POLL_INTERVAL_MS)
-        }
-    }
-
-    // Delegator count poll: reads local chain index — fast DB query, no Koios rate limit.
-    scope.launch {
-        delay(DELEGATOR_POLL_DELAY_MS)
-        while (isActive) {
-            pollDelegatorCounts()
-            delay(DELEGATOR_POLL_INTERVAL_MS)
         }
     }
 
@@ -72,7 +60,7 @@ fun Application.startBackgroundPoller() {
         scope.launch { runPoolMetadataFetcher(activeNetworks) }
     }
 
-    logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min, delegator counts every 15 min (local index), pool metadata fetch every 1 h" }
+    logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min (delegator counts inline), pool metadata fetch every 1 h" }
 }
 
 private suspend fun pollAllNetworks() {
@@ -98,6 +86,13 @@ private suspend fun pollNetwork(network: Network) {
 
             val dreps = q.getDelegateRepresentatives()
             CardanoCache.drepList.put(network.name, dreps)
+
+            // Delegator counts come directly from the same Ogmios response —
+            // no VoteIndexer or Koios needed.
+            val delegCounts = parseDRepDelegatorCounts(dreps)
+            CardanoCache.drepDelegatorCounts.put(network.name, delegCounts)
+            CardanoCache.leaderboard.invalidateAll()
+            logger.info { "BackgroundPoller [$network] delegator counts refreshed: ${delegCounts.size} DReps" }
 
             val gas = q.getGovernanceProposals()
             CardanoCache.govActions.put(network.name, gas)
@@ -137,7 +132,7 @@ private suspend fun pollNetwork(network: Network) {
         // Success — reset backoff
         consecutiveFailures.remove(network)
         nextPollTime.remove(network)
-        logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions + DB sync" }
+        logger.debug { "BackgroundPoller [$network] refreshed drepList + govActions + delegatorCounts + DB sync" }
     }.onFailure { e ->
         val failures = (consecutiveFailures[network] ?: 0) + 1
         consecutiveFailures[network] = failures
@@ -146,36 +141,6 @@ private suspend fun pollNetwork(network: Network) {
         nextPollTime[network] = System.currentTimeMillis() + backoff
         logger.warn { "BackgroundPoller [$network] failed ($failures consecutive): ${e.message} — next retry in ${backoff / 60_000}m" }
     }
-}
-
-/**
- * Delegator counts from local chain index (replaces Koios sequential polling).
- * Reads idx_delegation_vote populated by VoteIndexer — no rate limits, instant query.
- */
-private suspend fun pollDelegatorCounts() {
-    if (System.getenv("OGMIOS_MAINNET_URL") != null) pollDelegatorCountsForNetwork(Network.MAINNET)
-    if (System.getenv("OGMIOS_PREPROD_URL") != null) pollDelegatorCountsForNetwork(Network.PREPROD)
-}
-
-private suspend fun pollDelegatorCountsForNetwork(network: Network) {
-    val stakeMap = CardanoCache.drepList.getIfPresent(network.name)
-        ?.let { runCatching { parseDRepStakeContext(it).stakeMap }.getOrNull() }
-        ?: run {
-            logger.info { "DelegatorPoller [$network] skipped — drepList not yet cached" }
-            return
-        }
-
-    val top200    = stakeMap.entries.sortedByDescending { it.value }.take(200)
-    val credHexes = top200.map { it.key }
-
-    // Batch query: single DB call for all 200 DReps (no rate limiting needed)
-    val counts = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        ChainIndexDao.getDelegatorCounts(credHexes, network.name.lowercase())
-    }
-
-    CardanoCache.drepDelegatorCounts.put(network.name, counts)
-    CardanoCache.leaderboard.invalidateAll()
-    logger.info { "DelegatorPoller [$network] refreshed delegator counts for ${counts.size} DReps from local index" }
 }
 
 /**
