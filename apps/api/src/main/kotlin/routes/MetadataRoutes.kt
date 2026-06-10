@@ -68,8 +68,100 @@ data class ProposalUploadRequest(
     val supportLinks: List<String> = emptyList(),
 )
 
+private val IPFS_GATEWAYS = listOf(
+    System.getenv("PINATA_GATEWAY")?.let { "$it/ipfs/" } ?: "https://ipfs.io/ipfs/",
+    "https://ipfs.io/ipfs/",
+    "https://dweb.link/ipfs/",
+).distinct()
+
+private fun extractIpfsCid(url: String): String? {
+    if (url.startsWith("ipfs://")) return url.removePrefix("ipfs://").substringBefore("/")
+    return Regex("^https?://[^/]+/ipfs/([^/?#]+)").find(url)?.groupValues?.get(1)
+}
+
+private fun anchorCandidateUrls(url: String): List<String> {
+    val cid = extractIpfsCid(url) ?: return listOf(url)
+    val origIfHttps = if (!url.startsWith("ipfs://")) listOf(url) else emptyList()
+    return (origIfHttps + IPFS_GATEWAYS.map { "${it}${cid}" }).distinct()
+}
+
+/** Fetch CIP-108/CIP-119 anchor document and extract human-readable fields. */
+private fun fetchAnchorContent(anchorUrl: String): JsonObject? {
+    for (url in anchorCandidateUrls(anchorUrl)) {
+        try {
+            val req = Request.Builder().url(url)
+                .header("Accept", "application/json, application/ld+json, */*")
+                .get().build()
+            val resp = okHttp.newCall(req).execute()
+            if (!resp.isSuccessful) continue
+            val bodyStr = resp.body?.string() ?: continue
+            val root = runCatching { Json.parseToJsonElement(bodyStr).jsonObject }.getOrNull() ?: continue
+
+            val body = root["body"]?.jsonObject ?: root
+
+            fun str(key: String): JsonElement =
+                body[key]?.takeIf { it !is JsonNull }
+                    ?: JsonNull
+
+            fun refs(): JsonArray {
+                val r = body["references"]
+                if (r !is JsonArray) return JsonArray(emptyList())
+                return JsonArray(r.mapNotNull { item ->
+                    val obj = item as? JsonObject ?: return@mapNotNull null
+                    val label = obj["label"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val uri   = obj["uri"]?.jsonPrimitive?.contentOrNull   ?: return@mapNotNull null
+                    buildJsonObject {
+                        put("label", label)
+                        put("uri",   uri)
+                    }
+                })
+            }
+
+            val title    = str("title").let { if (it is JsonNull) str("givenName") else it }
+            val abstract = str("abstract")
+            val motivation    = str("motivation")
+            val rationale     = str("rationale")
+            val qualifications = str("qualifications")
+            val objectives     = str("objectives")
+            val references     = refs()
+
+            if (title is JsonNull && abstract is JsonNull && motivation is JsonNull && rationale is JsonNull) continue
+
+            return buildJsonObject {
+                put("title",          title)
+                put("abstract",       abstract)
+                put("motivation",     motivation)
+                put("rationale",      rationale)
+                put("qualifications", qualifications)
+                put("objectives",     objectives)
+                put("references",     references)
+            }
+        } catch (_: Exception) { continue }
+    }
+    return null
+}
+
 fun Route.metadataRoutes() {
     route("/metadata") {
+
+        // GET /metadata/anchor-content?url=<encoded_url>
+        // Server-side proxy: fetch anchor document and return extracted metadata.
+        // Bypasses browser CORS/network restrictions. Supports ipfs:// and https://.
+        get("/anchor-content") {
+            val rawUrl = call.request.queryParameters["url"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "url required"))
+
+            if (!rawUrl.startsWith("https://") && !rawUrl.startsWith("http://") &&
+                !rawUrl.startsWith("ipfs://")) {
+                return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid url scheme"))
+            }
+
+            val result = fetchAnchorContent(rawUrl)
+                ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "anchor content not found"))
+
+            call.respond(result)
+        }
+
         authenticate("jwt") {
         // POST /metadata/upload-image  [requires JWT]
         post("/upload-image") {

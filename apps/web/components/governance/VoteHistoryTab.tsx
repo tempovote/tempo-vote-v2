@@ -3,6 +3,7 @@
 import { useState } from "react"
 import type { VoteEntry } from "@tempo/types"
 import { credentialHexToDrepId, lovelaceToAda } from "@/lib/governance"
+import { copyToClipboard } from "@/lib/clipboard"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useRationale } from "@/hooks/useRationale"
 import type { RationaleContent } from "@/hooks/useRationale"
@@ -22,21 +23,9 @@ function CopyableId({ id, role, name }: { id: string; role: RoleTab; name?: stri
     : display
 
   function copy() {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(display).then(() => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      })
-    } else {
-      const el = document.createElement("textarea")
-      el.value = display
-      document.body.appendChild(el)
-      el.select()
-      document.execCommand("copy")
-      document.body.removeChild(el)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }
+    copyToClipboard(display)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (

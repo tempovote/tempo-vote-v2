@@ -477,8 +477,8 @@ export function ActionDetailCard({ action }: { action: GovernanceAction }) {
   const { actionType, details } = action
   const d = details as Record<string, unknown> | null | undefined
 
-  // infoAction has no extra detail — nothing to show
-  if (actionType === "infoAction") return null
+  // infoAction / information has no extra on-chain detail — nothing to show
+  if (actionType === "infoAction" || actionType === "information") return null
 
   const title = {
     noConfidence:             "Tác động",
