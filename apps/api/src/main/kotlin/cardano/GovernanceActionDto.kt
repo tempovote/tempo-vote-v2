@@ -187,6 +187,31 @@ fun parseDRepStakeContext(raw: JsonElement): DRepStakeContext {
 }
 
 /**
+ * Parse delegator counts for each registered DRep from the same Ogmios
+ * `delegateRepresentatives` response. Ogmios includes the full `delegators`
+ * array per DRep — counting it here is instant and requires no VoteIndexer sync.
+ * Returns Map<credentialHex, delegatorCount>.
+ */
+fun parseDRepDelegatorCounts(raw: JsonElement): Map<String, Int> {
+    val entries: JsonArray = when (raw) {
+        is JsonArray  -> raw
+        is JsonObject -> raw["delegateRepresentatives"]?.jsonArray
+            ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+            ?: return emptyMap()
+        else -> return emptyMap()
+    }
+    val result = mutableMapOf<String, Int>()
+    for (entry in entries) {
+        val obj   = runCatching { entry.jsonObject }.getOrNull() ?: continue
+        if (obj["type"]?.jsonPrimitive?.contentOrNull != "registered") continue
+        val id    = obj["id"]?.jsonPrimitive?.contentOrNull ?: continue
+        val count = obj["delegators"]?.jsonArray?.size ?: 0
+        result[id] = count
+    }
+    return result
+}
+
+/**
  * Parse CC context from `queryLedgerState/constitutionalCommittee` response.
  *
  * N_Active = members where seat status == "active" AND delegate status == "authorized".
