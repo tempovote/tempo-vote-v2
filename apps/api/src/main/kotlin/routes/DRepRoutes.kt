@@ -23,9 +23,9 @@ import vote.tempo.cardano.credentialHexToStakeAddress
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.fetchDRepVotingPowerBatch
-import vote.tempo.cardano.fetchDRepKoiosStats
 import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.parseDRepStakeContext
+import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.DrepVotes
 import vote.tempo.db.GovernanceActionSnapshots
 
@@ -205,24 +205,18 @@ fun Route.drepRoutes() {
                         .toInt()
                 }
             }.getOrDefault(0)
-            // ── Live stats from Koios ──────────────────────────────────────────
-            // Koios only accepts CIP-105 bech32 (drep1y...) — convert from any input format.
-            val cip105Id = credentialHexToDrepIdCip105(credentialHex) ?: drepId
-            val koios = fetchDRepKoiosStats(cip105Id, network)
-            val liveVotingPower = koios?.liveVotingPower ?: activeVotingPower
-            val delegatorCount  = koios?.delegatorCount  ?: 0
-            val votedCount      = koios?.votedCount      ?: 0
-            // Use Koios chain-wide total as denominator — our DB snapshot may be partial.
-            // Fall back to DB count only when Koios call failed entirely.
-            val liveGaCount  = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
-            val totalGaCount = koios?.totalGaCount ?: dbGaCount.coerceAtLeast(liveGaCount)
+            // ── Live stats from local chain index ─────────────────────────────
+            val delegatorCount  = ChainIndexDao.getDelegatorCount(credentialHex, network.name.lowercase())
+            val votedCount      = ChainIndexDao.getVotedCount(credentialHex, network.name.lowercase())
+            val liveGaCount     = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
+            val totalGaCount    = dbGaCount.coerceAtLeast(liveGaCount)
 
             val votedPercent    = if (totalGaCount > 0) votedCount.toDouble() / totalGaCount * 100.0 else 0.0
             val notVotedPercent = (100.0 - votedPercent).coerceAtLeast(0.0)
 
             val result = buildJsonObject {
                 put("activeVotingPower", activeVotingPower)
-                put("liveVotingPower",   liveVotingPower)
+                put("liveVotingPower",   activeVotingPower)  // live = active from Ogmios
                 put("delegatorCount",    delegatorCount)
                 put("influencePower",    influencePower)
                 put("votedCount",        votedCount)
@@ -231,7 +225,7 @@ fun Route.drepRoutes() {
                 put("notVotedPercent",   notVotedPercent)
             }
 
-            if (koios != null) CardanoCache.drepStats.put(cacheKey, result)
+            CardanoCache.drepStats.put(cacheKey, result)
             call.respond(result)
         }
 
