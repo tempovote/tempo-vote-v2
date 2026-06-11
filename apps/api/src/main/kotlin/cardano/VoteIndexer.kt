@@ -11,6 +11,7 @@ import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.db.DrepVotes
 import vote.tempo.db.IdxDelegationVote
+import vote.tempo.db.IdxGovernanceProposals
 import vote.tempo.db.IdxPoolMetadata
 import vote.tempo.db.IndexerCheckpoint
 
@@ -22,7 +23,12 @@ private val CONWAY_SLOTS = mapOf(
     "preprod" to  68_774_400L,
 )
 
-private val SLOTS_PER_EPOCH = mapOf("mainnet" to 432_000L, "preprod" to 86_400L)
+private val SLOTS_PER_EPOCH = mapOf("mainnet" to 432_000L, "preprod" to 432_000L)
+
+// govActionLifetime: number of epochs a proposal remains active before expiring.
+// This is a protocol parameter (Ogmios key: governanceActionLifetime).
+// Hardcoded per network — update if protocol params change via HF.
+private val GOV_ACTION_LIFETIME = mapOf("mainnet" to 6, "preprod" to 6)
 
 private const val PIPELINE_SIZE = 200
 
@@ -37,7 +43,8 @@ private val wsClient = HttpClient(CIO) {
  *  - Stake pool registration metadata → idx_pool_metadata
  *
  * Starts from genesis but skips pre-Conway blocks cheaply (no DB I/O).
- * Checkpointing ensures restarts don't duplicate work.
+ * When a valid checkpoint exists, uses findIntersect to skip directly to the checkpoint
+ * so restarts don't need to re-stream the entire pre-checkpoint chain.
  */
 suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
     val wsUrl = ogmiosUrl
@@ -54,13 +61,30 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
 
             wsClient.webSocket(wsUrl) {
                 var inFlight = 0L
+
+                // Send findIntersect before the nextBlock pipeline when we have a valid checkpoint.
+                // This tells Ogmios to start streaming from that point instead of genesis,
+                // making restarts O(new blocks) rather than O(entire chain).
+                // A "reset" checkpoint (all-zero hash) is skipped — let Ogmios stream from genesis.
+                val validCheckpoint = checkpoint?.takeIf { (_, hash) ->
+                    hash.length == 64 && hash.any { it != '0' }
+                }
+                if (validCheckpoint != null) {
+                    val (cpSlot, cpHash) = validCheckpoint
+                    send(Frame.Text(
+                        """{"jsonrpc":"2.0","method":"findIntersection","params":{"points":[{"slot":$cpSlot,"id":"$cpHash"}]},"id":-1}"""
+                    ))
+                    logger.info { "VoteIndexer [$network] findIntersection requested at slot=$cpSlot" }
+                }
+
                 repeat(PIPELINE_SIZE) { sendNextBlock(inFlight++) }
 
-                var lastCheckpointMs = System.currentTimeMillis()
-                var blocksProcessed  = 0L
-                var votesInserted    = 0L
-                var delegsInserted   = 0L
-                var poolsInserted    = 0L
+                var lastCheckpointMs    = System.currentTimeMillis()
+                var blocksProcessed    = 0L
+                var votesInserted      = 0L
+                var delegsInserted     = 0L
+                var poolsInserted      = 0L
+                var proposalsInserted  = 0L
 
                 for (frame in incoming) {
                     if (frame !is Frame.Text) continue
@@ -90,6 +114,18 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                     val blockHash = block["id"]?.jsonPrimitive?.contentOrNull ?: ""
                     blocksProcessed++
 
+                    // Pre-Conway progress log — fires every 60s regardless of era
+                    if (slot < conwayStartSlot && blockHash.isNotEmpty()) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastCheckpointMs >= 60_000) {
+                            lastCheckpointMs = now
+                            logger.info {
+                                "VoteIndexer [$network] pre-Conway slot=$slot blocks=$blocksProcessed " +
+                                "(target=$conwayStartSlot, ${((slot.toDouble() / conwayStartSlot) * 100).toInt()}%)"
+                            }
+                        }
+                    }
+
                     if (slot >= conwayStartSlot) {
                         val checkpointSlot = checkpoint?.first ?: 0L
 
@@ -99,6 +135,14 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                                 val txObj  = runCatching { tx.jsonObject }.getOrNull() ?: continue
                                 val txHash = txObj["id"]?.jsonPrimitive?.contentOrNull ?: continue
                                 val epoch  = (slot / slotsPerEpoch).toInt()
+
+                                // Governance proposal submissions (proposalProcedures)
+                                val proposals = txObj["proposals"]?.jsonArray ?: JsonArray(emptyList())
+                                for ((propIdx, propEl) in proposals.withIndex()) {
+                                    val propObj = runCatching { propEl.jsonObject }.getOrNull() ?: continue
+                                    if (indexProposal(network, slot, epoch, txHash, propIdx, propObj))
+                                        proposalsInserted++
+                                }
 
                                 // Governance votes (DRep + CC + SPO)
                                 val votes = txObj["votes"]?.jsonArray ?: JsonArray(emptyList())
@@ -134,7 +178,8 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                             lastCheckpointMs = now
                             logger.info {
                                 "VoteIndexer [$network] slot=$slot blocks=$blocksProcessed " +
-                                "votes=$votesInserted delegs=$delegsInserted pools=$poolsInserted"
+                                "proposals=$proposalsInserted votes=$votesInserted " +
+                                "delegs=$delegsInserted pools=$poolsInserted"
                             }
                         }
                     }
@@ -160,26 +205,27 @@ private fun indexVote(
     txHash: String,
     vp: JsonObject,
 ): Boolean {
-    val voter  = vp["voter"]?.jsonObject ?: return false
-    val role   = voter["role"]?.jsonPrimitive?.contentOrNull ?: return false
+    // Ogmios 6.x chain-sync uses "issuer" (same as queryLedgerState/governanceProposals).
+    val issuer = vp["issuer"]?.jsonObject ?: return false
+    val role   = issuer["role"]?.jsonPrimitive?.contentOrNull ?: return false
 
     // Map all three voter roles to a credential hex + short role tag
     val (credentialHex, voterRole) = when (role) {
         "delegateRepresentative" -> {
-            val id = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            val id = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return false
             val hex = runCatching { drepIdToCredentialHex(id) }.getOrElse { id }
                 .takeIf { it.length == 56 } ?: return false
             hex to "drep"
         }
         "constitutionalCommitteeMember" -> {
-            val hex = voter["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
+            val hex = issuer["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
             hex to "cc"
         }
         "stakePoolOperator" -> {
-            val id = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            val id = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return false
             id to "spo"
         }
-        else -> return false
+        else -> return false  // ignore genesisDelegate and other legacy roles
     }
 
     val actionId       = vp["actionId"]?.jsonObject ?: return false
@@ -226,30 +272,49 @@ private fun indexDelegationCert(
     txHash: String,
     cert: JsonObject,
 ): Boolean {
-    // Ogmios 6.x cert formats for Conway delegation:
-    //   voteDelegation            → credential + delegatee
-    //   stakeVoteDelegation       → credential + stake pool + delegatee
-    //   voteRegistrationDelegation         → credential + delegatee + deposit
-    //   stakeVoteRegistrationDelegation    → credential + stake pool + delegatee + deposit
-    val credential = cert["credential"]?.jsonObject ?: return false
-    val stakeHex   = credential["keyHash"]?.jsonPrimitive?.contentOrNull
-        ?: credential["scriptHash"]?.jsonPrimitive?.contentOrNull
-        ?: return false
+    // Ogmios 6.x cert formats for Conway vote delegation:
+    //   voteDelegation, stakeVoteDelegation, voteRegistrationDelegation, stakeVoteRegistrationDelegation
+    //
+    // Credential: may be a plain hex string OR an object {type, keyHash/scriptHash}.
+    val stakeHex: String = when (val credEl = cert["credential"]) {
+        is JsonObject    -> credEl["keyHash"]?.jsonPrimitive?.contentOrNull
+                            ?: credEl["scriptHash"]?.jsonPrimitive?.contentOrNull
+                            ?: return false
+        is JsonPrimitive -> credEl.contentOrNull ?: return false
+        else             -> {
+            logger.debug { "indexDelegationCert: unknown credential format — ${cert.toString().take(200)}" }
+            return false
+        }
+    }
 
-    val delegatee = cert["delegatee"]?.jsonObject ?: return false
+    val delegatee     = cert["delegatee"]?.jsonObject ?: run {
+        logger.debug { "indexDelegationCert: missing delegatee — ${cert.toString().take(200)}" }
+        return false
+    }
     val delegateeType = delegatee["type"]?.jsonPrimitive?.contentOrNull ?: return false
 
-    // Ogmios 6.x returns the DRep credential inline in delegatee, not wrapped:
-    //   {"type": "keyHash",    "keyHash":    "..."}
-    //   {"type": "scriptHash", "scriptHash": "..."}
-    //   {"type": "alwaysAbstain"}
-    //   {"type": "alwaysNoConfidence"}
+    // Ogmios 6.x delegatee types:
+    //   keyHash / scriptHash       → specific DRep (credential inline or under "drep")
+    //   abstain / alwaysAbstain    → predefined abstain
+    //   noConfidence / alwaysNoConfidence → predefined no-confidence
     val (drepType, drepHex) = when (delegateeType) {
         "keyHash"             -> "key"          to delegatee["keyHash"]?.jsonPrimitive?.contentOrNull
         "scriptHash"          -> "script"       to delegatee["scriptHash"]?.jsonPrimitive?.contentOrNull
-        "alwaysAbstain"       -> "abstain"       to null
-        "alwaysNoConfidence"  -> "no_confidence" to null
-        else                  -> return false
+        "drep" -> {
+            // Nested format: {"type":"drep", "drep": {"type":"keyHash","keyHash":"..."}}
+            val inner = delegatee["drep"]?.jsonObject
+            val hex   = inner?.get("keyHash")?.jsonPrimitive?.contentOrNull
+                        ?: inner?.get("scriptHash")?.jsonPrimitive?.contentOrNull
+                        ?: delegatee["id"]?.jsonPrimitive?.contentOrNull
+            val t = if (inner?.get("type")?.jsonPrimitive?.contentOrNull == "scriptHash") "script" else "key"
+            t to hex
+        }
+        "abstain", "alwaysAbstain"           -> "abstain"       to null
+        "noConfidence", "alwaysNoConfidence" -> "no_confidence" to null
+        else -> {
+            logger.debug { "indexDelegationCert: unknown delegatee type '$delegateeType' — ${cert.toString().take(200)}" }
+            return false
+        }
     }
 
     return try {
@@ -274,15 +339,15 @@ private fun indexPoolRegistration(
     slot: Long,
     cert: JsonObject,
 ): Boolean {
-    // Ogmios 6.x format: certificates[].poolParameters.id (bech32) + .metadata.url
-    val poolParams  = cert["poolParameters"]?.jsonObject ?: return false
-    val poolBech32  = poolParams["id"]?.jsonPrimitive?.contentOrNull ?: return false
-    val metadataUrl = poolParams["metadata"]?.jsonObject?.get("url")
+    // Ogmios 6.x format: certificates[].stakePool.id (bech32) + .metadata.url
+    val stakePool   = cert["stakePool"]?.jsonObject ?: return false
+    val poolBech32  = stakePool["id"]?.jsonPrimitive?.contentOrNull ?: return false
+    val metadataUrl = stakePool["metadata"]?.jsonObject?.get("url")
         ?.jsonPrimitive?.contentOrNull
 
     // Pool ID hex: decode bech32 → skip for now; store empty, update after name fetch
     val poolHex = runCatching { bech32ToHex(poolBech32) }.getOrElse { "" }
-        .takeIf { it.isNotEmpty() } ?: poolBech32  // fallback: use bech32 as key
+        .takeIf { it.length == 56 } ?: poolBech32  // fallback: use bech32 as key
 
     return try {
         transaction {
@@ -296,6 +361,64 @@ private fun indexPoolRegistration(
         }
         true
     } catch (_: Exception) { false }
+}
+
+// ── Proposal procedure indexing ───────────────────────────────────────────────
+
+/**
+ * Index a governance proposal procedure from a Conway-era transaction.
+ * tx.proposals[] in Ogmios 6.x chain-sync: each element has action, metadata, deposit, returnAddress.
+ * proposalIndex = position of this proposal in the tx.proposals array (0-based) — forms the on-chain proposal ID.
+ * expiresEpoch = submittedEpoch + govActionLifetime (protocol param, 6 epochs on mainnet/preprod).
+ */
+private fun indexProposal(
+    network: String,
+    slot: Long,
+    epoch: Int,
+    txHash: String,
+    proposalIndex: Int,
+    proposal: JsonObject,
+): Boolean {
+    val action     = proposal["action"]?.jsonObject ?: return false
+    val actionType = action["type"]?.jsonPrimitive?.contentOrNull ?: return false
+
+    val metadata   = proposal["metadata"]?.jsonObject
+    val anchorUrl  = metadata?.get("url")?.jsonPrimitive?.contentOrNull
+    val anchorHash = metadata?.get("hash")?.jsonPrimitive?.contentOrNull
+
+    val deposit       = proposal["deposit"]?.jsonObject?.let { extractLovelace(it) } ?: 0L
+    val returnAddress = proposal["returnAddress"]?.jsonPrimitive?.contentOrNull
+
+    val govActionLifetime = GOV_ACTION_LIFETIME[network] ?: 6
+    val expiresEpoch      = epoch + govActionLifetime
+    val actionDetailsJson = action.toString()   // raw Ogmios action body — parsed at serve time
+
+    return try {
+        transaction {
+            IdxGovernanceProposals.upsert(
+                IdxGovernanceProposals.network,
+                IdxGovernanceProposals.txHash,
+                IdxGovernanceProposals.index,
+            ) {
+                it[IdxGovernanceProposals.network]        = network
+                it[IdxGovernanceProposals.txHash]         = txHash
+                it[IdxGovernanceProposals.index]          = proposalIndex
+                it[IdxGovernanceProposals.actionType]     = actionType
+                it[IdxGovernanceProposals.anchorUrl]      = anchorUrl
+                it[IdxGovernanceProposals.anchorHash]     = anchorHash
+                it[IdxGovernanceProposals.deposit]        = deposit
+                it[IdxGovernanceProposals.submittedSlot]  = slot
+                it[IdxGovernanceProposals.submittedEpoch] = epoch
+                it[IdxGovernanceProposals.expiresEpoch]   = expiresEpoch
+                it[IdxGovernanceProposals.actionDetails]  = actionDetailsJson
+                it[IdxGovernanceProposals.returnAddress]  = returnAddress
+            }
+        }
+        true
+    } catch (e: Exception) {
+        logger.warn { "indexProposal failed for $txHash#$proposalIndex [$network]: ${e.message}" }
+        false
+    }
 }
 
 // ── bech32 helper ─────────────────────────────────────────────────────────────

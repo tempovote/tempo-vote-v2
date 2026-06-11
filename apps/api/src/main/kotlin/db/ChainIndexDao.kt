@@ -1,8 +1,10 @@
 package vote.tempo.db
 
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.VarCharColumnType
+import vote.tempo.cardano.PoolInfo
 
 /**
  * Query layer for chain index tables populated by the extended VoteIndexer.
@@ -174,19 +176,44 @@ object ChainIndexDao {
             }
     }
 
-    /** Pool name/ticker by bech32 pool ID. Returns null if not yet indexed. */
-    fun getPoolInfo(poolIdBech32: String, network: String): Pair<String?, String?>? = transaction {
+    /** Pool name/ticker/votingPower by bech32 pool ID. Returns null if not yet indexed. */
+    fun getPoolInfo(poolIdBech32: String, network: String): Triple<String?, String?, Long>? = transaction {
         IdxPoolMetadata
-            .select(IdxPoolMetadata.name, IdxPoolMetadata.ticker)
+            .select(IdxPoolMetadata.name, IdxPoolMetadata.ticker, IdxPoolMetadata.votingPower)
             .where {
                 (IdxPoolMetadata.network eq network) and
                 (IdxPoolMetadata.poolIdBech32 eq poolIdBech32)
             }
             .singleOrNull()
-            ?.let { it[IdxPoolMetadata.name] to it[IdxPoolMetadata.ticker] }
+            ?.let { Triple(it[IdxPoolMetadata.name], it[IdxPoolMetadata.ticker], it[IdxPoolMetadata.votingPower] ?: 0L) }
     }
 
-    /** Upsert pool name/ticker after fetching metadata URL. */
+    /**
+     * Batch read pool info for multiple bech32 pool IDs from local DB.
+     * Returns Map<bech32, PoolInfo>. Missing pools get PoolInfo(name=null, votingPower=0L).
+     * Used at request time — no external API calls.
+     */
+    fun getPoolInfoMap(poolIdsBech32: List<String>, network: String): Map<String, PoolInfo> {
+        if (poolIdsBech32.isEmpty()) return emptyMap()
+        val result = mutableMapOf<String, PoolInfo>()
+        transaction {
+            IdxPoolMetadata
+                .select(IdxPoolMetadata.poolIdBech32, IdxPoolMetadata.name, IdxPoolMetadata.votingPower)
+                .where {
+                    (IdxPoolMetadata.network eq network) and
+                    (IdxPoolMetadata.poolIdBech32 inList poolIdsBech32)
+                }
+                .forEach { row ->
+                    result[row[IdxPoolMetadata.poolIdBech32]] = PoolInfo(
+                        name        = row[IdxPoolMetadata.name],
+                        votingPower = row[IdxPoolMetadata.votingPower] ?: 0L,
+                    )
+                }
+        }
+        return result
+    }
+
+    /** Upsert pool name/ticker after fetching metadata URL (PoolMetadataFetcher path). */
     fun updatePoolName(network: String, poolIdHex: String, name: String?, ticker: String?) =
         transaction {
             IdxPoolMetadata.update({
@@ -197,4 +224,82 @@ object ChainIndexDao {
                 it[IdxPoolMetadata.ticker] = ticker
             }
         }
+
+    /**
+     * Upsert pool name, ticker, and live stake from Blockfrost into idx_pool_metadata.
+     * INSERT ON CONFLICT — inserts a new row if the pool isn't in local DB yet
+     * (i.e. VoteIndexer hasn't seen a registration cert for it), and updates
+     * name/ticker/voting_power on conflict.
+     * slot = 0 for Blockfrost-sourced rows (no chain slot known).
+     */
+    fun upsertPoolFromBlockfrost(
+        network: String,
+        poolIdBech32: String,
+        poolIdHex: String,
+        name: String?,
+        ticker: String?,
+        votingPower: Long,
+    ) = transaction {
+        IdxPoolMetadata.upsert(IdxPoolMetadata.network, IdxPoolMetadata.poolIdHex) {
+            it[IdxPoolMetadata.network]      = network
+            it[IdxPoolMetadata.poolIdBech32] = poolIdBech32
+            it[IdxPoolMetadata.poolIdHex]    = poolIdHex
+            it[IdxPoolMetadata.name]         = name
+            it[IdxPoolMetadata.ticker]       = ticker
+            it[IdxPoolMetadata.votingPower]  = votingPower
+            it[IdxPoolMetadata.slot]         = 0L   // unknown slot for Blockfrost-sourced rows
+        }
+    }
+
+    /**
+     * Replace all delegator stakes for a DRep (network + credHex) with fresh Blockfrost data.
+     * DELETE + batch INSERT inside a single transaction — keeps the table consistent even if
+     * delegators have left since the last poll.
+     */
+    fun upsertDRepDelegators(
+        networkName: String,
+        credHex: String,
+        delegators: List<Pair<String, Long>>,   // (stakeAddress, lovelaceAmount)
+    ) = transaction {
+        DrepDelegatorStakes.deleteWhere {
+            (DrepDelegatorStakes.network eq networkName) and
+            (DrepDelegatorStakes.drepCredentialHex eq credHex)
+        }
+        if (delegators.isNotEmpty()) {
+            DrepDelegatorStakes.batchInsert(delegators, shouldReturnGeneratedValues = false) { (address, amt) ->
+                this[DrepDelegatorStakes.network]           = networkName
+                this[DrepDelegatorStakes.drepCredentialHex] = credHex
+                this[DrepDelegatorStakes.stakeAddress]      = address
+                this[DrepDelegatorStakes.amount]            = amt
+            }
+        }
+    }
+
+    /**
+     * Return top [limit] DReps ranked by number of delegators with amount > [thresholdLovelace].
+     * Result list: (drepCredentialHex, whaleCount), sorted descending.
+     */
+    fun getWhaleLeaders(
+        networkName: String,
+        limit: Int,
+        thresholdLovelace: Long = 1_000_000_000_000L,
+    ): List<Pair<String, Int>> {
+        val result = mutableListOf<Pair<String, Int>>()
+        transaction {
+            exec(
+                """SELECT drep_credential_hex, COUNT(*) AS whale_count
+                   FROM drep_delegator_stakes
+                   WHERE network = ? AND amount > ?
+                   GROUP BY drep_credential_hex
+                   ORDER BY whale_count DESC
+                   LIMIT ?""",
+                listOf(
+                    Pair<IColumnType<*>, Any?>(VarCharColumnType(10), networkName),
+                    Pair<IColumnType<*>, Any?>(LongColumnType(), thresholdLovelace),
+                    Pair<IColumnType<*>, Any?>(IntegerColumnType(), limit),
+                ),
+            ) { rs -> while (rs.next()) result.add(rs.getString(1) to rs.getInt(2)) }
+        }
+        return result
+    }
 }

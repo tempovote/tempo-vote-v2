@@ -3,7 +3,36 @@ package vote.tempo.cardano
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
-// PoolInfo is defined in KoiosClient.kt (same package)
+/** Pool name + governance voting power (live stake in lovelace). */
+data class PoolInfo(
+    val name: String?,
+    val votingPower: Long,
+)
+
+/**
+ * Scan raw Ogmios governanceProposals JSON and collect all unique SPO pool IDs (bech32).
+ * Ogmios returns pool IDs in bech32 format (pool1...).
+ */
+fun extractSPOPoolIds(raw: JsonElement): List<String> {
+    val array: JsonArray = when (raw) {
+        is JsonArray  -> raw
+        is JsonObject -> raw["governanceProposals"]?.jsonArray
+            ?: raw.values.firstOrNull()?.let { if (it is JsonArray) it else null }
+            ?: return emptyList()
+        else          -> return emptyList()
+    }
+    val ids = mutableSetOf<String>()
+    for (item in array) {
+        val votes = item.jsonObject["votes"]?.jsonArray ?: continue
+        for (vote in votes) {
+            val issuer = vote.jsonObject["issuer"]?.jsonObject ?: continue
+            if (issuer["role"]?.jsonPrimitive?.contentOrNull == "stakePoolOperator") {
+                issuer["id"]?.jsonPrimitive?.contentOrNull?.let { ids.add(it) }
+            }
+        }
+    }
+    return ids.toList()
+}
 
 @Serializable
 data class VoteEntry(

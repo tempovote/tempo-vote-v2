@@ -23,7 +23,6 @@ import vote.tempo.cardano.credentialHexToStakeAddress
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
-import vote.tempo.cardano.fetchWhaleDelegatorCount
 import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.DrepVotes
@@ -371,12 +370,12 @@ fun Route.drepRoutes() {
 
         // GET /dreps/whale-leaders?network=mainnet&limit=5
         // Top DReps ranked by number of delegators with active stake > 1M ADA ("whales").
-        // Uses Koios drep_delegators sorted descending — stops early when amount drops below
-        // threshold. Candidates = top 20 by delegator count (from BackgroundPoller cache).
-        // Result cached 2 h; computation is Koios-intensive so runs sequentially.
+        // Data is indexed by BackgroundPoller via Blockfrost (every 2 h) into drep_delegator_stakes.
+        // This route only reads from the local DB — no external API calls at request time.
+        // Result cached 2 h and invalidated by BackgroundPoller after each index refresh.
         get("/whale-leaders") {
-            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
-            val limit   = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
+            val network  = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+            val limit    = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
             val cacheKey = "${network.name}:$limit"
 
             CardanoCache.whaleLeaders.getIfPresent(cacheKey)?.let { cached ->
@@ -384,78 +383,69 @@ fun Route.drepRoutes() {
                 return@get
             }
 
-            val listRaw = CardanoCache.drepList.getIfPresent(network.name) ?: try {
-                val r = OgmiosStateQueries(network).getDelegateRepresentatives()
-                CardanoCache.drepList.put(network.name, r)
-                r
-            } catch (e: Exception) {
-                call.respond(HttpStatusCode.ServiceUnavailable, buildJsonObject {
-                    put("error", "DRep list unavailable: ${e.message}")
-                })
+            val WHALE_THRESHOLD = 1_000_000_000_000L
+
+            // Query DB — returns (credHex, whaleCount) sorted descending, fast index scan
+            val whaleData: List<Pair<String, Int>> = runCatching {
+                ChainIndexDao.getWhaleLeaders(network.name.lowercase(), limit, WHALE_THRESHOLD)
+            }.getOrDefault(emptyList())
+
+            if (whaleData.isEmpty()) {
+                call.respond(JsonArray(emptyList()))
                 return@get
             }
 
-            val drepsArray: JsonArray = when {
+            val stakeCtx    = CardanoCache.drepList.getIfPresent(network.name)
+                ?.let { runCatching { parseDRepStakeContext(it) }.getOrNull() }
+            val delegCounts = CardanoCache.drepDelegatorCounts.getIfPresent(network.name) ?: emptyMap()
+
+            // Build credHex → anchorUrl lookup from drepList cache
+            val listRaw  = CardanoCache.drepList.getIfPresent(network.name)
+            val drepsArr = when {
                 listRaw is JsonArray -> listRaw
                 listRaw is JsonObject && listRaw["delegateRepresentatives"] is JsonArray ->
                     listRaw["delegateRepresentatives"]!!.jsonArray
                 else -> JsonArray(emptyList())
             }
+            val anchorMap: Map<String, String> = drepsArr.mapNotNull { entry ->
+                runCatching {
+                    val obj     = entry.jsonObject
+                    if (obj["type"]?.jsonPrimitive?.contentOrNull != "registered") return@mapNotNull null
+                    val rawId   = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val credHex = if (rawId.startsWith("drep")) drepIdToCredentialHex(rawId) else rawId
+                    val anchor  = obj["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: obj["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: return@mapNotNull null
+                    credHex to anchor
+                }.getOrNull()
+            }.toMap()
 
-            val delegCounts = CardanoCache.drepDelegatorCounts.getIfPresent(network.name) ?: emptyMap()
-
-            data class WhaleCand(
-                val rawId: String,
-                val credHex: String,
-                val anchorUrl: String?,
-                val delegatorCount: Int,
-                val activeVotingPower: Long,
-            )
-
-            // Candidates: top 20 registered DReps by delegator count
-            val candidates = drepsArray
-                .mapNotNull { entry ->
-                    runCatching {
-                        val obj = entry.jsonObject
-                        if (obj["type"]?.jsonPrimitive?.contentOrNull != "registered") return@mapNotNull null
-                        val rawId = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                        val credHex = if (rawId.startsWith("drep")) drepIdToCredentialHex(rawId) else rawId
-                        val anchor = obj["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                            ?: obj["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-                        val stake = extractStakeLovelace(obj["stake"]) ?: 0L
-                        val delCount = delegCounts[credHex] ?: obj["delegators"]?.jsonArray?.size ?: 0
-                        WhaleCand(rawId, credHex, anchor, delCount, stake)
-                    }.getOrNull()
-                }
-                .sortedByDescending { it.delegatorCount }
-                .take(20)
-
-            // Count whale delegators per candidate via Koios (sequential to respect rate limits)
-            val WHALE_THRESHOLD = 1_000_000_000_000L  // 1M ADA in lovelace
-            val whaleResults = mutableListOf<Pair<WhaleCand, Int>>()
-            for (candidate in candidates) {
-                val drepId = credentialHexToDrepIdCip105(candidate.credHex) ?: candidate.rawId
-                val wCount = fetchWhaleDelegatorCount(drepId, network, WHALE_THRESHOLD)
-                if (wCount > 0) whaleResults.add(candidate to wCount)
-            }
-
-            val sorted = whaleResults.sortedByDescending { (_, c) -> c }.take(limit)
-
-            // Enrich with name/imageUrl from drepInfo cache (populated by leaderboard/profile visits)
-            val withMeta = sorted.map { (candidate, whaleCount) ->
-                val cached = CardanoCache.drepInfo.getIfPresent("${network.name}:${candidate.credHex}")
-                val name     = cached?.get("name")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
-                val imageUrl = cached?.get("imageUrl")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
-                buildJsonObject {
-                    put("id",              credentialHexToDrepIdCip105(candidate.credHex) ?: candidate.rawId)
-                    put("credHex",         candidate.credHex)
-                    put("anchorUrl",       candidate.anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                    put("name",            name?.let { JsonPrimitive(it) } ?: JsonNull)
-                    put("imageUrl",        imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                    put("whaleCount",      whaleCount)
-                    put("delegatorCount",  candidate.delegatorCount)
-                    put("activeVotingPower", candidate.activeVotingPower)
-                }
+            val withMeta = coroutineScope {
+                whaleData.map { (credHex, whaleCount) ->
+                    async {
+                        val drepId   = credentialHexToDrepIdCip105(credHex) ?: credHex
+                        val activeVp = stakeCtx?.stakeMap?.get(credHex) ?: 0L
+                        val delCount = delegCounts[credHex] ?: 0
+                        val anchor   = anchorMap[credHex]
+                        val cached   = CardanoCache.drepInfo.getIfPresent("${network.name}:$credHex")
+                        val cachedName     = cached?.get("name")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
+                        val cachedImageUrl = cached?.get("imageUrl")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
+                        val meta = if ((cachedName == null || cachedImageUrl == null) && anchor != null)
+                            fetchDRepMeta(anchor) else null
+                        val name     = cachedName     ?: meta?.name
+                        val imageUrl = cachedImageUrl ?: meta?.imageUrl
+                        buildJsonObject {
+                            put("id",               drepId)
+                            put("credHex",          credHex)
+                            put("anchorUrl",        anchor?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("name",             name?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("imageUrl",         imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("whaleCount",       whaleCount)
+                            put("delegatorCount",   delCount)
+                            put("activeVotingPower", activeVp)
+                        }
+                    }
+                }.map { it.await() }
             }
 
             val resultArray = JsonArray(withMeta)
