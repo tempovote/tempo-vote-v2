@@ -3,8 +3,10 @@ package vote.tempo.routes
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import vote.tempo.cache.CardanoCache
@@ -20,9 +22,8 @@ import vote.tempo.cardano.parseCCContext
 import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
-import vote.tempo.cardano.fetchPoolInfo
-import vote.tempo.cardano.buildRationalesMap
 import vote.tempo.cardano.parseProposals
+import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
 
 /**
@@ -226,8 +227,28 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
                     return emptyList()
                 }
 
-            val poolInfoMap   = fetchPoolInfo(extractSPOPoolIds(raw), network)
-            val rationalesMap = buildRationalesMap(raw, network)
+            // Pool info: read from local DB (populated by Blockfrost pool stake indexer every 8 h).
+            // Missing pools return PoolInfo(name=null, votingPower=0L) — no external API call.
+            val poolInfoMap = withContext(Dispatchers.IO) {
+                ChainIndexDao.getPoolInfoMap(extractSPOPoolIds(raw), network.name.lowercase())
+            }
+            // Rationale URLs: read from local DB (drep_votes.anchor_url, populated by VoteIndexer).
+            val proposalPairs = run {
+                val arr = when (raw) {
+                    is JsonArray  -> raw
+                    is JsonObject -> raw["governanceProposals"]?.jsonArray ?: JsonArray(emptyList())
+                    else          -> JsonArray(emptyList())
+                }
+                arr.mapNotNull { item ->
+                    val p      = item.jsonObject["proposal"]?.jsonObject ?: return@mapNotNull null
+                    val txHash = p["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val index  = p["index"]?.jsonPrimitive?.intOrNull ?: 0
+                    txHash to index
+                }
+            }
+            val rationalesMap = withContext(Dispatchers.IO) {
+                ChainIndexDao.buildRationalesMap(proposalPairs, network.name.lowercase())
+            }
             parseProposals(raw, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap)
                 .also { CardanoCache.parsedGovActions.put(network.name, it) }
         }

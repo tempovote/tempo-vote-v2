@@ -14,7 +14,7 @@ import vote.tempo.cardano.parseDRepDelegatorCounts
 import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
-import vote.tempo.cardano.fetchPoolInfo
+import vote.tempo.cardano.fetchPoolInfoBlockfrost
 import vote.tempo.cardano.runPoolMetadataFetcher
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.parseProposals
@@ -29,10 +29,12 @@ private const val POLL_INTERVAL_MS        = 5 * 60 * 1_000L    // 5 min — Ogmi
 private const val QUERY_TIMEOUT_MS        = 420_000L            // 7 min cap — delegateRepresentatives alone takes ~2 min on mainnet (8 MB response)
 private const val MAX_BACKOFF_MS          = 30 * 60 * 1_000L   // 30 minutes max backoff
 private const val STARTUP_DELAY_MS        = 3_000L
-private const val WHALE_POLL_STARTUP_MS   = 5 * 60 * 1_000L   // 5 min — allow Ogmios first poll to warm drepDelegatorCounts
-private const val WHALE_POLL_INTERVAL_MS  = 2 * 60 * 60 * 1_000L  // 2 h — whale distribution changes slowly
-private const val WHALE_TOP_DREPS         = 20                  // candidates per network
-private const val WHALE_THRESHOLD         = 1_000_000_000_000L // 1M ADA in lovelace
+private const val WHALE_POLL_STARTUP_MS   = 5 * 60 * 1_000L        // 5 min — allow Ogmios first poll to warm drepDelegatorCounts
+private const val WHALE_POLL_INTERVAL_MS  = 2 * 60 * 60 * 1_000L   // 2 h — whale distribution changes slowly
+private const val WHALE_TOP_DREPS         = 20                       // candidates per network
+private const val WHALE_THRESHOLD         = 1_000_000_000_000L      // 1M ADA in lovelace
+private const val POOL_STAKE_STARTUP_MS   = 10 * 60 * 1_000L        // 10 min — wait for govActions cache to warm
+private const val POOL_STAKE_INTERVAL_MS  = 8 * 60 * 60 * 1_000L   // 8 h — live stake changes slowly
 
 // Per-network state for exponential backoff
 private val consecutiveFailures = mutableMapOf<Network, Int>()
@@ -82,6 +84,20 @@ fun Application.startBackgroundPoller() {
         logger.info { "Blockfrost whale indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 2 h (startup delay 5 min)" }
     } else {
         logger.info { "Blockfrost whale indexer disabled — set BLOCKFROST_MAINNET_PROJECT_ID / BLOCKFROST_PREPROD_PROJECT_ID to enable" }
+    }
+
+    // Blockfrost pool stake indexer: fetches live_stake + name/ticker for SPO pools
+    // that have voted on governance actions. Stores into idx_pool_metadata every 8 h.
+    // Requires same Blockfrost project IDs — runs only if at least one key is configured.
+    if (blockfrostNetworks.isNotEmpty()) {
+        scope.launch {
+            delay(POOL_STAKE_STARTUP_MS)
+            while (isActive) {
+                fetchAndIndexPoolStakes(blockfrostNetworks)
+                delay(POOL_STAKE_INTERVAL_MS)
+            }
+        }
+        logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 10 min)" }
     }
 
     logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min (delegator counts inline), pool metadata fetch every 1 h" }
@@ -141,7 +157,7 @@ private suspend fun pollNetwork(network: Network) {
 
             // Parse proposals and pre-warm the parsed cache so the first API request after
             // a poll cycle is served instantly without re-parsing the raw JSON.
-            // Pool info: local index first, Koios fallback for unknown pools.
+            // Pool info: local DB only (idx_pool_metadata populated by Blockfrost pool stake indexer).
             val spoPoolIds    = extractSPOPoolIds(gas)
             val poolInfoMap   = buildPoolInfoMap(spoPoolIds, network)
             // Rationale URLs: local chain index (VoteIndexer populated drep_votes.anchor_url).
@@ -168,33 +184,60 @@ private suspend fun pollNetwork(network: Network) {
 }
 
 /**
- * Build pool info map from local index first; fall back to Koios for pools not yet indexed.
+ * Build pool info map from local DB only — no external API calls at poll time.
+ * Missing pools (not yet indexed by Blockfrost) return PoolInfo(name=null, votingPower=0L).
+ * The Blockfrost pool stake indexer runs every 8 h and populates idx_pool_metadata.
  */
 private suspend fun buildPoolInfoMap(
     poolIds: List<String>,
     network: Network,
 ): Map<String, vote.tempo.cardano.PoolInfo> {
     if (poolIds.isEmpty()) return emptyMap()
-    val result = mutableMapOf<String, vote.tempo.cardano.PoolInfo>()
-    val missing = mutableListOf<String>()
+    return withContext(Dispatchers.IO) {
+        ChainIndexDao.getPoolInfoMap(poolIds, network.name.lowercase())
+    }
+}
 
-    for (bech32Id in poolIds) {
-        val local = withContext(Dispatchers.IO) {
-            ChainIndexDao.getPoolInfo(bech32Id, network.name.lowercase())
+/**
+ * Fetch live stake + name/ticker for every SPO pool that has voted on governance actions.
+ * Called every 8 h by BackgroundPoller. Upserts into idx_pool_metadata so that
+ * buildPoolInfoMap reads up-to-date voting_power without any Koios/Blockfrost call at
+ * request time.
+ */
+private suspend fun fetchAndIndexPoolStakes(networks: List<Network>) {
+    for (network in networks) {
+        val raw = CardanoCache.govActions.getIfPresent(network.name)
+        if (raw == null) {
+            logger.debug { "Pool stake index [$network] skipped — govActions cache not yet warmed" }
+            continue
         }
-        if (local != null) {
-            result[bech32Id] = vote.tempo.cardano.PoolInfo(name = local.first, votingPower = 0L)
-        } else {
-            missing.add(bech32Id)
+
+        val poolIds = extractSPOPoolIds(raw)
+        if (poolIds.isEmpty()) {
+            logger.debug { "Pool stake index [$network] — no SPO pools found in governance actions" }
+            continue
+        }
+
+        var indexed = 0
+        for (poolIdBech32 in poolIds) {
+            val info = fetchPoolInfoBlockfrost(poolIdBech32, network) ?: continue
+            withContext(Dispatchers.IO) {
+                ChainIndexDao.upsertPoolFromBlockfrost(
+                    network      = network.name.lowercase(),
+                    poolIdBech32 = poolIdBech32,
+                    poolIdHex    = info.poolIdHex,
+                    name         = info.name,
+                    ticker       = info.ticker,
+                    votingPower  = info.liveStake,
+                )
+            }
+            indexed++
+        }
+
+        if (indexed > 0) {
+            logger.info { "Pool stake index [$network] upserted $indexed / ${poolIds.size} pools — voting_power refreshed" }
         }
     }
-
-    // Fall back to Koios for pools not yet in local index
-    if (missing.isNotEmpty()) {
-        result.putAll(fetchPoolInfo(missing, network))
-    }
-
-    return result
 }
 
 /**

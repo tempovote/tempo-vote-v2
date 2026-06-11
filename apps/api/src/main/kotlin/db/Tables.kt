@@ -145,6 +145,7 @@ object IdxPoolMetadata : Table("idx_pool_metadata") {
     val metadataUrl   = text("metadata_url").nullable()
     val name          = text("name").nullable()
     val ticker        = varchar("ticker", 16).nullable()
+    val votingPower   = long("voting_power").nullable()   // live_stake from Blockfrost, refreshed every 8 h
     val slot          = long("slot")
 
     override val primaryKey = PrimaryKey(network, poolIdHex)
