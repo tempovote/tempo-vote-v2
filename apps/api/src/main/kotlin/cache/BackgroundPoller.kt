@@ -3,6 +3,7 @@ package vote.tempo.cache
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.*
 import vote.tempo.cardano.CCContext
 import vote.tempo.cardano.GovernanceThresholds
@@ -17,15 +18,21 @@ import vote.tempo.cardano.fetchPoolInfo
 import vote.tempo.cardano.runPoolMetadataFetcher
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.parseProposals
+import vote.tempo.cardano.blockfrostProjectId
+import vote.tempo.cardano.fetchDRepDelegatorsBlockfrost
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
 
 private val logger = KotlinLogging.logger("BackgroundPoller")
 
-private const val POLL_INTERVAL_MS        = 5 * 60 * 1_000L   // 5 min — Ogmios state refresh
-private const val QUERY_TIMEOUT_MS        = 420_000L           // 7 min cap — delegateRepresentatives alone takes ~2 min on mainnet (8 MB response)
-private const val MAX_BACKOFF_MS          = 30 * 60 * 1_000L  // 30 minutes max backoff
+private const val POLL_INTERVAL_MS        = 5 * 60 * 1_000L    // 5 min — Ogmios state refresh
+private const val QUERY_TIMEOUT_MS        = 420_000L            // 7 min cap — delegateRepresentatives alone takes ~2 min on mainnet (8 MB response)
+private const val MAX_BACKOFF_MS          = 30 * 60 * 1_000L   // 30 minutes max backoff
 private const val STARTUP_DELAY_MS        = 3_000L
+private const val WHALE_POLL_STARTUP_MS   = 5 * 60 * 1_000L   // 5 min — allow Ogmios first poll to warm drepDelegatorCounts
+private const val WHALE_POLL_INTERVAL_MS  = 2 * 60 * 60 * 1_000L  // 2 h — whale distribution changes slowly
+private const val WHALE_TOP_DREPS         = 20                  // candidates per network
+private const val WHALE_THRESHOLD         = 1_000_000_000_000L // 1M ADA in lovelace
 
 // Per-network state for exponential backoff
 private val consecutiveFailures = mutableMapOf<Network, Int>()
@@ -58,6 +65,23 @@ fun Application.startBackgroundPoller() {
     }
     if (activeNetworks.isNotEmpty()) {
         scope.launch { runPoolMetadataFetcher(activeNetworks) }
+    }
+
+    // Blockfrost whale delegator indexer: fetches all delegators for top DReps and stores
+    // amounts in drep_delegator_stakes. Only runs if BLOCKFROST_{NETWORK}_PROJECT_ID is set.
+    val blockfrostNetworks = listOf(Network.MAINNET, Network.PREPROD)
+        .filter { blockfrostProjectId(it) != null }
+    if (blockfrostNetworks.isNotEmpty()) {
+        scope.launch {
+            delay(WHALE_POLL_STARTUP_MS)
+            while (isActive) {
+                fetchAndIndexWhaleDelegators(blockfrostNetworks)
+                delay(WHALE_POLL_INTERVAL_MS)
+            }
+        }
+        logger.info { "Blockfrost whale indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 2 h (startup delay 5 min)" }
+    } else {
+        logger.info { "Blockfrost whale indexer disabled — set BLOCKFROST_MAINNET_PROJECT_ID / BLOCKFROST_PREPROD_PROJECT_ID to enable" }
     }
 
     logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min (delegator counts inline), pool metadata fetch every 1 h" }
@@ -171,6 +195,46 @@ private suspend fun buildPoolInfoMap(
     }
 
     return result
+}
+
+/**
+ * Fetch all delegators for the top [WHALE_TOP_DREPS] DReps (by delegator count) from Blockfrost
+ * and upsert into drep_delegator_stakes. Runs sequentially per DRep to avoid burst limits.
+ * Invalidates whaleLeaders cache after each network completes so the next request reads fresh data.
+ */
+private suspend fun fetchAndIndexWhaleDelegators(networks: List<Network>) {
+    for (network in networks) {
+        val delegCounts = CardanoCache.drepDelegatorCounts.getIfPresent(network.name)
+        if (delegCounts.isNullOrEmpty()) {
+            logger.debug { "Whale index [$network] skipped — drepDelegatorCounts not yet warmed" }
+            continue
+        }
+
+        val topDreps = delegCounts.entries
+            .sortedByDescending { it.value }
+            .take(WHALE_TOP_DREPS)
+
+        var indexed = 0
+        for ((credHex, delegatorCount) in topDreps) {
+            val drepId = credentialHexToDrepIdCip105(credHex) ?: continue
+            val delegators = fetchDRepDelegatorsBlockfrost(drepId, network)
+            if (delegators.isEmpty()) {
+                logger.debug { "Whale index [$network] $drepId — no delegators returned (rate-limited or no data)" }
+                continue
+            }
+            withContext(Dispatchers.IO) {
+                ChainIndexDao.upsertDRepDelegators(network.name.lowercase(), credHex, delegators)
+            }
+            val whaleCount = delegators.count { (_, amount) -> amount > WHALE_THRESHOLD }
+            logger.debug { "Whale index [$network] $drepId: ${delegators.size} delegators upserted ($whaleCount whales, $delegatorCount total known)" }
+            indexed++
+        }
+
+        if (indexed > 0) {
+            CardanoCache.whaleLeaders.invalidateAll()
+            logger.info { "Whale index [$network] refreshed $indexed / ${topDreps.size} DReps — whaleLeaders cache invalidated" }
+        }
+    }
 }
 
 /**

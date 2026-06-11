@@ -150,6 +150,21 @@ object IdxPoolMetadata : Table("idx_pool_metadata") {
     override val primaryKey = PrimaryKey(network, poolIdHex)
 }
 
+/**
+ * Delegator stake snapshot per DRep, populated by BackgroundPoller via Blockfrost.
+ * Used to compute whale delegator counts locally (amount > 1_000_000_000_000 lovelace).
+ * Refreshed every 2 hours for the top 20 DReps by delegator count.
+ */
+object DrepDelegatorStakes : Table("drep_delegator_stakes") {
+    val network           = varchar("network", 10)
+    val drepCredentialHex = varchar("drep_credential_hex", 56)
+    val stakeAddress      = varchar("stake_address", 128)
+    val amount            = long("amount")
+    val fetchedAt         = datetime("fetched_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(network, drepCredentialHex, stakeAddress)
+}
+
 object AuthSessions : Table("auth_sessions") {
     val id           = uuid("id").autoGenerate()
     val stakeAddress = varchar("stake_address", 128)

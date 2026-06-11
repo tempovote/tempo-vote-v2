@@ -1,6 +1,7 @@
 package vote.tempo.db
 
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.VarCharColumnType
 
@@ -197,4 +198,56 @@ object ChainIndexDao {
                 it[IdxPoolMetadata.ticker] = ticker
             }
         }
+
+    /**
+     * Replace all delegator stakes for a DRep (network + credHex) with fresh Blockfrost data.
+     * DELETE + batch INSERT inside a single transaction — keeps the table consistent even if
+     * delegators have left since the last poll.
+     */
+    fun upsertDRepDelegators(
+        networkName: String,
+        credHex: String,
+        delegators: List<Pair<String, Long>>,   // (stakeAddress, lovelaceAmount)
+    ) = transaction {
+        DrepDelegatorStakes.deleteWhere {
+            (DrepDelegatorStakes.network eq networkName) and
+            (DrepDelegatorStakes.drepCredentialHex eq credHex)
+        }
+        if (delegators.isNotEmpty()) {
+            DrepDelegatorStakes.batchInsert(delegators, shouldReturnGeneratedValues = false) { (address, amt) ->
+                this[DrepDelegatorStakes.network]           = networkName
+                this[DrepDelegatorStakes.drepCredentialHex] = credHex
+                this[DrepDelegatorStakes.stakeAddress]      = address
+                this[DrepDelegatorStakes.amount]            = amt
+            }
+        }
+    }
+
+    /**
+     * Return top [limit] DReps ranked by number of delegators with amount > [thresholdLovelace].
+     * Result list: (drepCredentialHex, whaleCount), sorted descending.
+     */
+    fun getWhaleLeaders(
+        networkName: String,
+        limit: Int,
+        thresholdLovelace: Long = 1_000_000_000_000L,
+    ): List<Pair<String, Int>> {
+        val result = mutableListOf<Pair<String, Int>>()
+        transaction {
+            exec(
+                """SELECT drep_credential_hex, COUNT(*) AS whale_count
+                   FROM drep_delegator_stakes
+                   WHERE network = ? AND amount > ?
+                   GROUP BY drep_credential_hex
+                   ORDER BY whale_count DESC
+                   LIMIT ?""",
+                listOf(
+                    Pair<IColumnType<*>, Any?>(VarCharColumnType(10), networkName),
+                    Pair<IColumnType<*>, Any?>(LongColumnType(), thresholdLovelace),
+                    Pair<IColumnType<*>, Any?>(IntegerColumnType(), limit),
+                ),
+            ) { rs -> while (rs.next()) result.add(rs.getString(1) to rs.getInt(2)) }
+        }
+        return result
+    }
 }
