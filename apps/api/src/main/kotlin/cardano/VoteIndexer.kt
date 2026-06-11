@@ -11,6 +11,7 @@ import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.db.DrepVotes
 import vote.tempo.db.IdxDelegationVote
+import vote.tempo.db.IdxGovernanceProposals
 import vote.tempo.db.IdxPoolMetadata
 import vote.tempo.db.IndexerCheckpoint
 
@@ -23,6 +24,11 @@ private val CONWAY_SLOTS = mapOf(
 )
 
 private val SLOTS_PER_EPOCH = mapOf("mainnet" to 432_000L, "preprod" to 86_400L)
+
+// govActionLifetime: number of epochs a proposal remains active before expiring.
+// This is a protocol parameter (Ogmios key: governanceActionLifetime).
+// Hardcoded per network — update if protocol params change via HF.
+private val GOV_ACTION_LIFETIME = mapOf("mainnet" to 6, "preprod" to 6)
 
 private const val PIPELINE_SIZE = 200
 
@@ -56,11 +62,12 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                 var inFlight = 0L
                 repeat(PIPELINE_SIZE) { sendNextBlock(inFlight++) }
 
-                var lastCheckpointMs = System.currentTimeMillis()
-                var blocksProcessed  = 0L
-                var votesInserted    = 0L
-                var delegsInserted   = 0L
-                var poolsInserted    = 0L
+                var lastCheckpointMs    = System.currentTimeMillis()
+                var blocksProcessed    = 0L
+                var votesInserted      = 0L
+                var delegsInserted     = 0L
+                var poolsInserted      = 0L
+                var proposalsInserted  = 0L
 
                 for (frame in incoming) {
                     if (frame !is Frame.Text) continue
@@ -100,6 +107,14 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                                 val txHash = txObj["id"]?.jsonPrimitive?.contentOrNull ?: continue
                                 val epoch  = (slot / slotsPerEpoch).toInt()
 
+                                // Governance proposal submissions (proposalProcedures)
+                                val proposals = txObj["proposals"]?.jsonArray ?: JsonArray(emptyList())
+                                for ((propIdx, propEl) in proposals.withIndex()) {
+                                    val propObj = runCatching { propEl.jsonObject }.getOrNull() ?: continue
+                                    if (indexProposal(network, slot, epoch, txHash, propIdx, propObj))
+                                        proposalsInserted++
+                                }
+
                                 // Governance votes (DRep + CC + SPO)
                                 val votes = txObj["votes"]?.jsonArray ?: JsonArray(emptyList())
                                 for (vp in votes) {
@@ -134,7 +149,8 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                             lastCheckpointMs = now
                             logger.info {
                                 "VoteIndexer [$network] slot=$slot blocks=$blocksProcessed " +
-                                "votes=$votesInserted delegs=$delegsInserted pools=$poolsInserted"
+                                "proposals=$proposalsInserted votes=$votesInserted " +
+                                "delegs=$delegsInserted pools=$poolsInserted"
                             }
                         }
                     }
@@ -296,6 +312,64 @@ private fun indexPoolRegistration(
         }
         true
     } catch (_: Exception) { false }
+}
+
+// ── Proposal procedure indexing ───────────────────────────────────────────────
+
+/**
+ * Index a governance proposal procedure from a Conway-era transaction.
+ * tx.proposals[] in Ogmios 6.x chain-sync: each element has action, metadata, deposit, returnAddress.
+ * proposalIndex = position of this proposal in the tx.proposals array (0-based) — forms the on-chain proposal ID.
+ * expiresEpoch = submittedEpoch + govActionLifetime (protocol param, 6 epochs on mainnet/preprod).
+ */
+private fun indexProposal(
+    network: String,
+    slot: Long,
+    epoch: Int,
+    txHash: String,
+    proposalIndex: Int,
+    proposal: JsonObject,
+): Boolean {
+    val action     = proposal["action"]?.jsonObject ?: return false
+    val actionType = action["type"]?.jsonPrimitive?.contentOrNull ?: return false
+
+    val metadata   = proposal["metadata"]?.jsonObject
+    val anchorUrl  = metadata?.get("url")?.jsonPrimitive?.contentOrNull
+    val anchorHash = metadata?.get("hash")?.jsonPrimitive?.contentOrNull
+
+    val deposit       = proposal["deposit"]?.jsonObject?.let { extractLovelace(it) } ?: 0L
+    val returnAddress = proposal["returnAddress"]?.jsonPrimitive?.contentOrNull
+
+    val govActionLifetime = GOV_ACTION_LIFETIME[network] ?: 6
+    val expiresEpoch      = epoch + govActionLifetime
+    val actionDetailsJson = action.toString()   // raw Ogmios action body — parsed at serve time
+
+    return try {
+        transaction {
+            IdxGovernanceProposals.upsert(
+                IdxGovernanceProposals.network,
+                IdxGovernanceProposals.txHash,
+                IdxGovernanceProposals.index,
+            ) {
+                it[IdxGovernanceProposals.network]        = network
+                it[IdxGovernanceProposals.txHash]         = txHash
+                it[IdxGovernanceProposals.index]          = proposalIndex
+                it[IdxGovernanceProposals.actionType]     = actionType
+                it[IdxGovernanceProposals.anchorUrl]      = anchorUrl
+                it[IdxGovernanceProposals.anchorHash]     = anchorHash
+                it[IdxGovernanceProposals.deposit]        = deposit
+                it[IdxGovernanceProposals.submittedSlot]  = slot
+                it[IdxGovernanceProposals.submittedEpoch] = epoch
+                it[IdxGovernanceProposals.expiresEpoch]   = expiresEpoch
+                it[IdxGovernanceProposals.actionDetails]  = actionDetailsJson
+                it[IdxGovernanceProposals.returnAddress]  = returnAddress
+            }
+        }
+        true
+    } catch (e: Exception) {
+        logger.warn { "indexProposal failed for $txHash#$proposalIndex [$network]: ${e.message}" }
+        false
+    }
 }
 
 // ── bech32 helper ─────────────────────────────────────────────────────────────

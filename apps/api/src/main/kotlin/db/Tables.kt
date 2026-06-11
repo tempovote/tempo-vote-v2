@@ -166,6 +166,28 @@ object DrepDelegatorStakes : Table("drep_delegator_stakes") {
     override val primaryKey = PrimaryKey(network, drepCredentialHex, stakeAddress)
 }
 
+/**
+ * Governance proposals indexed from chain-sync (Conway tx.proposals[]).
+ * One row per governance action submitted on-chain.
+ * Used to serve historical GAs (expired / enacted / dropped) that have left Ogmios ledger state.
+ */
+object IdxGovernanceProposals : Table("idx_governance_proposals") {
+    val network        = varchar("network", 10)
+    val txHash         = varchar("tx_hash", 64)
+    val index          = integer("index")
+    val actionType     = varchar("action_type", 64)
+    val anchorUrl      = text("anchor_url").nullable()
+    val anchorHash     = text("anchor_hash").nullable()
+    val deposit        = long("deposit").default(0)
+    val submittedSlot  = long("submitted_slot")
+    val submittedEpoch = integer("submitted_epoch")
+    val expiresEpoch   = integer("expires_epoch")
+    val actionDetails  = text("action_details").nullable()  // raw Ogmios action JSON
+    val returnAddress  = text("return_address").nullable()
+
+    override val primaryKey = PrimaryKey(network, txHash, index)
+}
+
 object AuthSessions : Table("auth_sessions") {
     val id           = uuid("id").autoGenerate()
     val stakeAddress = varchar("stake_address", 128)
