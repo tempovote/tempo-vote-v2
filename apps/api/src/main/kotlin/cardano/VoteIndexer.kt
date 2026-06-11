@@ -156,12 +156,13 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                                 for (cert in certs) {
                                     val certObj = runCatching { cert.jsonObject }.getOrNull() ?: continue
                                     when (certObj["type"]?.jsonPrimitive?.contentOrNull) {
-                                        "voteDelegation",
-                                        "stakeVoteDelegation",
-                                        "voteRegistrationDelegation",
-                                        "stakeVoteRegistrationDelegation" -> {
-                                            if (indexDelegationCert(network, slot, txHash, certObj))
-                                                delegsInserted++
+                                        // Ogmios 6.x uses "stakeDelegation" for both pool and DRep delegation.
+                                        // DRep delegation is identified by the presence of "delegateRepresentative".
+                                        "stakeDelegation" -> {
+                                            if (certObj.containsKey("delegateRepresentative")) {
+                                                if (indexDelegationCert(network, slot, txHash, certObj))
+                                                    delegsInserted++
+                                            }
                                         }
                                         "stakePoolRegistration" -> {
                                             if (indexPoolRegistration(network, slot, certObj))
@@ -228,10 +229,10 @@ private fun indexVote(
         else -> return false  // ignore genesisDelegate and other legacy roles
     }
 
-    val actionId       = vp["actionId"]?.jsonObject ?: return false
-    val proposalTxHash = actionId["transaction"]?.jsonObject?.get("id")
+    val proposal       = vp["proposal"]?.jsonObject ?: return false
+    val proposalTxHash = proposal["transaction"]?.jsonObject?.get("id")
         ?.jsonPrimitive?.contentOrNull ?: return false
-    val proposalIndex  = actionId["index"]?.jsonPrimitive?.intOrNull ?: 0
+    val proposalIndex  = proposal["index"]?.jsonPrimitive?.intOrNull ?: 0
     val vote           = vp["vote"]?.jsonPrimitive?.contentOrNull ?: return false
     val anchor     = vp["anchor"]?.jsonObject
     val anchorUrl  = anchor?.get("url")?.jsonPrimitive?.contentOrNull
@@ -272,47 +273,25 @@ private fun indexDelegationCert(
     txHash: String,
     cert: JsonObject,
 ): Boolean {
-    // Ogmios 6.x cert formats for Conway vote delegation:
-    //   voteDelegation, stakeVoteDelegation, voteRegistrationDelegation, stakeVoteRegistrationDelegation
-    //
-    // Credential: may be a plain hex string OR an object {type, keyHash/scriptHash}.
-    val stakeHex: String = when (val credEl = cert["credential"]) {
-        is JsonObject    -> credEl["keyHash"]?.jsonPrimitive?.contentOrNull
-                            ?: credEl["scriptHash"]?.jsonPrimitive?.contentOrNull
-                            ?: return false
-        is JsonPrimitive -> credEl.contentOrNull ?: return false
-        else             -> {
-            logger.debug { "indexDelegationCert: unknown credential format — ${cert.toString().take(200)}" }
-            return false
-        }
-    }
+    // Ogmios 6.x: stakeDelegation with delegateRepresentative = vote delegation to a DRep.
+    // cert.credential is always a plain hex string.
+    // cert.delegateRepresentative.type is "registered" | "abstain" | "noConfidence".
+    val stakeHex = cert["credential"]?.jsonPrimitive?.contentOrNull ?: return false
 
-    val delegatee     = cert["delegatee"]?.jsonObject ?: run {
-        logger.debug { "indexDelegationCert: missing delegatee — ${cert.toString().take(200)}" }
-        return false
-    }
-    val delegateeType = delegatee["type"]?.jsonPrimitive?.contentOrNull ?: return false
+    val drep     = cert["delegateRepresentative"]?.jsonObject ?: return false
+    val drepType = drep["type"]?.jsonPrimitive?.contentOrNull ?: return false
 
-    // Ogmios 6.x delegatee types:
-    //   keyHash / scriptHash       → specific DRep (credential inline or under "drep")
-    //   abstain / alwaysAbstain    → predefined abstain
-    //   noConfidence / alwaysNoConfidence → predefined no-confidence
-    val (drepType, drepHex) = when (delegateeType) {
-        "keyHash"             -> "key"          to delegatee["keyHash"]?.jsonPrimitive?.contentOrNull
-        "scriptHash"          -> "script"       to delegatee["scriptHash"]?.jsonPrimitive?.contentOrNull
-        "drep" -> {
-            // Nested format: {"type":"drep", "drep": {"type":"keyHash","keyHash":"..."}}
-            val inner = delegatee["drep"]?.jsonObject
-            val hex   = inner?.get("keyHash")?.jsonPrimitive?.contentOrNull
-                        ?: inner?.get("scriptHash")?.jsonPrimitive?.contentOrNull
-                        ?: delegatee["id"]?.jsonPrimitive?.contentOrNull
-            val t = if (inner?.get("type")?.jsonPrimitive?.contentOrNull == "scriptHash") "script" else "key"
-            t to hex
+    val (drepTypeStr, drepHex) = when (drepType) {
+        "registered" -> {
+            val id   = drep["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            val from = drep["from"]?.jsonPrimitive?.contentOrNull
+            val t    = if (from == "script") "script" else "key"
+            t to id
         }
-        "abstain", "alwaysAbstain"           -> "abstain"       to null
-        "noConfidence", "alwaysNoConfidence" -> "no_confidence" to null
+        "abstain"      -> "abstain"       to null
+        "noConfidence" -> "no_confidence" to null
         else -> {
-            logger.debug { "indexDelegationCert: unknown delegatee type '$delegateeType' — ${cert.toString().take(200)}" }
+            logger.debug { "indexDelegationCert: unknown delegateRepresentative type '$drepType'" }
             return false
         }
     }
@@ -323,7 +302,7 @@ private fun indexDelegationCert(
                 it[IdxDelegationVote.network]            = network
                 it[IdxDelegationVote.stakeCredentialHex] = stakeHex
                 it[IdxDelegationVote.drepCredentialHex]  = drepHex
-                it[IdxDelegationVote.drepType]           = drepType
+                it[IdxDelegationVote.drepType]           = drepTypeStr
                 it[IdxDelegationVote.txHash]             = txHash
                 it[IdxDelegationVote.slot]               = slot
             }
