@@ -176,26 +176,27 @@ private fun indexVote(
     txHash: String,
     vp: JsonObject,
 ): Boolean {
-    val voter  = vp["voter"]?.jsonObject ?: return false
-    val role   = voter["role"]?.jsonPrimitive?.contentOrNull ?: return false
+    // Ogmios 6.x chain-sync uses "issuer" (same as queryLedgerState/governanceProposals).
+    val issuer = vp["issuer"]?.jsonObject ?: return false
+    val role   = issuer["role"]?.jsonPrimitive?.contentOrNull ?: return false
 
     // Map all three voter roles to a credential hex + short role tag
     val (credentialHex, voterRole) = when (role) {
         "delegateRepresentative" -> {
-            val id = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            val id = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return false
             val hex = runCatching { drepIdToCredentialHex(id) }.getOrElse { id }
                 .takeIf { it.length == 56 } ?: return false
             hex to "drep"
         }
         "constitutionalCommitteeMember" -> {
-            val hex = voter["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
+            val hex = issuer["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
             hex to "cc"
         }
         "stakePoolOperator" -> {
-            val id = voter["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            val id = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return false
             id to "spo"
         }
-        else -> return false
+        else -> return false  // ignore genesisDelegate and other legacy roles
     }
 
     val actionId       = vp["actionId"]?.jsonObject ?: return false
@@ -242,30 +243,49 @@ private fun indexDelegationCert(
     txHash: String,
     cert: JsonObject,
 ): Boolean {
-    // Ogmios 6.x cert formats for Conway delegation:
-    //   voteDelegation            → credential + delegatee
-    //   stakeVoteDelegation       → credential + stake pool + delegatee
-    //   voteRegistrationDelegation         → credential + delegatee + deposit
-    //   stakeVoteRegistrationDelegation    → credential + stake pool + delegatee + deposit
-    val credential = cert["credential"]?.jsonObject ?: return false
-    val stakeHex   = credential["keyHash"]?.jsonPrimitive?.contentOrNull
-        ?: credential["scriptHash"]?.jsonPrimitive?.contentOrNull
-        ?: return false
+    // Ogmios 6.x cert formats for Conway vote delegation:
+    //   voteDelegation, stakeVoteDelegation, voteRegistrationDelegation, stakeVoteRegistrationDelegation
+    //
+    // Credential: may be a plain hex string OR an object {type, keyHash/scriptHash}.
+    val stakeHex: String = when (val credEl = cert["credential"]) {
+        is JsonObject    -> credEl["keyHash"]?.jsonPrimitive?.contentOrNull
+                            ?: credEl["scriptHash"]?.jsonPrimitive?.contentOrNull
+                            ?: return false
+        is JsonPrimitive -> credEl.contentOrNull ?: return false
+        else             -> {
+            logger.debug { "indexDelegationCert: unknown credential format — ${cert.toString().take(200)}" }
+            return false
+        }
+    }
 
-    val delegatee = cert["delegatee"]?.jsonObject ?: return false
+    val delegatee     = cert["delegatee"]?.jsonObject ?: run {
+        logger.debug { "indexDelegationCert: missing delegatee — ${cert.toString().take(200)}" }
+        return false
+    }
     val delegateeType = delegatee["type"]?.jsonPrimitive?.contentOrNull ?: return false
 
-    // Ogmios 6.x returns the DRep credential inline in delegatee, not wrapped:
-    //   {"type": "keyHash",    "keyHash":    "..."}
-    //   {"type": "scriptHash", "scriptHash": "..."}
-    //   {"type": "alwaysAbstain"}
-    //   {"type": "alwaysNoConfidence"}
+    // Ogmios 6.x delegatee types:
+    //   keyHash / scriptHash       → specific DRep (credential inline or under "drep")
+    //   abstain / alwaysAbstain    → predefined abstain
+    //   noConfidence / alwaysNoConfidence → predefined no-confidence
     val (drepType, drepHex) = when (delegateeType) {
         "keyHash"             -> "key"          to delegatee["keyHash"]?.jsonPrimitive?.contentOrNull
         "scriptHash"          -> "script"       to delegatee["scriptHash"]?.jsonPrimitive?.contentOrNull
-        "alwaysAbstain"       -> "abstain"       to null
-        "alwaysNoConfidence"  -> "no_confidence" to null
-        else                  -> return false
+        "drep" -> {
+            // Nested format: {"type":"drep", "drep": {"type":"keyHash","keyHash":"..."}}
+            val inner = delegatee["drep"]?.jsonObject
+            val hex   = inner?.get("keyHash")?.jsonPrimitive?.contentOrNull
+                        ?: inner?.get("scriptHash")?.jsonPrimitive?.contentOrNull
+                        ?: delegatee["id"]?.jsonPrimitive?.contentOrNull
+            val t = if (inner?.get("type")?.jsonPrimitive?.contentOrNull == "scriptHash") "script" else "key"
+            t to hex
+        }
+        "abstain", "alwaysAbstain"           -> "abstain"       to null
+        "noConfidence", "alwaysNoConfidence" -> "no_confidence" to null
+        else -> {
+            logger.debug { "indexDelegationCert: unknown delegatee type '$delegateeType' — ${cert.toString().take(200)}" }
+            return false
+        }
     }
 
     return try {
@@ -290,15 +310,15 @@ private fun indexPoolRegistration(
     slot: Long,
     cert: JsonObject,
 ): Boolean {
-    // Ogmios 6.x format: certificates[].poolParameters.id (bech32) + .metadata.url
-    val poolParams  = cert["poolParameters"]?.jsonObject ?: return false
-    val poolBech32  = poolParams["id"]?.jsonPrimitive?.contentOrNull ?: return false
-    val metadataUrl = poolParams["metadata"]?.jsonObject?.get("url")
+    // Ogmios 6.x format: certificates[].stakePool.id (bech32) + .metadata.url
+    val stakePool   = cert["stakePool"]?.jsonObject ?: return false
+    val poolBech32  = stakePool["id"]?.jsonPrimitive?.contentOrNull ?: return false
+    val metadataUrl = stakePool["metadata"]?.jsonObject?.get("url")
         ?.jsonPrimitive?.contentOrNull
 
     // Pool ID hex: decode bech32 → skip for now; store empty, update after name fetch
     val poolHex = runCatching { bech32ToHex(poolBech32) }.getOrElse { "" }
-        .takeIf { it.isNotEmpty() } ?: poolBech32  // fallback: use bech32 as key
+        .takeIf { it.length == 56 } ?: poolBech32  // fallback: use bech32 as key
 
     return try {
         transaction {
