@@ -1,0 +1,47 @@
+services:
+  superset-redis:
+    image: redis:7-alpine
+    container_name: superset-redis
+    restart: unless-stopped
+    volumes:
+      - superset_redis:/data
+
+  # Run once to bootstrap: docker compose --profile init up superset-init
+  superset-init:
+    image: apache/superset:3.1.3
+    container_name: superset-init
+    env_file: .env
+    volumes:
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./init.sh:/app/init.sh:ro
+      - superset_home:/app/superset_home
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["bash", "/app/init.sh"]
+    profiles:
+      - init
+
+  superset:
+    image: apache/superset:3.1.3
+    container_name: superset-app
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    env_file: .env
+    volumes:
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+      - superset_home:/app/superset_home
+    extra_hosts:
+      # Cho phép kết nối đến tempo-pg qua host.docker.internal:5432
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - superset-redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  superset_redis:
+  superset_home:
