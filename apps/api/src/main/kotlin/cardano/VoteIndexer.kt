@@ -23,7 +23,7 @@ private val CONWAY_SLOTS = mapOf(
     "preprod" to  68_774_400L,
 )
 
-private val SLOTS_PER_EPOCH = mapOf("mainnet" to 432_000L, "preprod" to 86_400L)
+private val SLOTS_PER_EPOCH = mapOf("mainnet" to 432_000L, "preprod" to 432_000L)
 
 // govActionLifetime: number of epochs a proposal remains active before expiring.
 // This is a protocol parameter (Ogmios key: governanceActionLifetime).
