@@ -72,9 +72,9 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                 if (validCheckpoint != null) {
                     val (cpSlot, cpHash) = validCheckpoint
                     send(Frame.Text(
-                        """{"jsonrpc":"2.0","method":"findIntersect","params":{"points":[{"slot":$cpSlot,"id":"$cpHash"}]},"id":-1}"""
+                        """{"jsonrpc":"2.0","method":"findIntersection","params":{"points":[{"slot":$cpSlot,"id":"$cpHash"}]},"id":-1}"""
                     ))
-                    logger.info { "VoteIndexer [$network] findIntersect requested at slot=$cpSlot" }
+                    logger.info { "VoteIndexer [$network] findIntersection requested at slot=$cpSlot" }
                 }
 
                 repeat(PIPELINE_SIZE) { sendNextBlock(inFlight++) }
@@ -113,6 +113,18 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                     val slot      = block["slot"]?.jsonPrimitive?.longOrNull ?: 0L
                     val blockHash = block["id"]?.jsonPrimitive?.contentOrNull ?: ""
                     blocksProcessed++
+
+                    // Pre-Conway progress log — fires every 60s regardless of era
+                    if (slot < conwayStartSlot && blockHash.isNotEmpty()) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastCheckpointMs >= 60_000) {
+                            lastCheckpointMs = now
+                            logger.info {
+                                "VoteIndexer [$network] pre-Conway slot=$slot blocks=$blocksProcessed " +
+                                "(target=$conwayStartSlot, ${((slot.toDouble() / conwayStartSlot) * 100).toInt()}%)"
+                            }
+                        }
+                    }
 
                     if (slot >= conwayStartSlot) {
                         val checkpointSlot = checkpoint?.first ?: 0L
