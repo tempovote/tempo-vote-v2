@@ -202,22 +202,25 @@ fun Route.governanceRoutes() {
 }
 
 /**
- * Fetch governance proposals — live from Ogmios (cached) plus historical from DB.
+ * Fetch governance proposals — three tiers merged by key (txHash:index):
+ *  1. Live proposals from Ogmios (cached, richest data including vote weights)
+ *  2. Snapshot historical from governance_action_snapshots (BackgroundPoller saw these)
+ *  3. Index historical from idx_governance_proposals (chain-sync covers all since Conway genesis)
  *
- * Live proposals come from parsedGovActions cache (pre-warmed by BackgroundPoller).
- * Historical proposals (expired / enacted / dropped) come from governance_action_snapshots
- * in PostgreSQL — these are proposals that have left Ogmios ledger state.
- *
- * If the DB is unavailable (e.g. local dev), getHistorical() returns empty list silently.
+ * Tier 3 fills gaps for proposals that expired/enacted/dropped before the backend was deployed.
+ * The index tier has vote counts but no historical stake weights (zeros in votingPower fields).
  */
 private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> {
+    // Current epoch is needed for index-tier status computation and cache-miss path.
+    // getOrFetchCurrentEpoch uses its own cache (30 min TTL) so this is near-free on cache hit.
+    val epoch = getOrFetchCurrentEpoch(network)
+
     // ── Live proposals (from cache or Ogmios) ──────────────────────────────────
     val live = CardanoCache.parsedGovActions.getIfPresent(network.name)
         ?: run {
             val stakeCtx   = getOrFetchDRepStakeContext(network)
             val ccCtx      = getOrFetchCCContext(network)
             val thresholds = getOrFetchGovernanceThresholds(network)
-            val epoch      = getOrFetchCurrentEpoch(network)
 
             val raw = CardanoCache.govActions.getIfPresent(network.name)
                 ?: try {
@@ -253,12 +256,18 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
                 .also { CardanoCache.parsedGovActions.put(network.name, it) }
         }
 
-    // ── Historical proposals (expired / enacted / dropped from DB) ────────────
+    // ── Tier 2: snapshot historical (expired / enacted / dropped seen by BackgroundPoller) ──
     val liveKeys = live.map { "${it.txHash}:${it.index}" }.toSet()
     val historical = GovernanceActionDao.getHistorical(network.name.lowercase())
         .filter { "${it.txHash}:${it.index}" !in liveKeys }
 
-    val all = live + historical
+    // ── Tier 3: index historical (chain-sync covers all since Conway genesis) ──
+    val coveredKeys = liveKeys + historical.map { "${it.txHash}:${it.index}" }
+    val indexed = withContext(Dispatchers.IO) {
+        GovernanceActionDao.getHistoricalFromIndex(network.name.lowercase(), epoch)
+    }.filter { "${it.txHash}:${it.index}" !in coveredKeys }
+
+    val all = live + historical + indexed
 
     // Collect DRep voters with an anchorUrl but no cached name — fetch server-side (bypasses CORS).
     // Cap the total wait at 10 s so the endpoint never hangs on slow IPFS gateways.

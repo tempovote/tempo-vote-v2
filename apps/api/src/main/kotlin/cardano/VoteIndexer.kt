@@ -43,7 +43,8 @@ private val wsClient = HttpClient(CIO) {
  *  - Stake pool registration metadata → idx_pool_metadata
  *
  * Starts from genesis but skips pre-Conway blocks cheaply (no DB I/O).
- * Checkpointing ensures restarts don't duplicate work.
+ * When a valid checkpoint exists, uses findIntersect to skip directly to the checkpoint
+ * so restarts don't need to re-stream the entire pre-checkpoint chain.
  */
 suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
     val wsUrl = ogmiosUrl
@@ -60,6 +61,22 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
 
             wsClient.webSocket(wsUrl) {
                 var inFlight = 0L
+
+                // Send findIntersect before the nextBlock pipeline when we have a valid checkpoint.
+                // This tells Ogmios to start streaming from that point instead of genesis,
+                // making restarts O(new blocks) rather than O(entire chain).
+                // A "reset" checkpoint (all-zero hash) is skipped — let Ogmios stream from genesis.
+                val validCheckpoint = checkpoint?.takeIf { (_, hash) ->
+                    hash.length == 64 && hash.any { it != '0' }
+                }
+                if (validCheckpoint != null) {
+                    val (cpSlot, cpHash) = validCheckpoint
+                    send(Frame.Text(
+                        """{"jsonrpc":"2.0","method":"findIntersect","params":{"points":[{"slot":$cpSlot,"id":"$cpHash"}]},"id":-1}"""
+                    ))
+                    logger.info { "VoteIndexer [$network] findIntersect requested at slot=$cpSlot" }
+                }
+
                 repeat(PIPELINE_SIZE) { sendNextBlock(inFlight++) }
 
                 var lastCheckpointMs    = System.currentTimeMillis()

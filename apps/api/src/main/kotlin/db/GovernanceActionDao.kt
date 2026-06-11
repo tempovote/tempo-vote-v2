@@ -8,7 +8,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
+import vote.tempo.cardano.DRepVoteStats
 import vote.tempo.cardano.GovernanceActionDto
+import vote.tempo.cardano.SPOVoteStats
+import vote.tempo.cardano.VoteCounts
+import vote.tempo.cardano.actionTypeLabel
 
 private val logger = KotlinLogging.logger("GovernanceActionDao")
 
@@ -104,6 +108,77 @@ object GovernanceActionDao {
                             .copy(status = row[GovernanceActionSnapshots.status])
                     }.getOrNull()
                 }
+        }
+    }.getOrDefault(emptyList())
+
+    /**
+     * Return proposals from the chain index (idx_governance_proposals) that
+     * BackgroundPoller never observed. These cover pre-deployment history.
+     *
+     * Vote counts are sourced from drep_votes (via GROUP BY in SQL — no per-row voting power).
+     * The caller must filter out keys already served by getHistorical() or live Ogmios.
+     */
+    fun getHistoricalFromIndex(network: String, currentEpoch: Int): List<GovernanceActionDto> = runCatching {
+        transaction {
+            val rows = IdxGovernanceProposals.selectAll()
+                .where { IdxGovernanceProposals.network eq network }
+                .orderBy(IdxGovernanceProposals.expiresEpoch, SortOrder.DESC)
+                .toList()
+
+            if (rows.isEmpty()) return@transaction emptyList<GovernanceActionDto>()
+
+            // Aggregate vote counts per (proposalTxHash, proposalIndex, voterRole, vote) in SQL.
+            // This avoids loading all drep_votes rows into memory.
+            data class VoteTally(
+                var drepYes: Int = 0, var drepNo: Int = 0, var drepAbstain: Int = 0,
+                var ccYes: Int   = 0, var ccNo: Int   = 0, var ccAbstain: Int   = 0,
+                var spoYes: Int  = 0, var spoNo: Int  = 0, var spoAbstain: Int  = 0,
+            )
+
+            val tally = mutableMapOf<String, VoteTally>()
+            val cnt   = DrepVotes.id.count()
+
+            DrepVotes
+                .select(DrepVotes.proposalTxHash, DrepVotes.proposalIndex, DrepVotes.voterRole, DrepVotes.vote, cnt)
+                .where { DrepVotes.network eq network }
+                .groupBy(DrepVotes.proposalTxHash, DrepVotes.proposalIndex, DrepVotes.voterRole, DrepVotes.vote)
+                .forEach { r ->
+                    val key   = "${r[DrepVotes.proposalTxHash]}:${r[DrepVotes.proposalIndex]}"
+                    val t     = tally.getOrPut(key) { VoteTally() }
+                    val count = r[cnt].toInt()
+                    when (r[DrepVotes.voterRole]) {
+                        "drep" -> when (r[DrepVotes.vote]) { "yes" -> t.drepYes += count; "no" -> t.drepNo += count; else -> t.drepAbstain += count }
+                        "cc"   -> when (r[DrepVotes.vote]) { "yes" -> t.ccYes   += count; "no" -> t.ccNo   += count; else -> t.ccAbstain   += count }
+                        "spo"  -> when (r[DrepVotes.vote]) { "yes" -> t.spoYes  += count; "no" -> t.spoNo  += count; else -> t.spoAbstain  += count }
+                    }
+                }
+
+            rows.map { row ->
+                val txHash       = row[IdxGovernanceProposals.txHash]
+                val index        = row[IdxGovernanceProposals.index]
+                val actionType   = row[IdxGovernanceProposals.actionType]
+                val expiresEpoch = row[IdxGovernanceProposals.expiresEpoch]
+                val t = tally["$txHash:$index"] ?: VoteTally()
+                val status = if (currentEpoch > expiresEpoch) "expired" else "active"
+
+                GovernanceActionDto(
+                    txHash       = txHash,
+                    index        = index,
+                    type         = actionTypeLabel(actionType),
+                    actionType   = actionType,
+                    anchorUrl    = row[IdxGovernanceProposals.anchorUrl],
+                    anchorHash   = row[IdxGovernanceProposals.anchorHash],
+                    expiresEpoch = expiresEpoch,
+                    deposit      = row[IdxGovernanceProposals.deposit],
+                    drepVotes    = DRepVoteStats(t.drepYes, t.drepNo, t.drepAbstain, 0L, 0L, 0L, 0L, 0L, 0L),
+                    spoVotes     = SPOVoteStats(t.spoYes, t.spoNo, t.spoAbstain),
+                    ccVotes      = VoteCounts(t.ccYes, t.ccNo, t.ccAbstain),
+                    votes        = emptyList(),
+                    details      = row[IdxGovernanceProposals.actionDetails]
+                        ?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() },
+                    status       = status,
+                )
+            }
         }
     }.getOrDefault(emptyList())
 }
