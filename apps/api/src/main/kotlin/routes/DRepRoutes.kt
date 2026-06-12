@@ -291,13 +291,14 @@ fun Route.drepRoutes() {
             call.respond(result)
         }
 
-        // GET /dreps/leaderboard?metric=delegators&limit=5&network=mainnet
-        // Returns top N DReps sorted by delegator count.
-        // Result is cached 15 min — Koios stats per candidate also reuse drepStats cache.
+        // GET /dreps/leaderboard?sortBy=delegators|votingPower&limit=5&network=mainnet
+        // Returns top N DReps sorted by delegator count (default) or voting power.
+        // Result is cached 15 min per unique (network, limit, sortBy) combination.
         get("/leaderboard") {
-            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
-            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
-            val leaderboardKey = "${network.name}:$limit"
+            val network  = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+            val limit    = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
+            val sortBy   = call.request.queryParameters["sortBy"]?.takeIf { it == "votingPower" } ?: "delegators"
+            val leaderboardKey = "${network.name}:$limit:$sortBy"
 
             // ── Leaderboard result cache (15 min) ────────────────────────────────
             CardanoCache.leaderboard.getIfPresent(leaderboardKey)?.let { cached ->
@@ -382,7 +383,12 @@ fun Route.drepRoutes() {
             }
 
             val sorted = results
-                .sortedByDescending { it["delegatorCount"]?.jsonPrimitive?.intOrNull ?: 0 }
+                .sortedByDescending {
+                    if (sortBy == "votingPower")
+                        it["activeVotingPower"]?.jsonPrimitive?.longOrNull ?: 0L
+                    else
+                        (it["delegatorCount"]?.jsonPrimitive?.intOrNull ?: 0).toLong()
+                }
                 .take(limit)
 
             // Fetch name + imageUrl server-side for the final top-N DReps.
@@ -504,6 +510,88 @@ fun Route.drepRoutes() {
 
             val resultArray = JsonArray(withMeta)
             CardanoCache.whaleLeaders.put(cacheKey, resultArray)
+            call.respond(resultArray)
+        }
+
+        // GET /dreps/vp-change?network=mainnet&limit=5
+        // Top DReps by absolute voting-power change between current epoch and previous epoch.
+        // Reads from drep_vp_snapshots written by BackgroundPoller every 5 min.
+        // Returns empty array if fewer than 2 epochs of data are available.
+        get("/vp-change") {
+            val network  = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+            val limit    = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 5
+            val cacheKey = "${network.name}:$limit"
+
+            CardanoCache.vpChangeLeaderboard.getIfPresent(cacheKey)?.let { cached ->
+                call.respond(cached)
+                return@get
+            }
+
+            val currentEpoch = CardanoCache.currentEpoch.getIfPresent(network.name) ?: run {
+                call.respond(JsonArray(emptyList()))
+                return@get
+            }
+
+            val changers = runCatching {
+                ChainIndexDao.getTopByVpChange(network.name.lowercase(), currentEpoch, limit)
+            }.getOrDefault(emptyList())
+
+            if (changers.isEmpty()) {
+                call.respond(JsonArray(emptyList()))
+                return@get
+            }
+
+            val stakeCtx = CardanoCache.drepList.getIfPresent(network.name)
+                ?.let { runCatching { parseDRepStakeContext(it) }.getOrNull() }
+            val listRaw  = CardanoCache.drepList.getIfPresent(network.name)
+            val drepsArr = when {
+                listRaw is JsonArray -> listRaw
+                listRaw is JsonObject && listRaw["delegateRepresentatives"] is JsonArray ->
+                    listRaw["delegateRepresentatives"]!!.jsonArray
+                else -> JsonArray(emptyList())
+            }
+            val anchorMap: Map<String, String> = drepsArr.mapNotNull { entry ->
+                runCatching {
+                    val obj     = entry.jsonObject
+                    if (obj["type"]?.jsonPrimitive?.contentOrNull != "registered") return@mapNotNull null
+                    val rawId   = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val credHex = if (rawId.startsWith("drep")) drepIdToCredentialHex(rawId) else rawId
+                    val anchor  = obj["metadata"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: obj["anchor"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: return@mapNotNull null
+                    credHex to anchor
+                }.getOrNull()
+            }.toMap()
+
+            val withMeta = coroutineScope {
+                changers.map { entry ->
+                    async {
+                        val drepId   = credentialHexToDrepIdCip105(entry.credHex) ?: entry.credHex
+                        val anchor   = anchorMap[entry.credHex]
+                        val cached   = CardanoCache.drepInfo.getIfPresent("${network.name}:${entry.credHex}")
+                        val cachedName     = cached?.get("name")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
+                        val cachedImageUrl = cached?.get("imageUrl")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
+                        val meta = if ((cachedName == null || cachedImageUrl == null) && anchor != null)
+                            fetchDRepMeta(anchor) else null
+                        val name     = cachedName     ?: meta?.name
+                        val imageUrl = cachedImageUrl ?: meta?.imageUrl
+                        buildJsonObject {
+                            put("id",               drepId)
+                            put("credHex",          entry.credHex)
+                            put("anchorUrl",        anchor?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("name",             name?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("imageUrl",         imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("currentVp",        entry.currentVp)
+                            put("prevVp",           entry.prevVp)
+                            put("delta",            entry.delta)
+                            put("pctChange",        entry.pctChange)
+                        }
+                    }
+                }.map { it.await() }
+            }
+
+            val resultArray = JsonArray(withMeta)
+            CardanoCache.vpChangeLeaderboard.put(cacheKey, resultArray)
             call.respond(resultArray)
         }
 

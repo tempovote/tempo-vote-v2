@@ -16,9 +16,6 @@ export interface DRepLeaderboardEntry {
   influencePower: number
 }
 
-// Short module-level cache: survives page navigation within the same tab.
-// Kept short (2 min) so a DelegatorPoller refresh (15-min cycle) is visible
-// within ~2 min of the backend cache being invalidated.
 const LEADERBOARD_TTL = 2 * 60 * 1000
 interface CacheEntry { entries: DRepLeaderboardEntry[]; ts: number }
 const leaderboardCache = new Map<string, CacheEntry>()
@@ -28,8 +25,8 @@ function getCached(key: string): DRepLeaderboardEntry[] | null {
   return e && Date.now() - e.ts < LEADERBOARD_TTL ? e.entries : null
 }
 
-export function useDRepLeaderboard(network: string, limit = 5) {
-  const cacheKey = `${network}:${limit}`
+export function useDRepLeaderboard(network: string, limit = 5, sortBy: "delegators" | "votingPower" = "delegators") {
+  const cacheKey = `${network}:${limit}:${sortBy}`
   const [entries, setEntries] = useState<DRepLeaderboardEntry[]>(() => getCached(cacheKey) ?? [])
   const [loading, setLoading] = useState(() => getCached(cacheKey) === null)
 
@@ -43,7 +40,7 @@ export function useDRepLeaderboard(network: string, limit = 5) {
 
     let cancelled = false
     setLoading(true)
-    fetch(`${API_URL}/dreps/leaderboard?limit=${limit}&network=${network}`)
+    fetch(`${API_URL}/dreps/leaderboard?limit=${limit}&network=${network}&sortBy=${sortBy}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data: unknown) => {
         if (!cancelled && Array.isArray(data)) {
@@ -55,7 +52,7 @@ export function useDRepLeaderboard(network: string, limit = 5) {
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [cacheKey, network, limit])
+  }, [cacheKey, network, limit, sortBy])
 
   return { entries, loading }
 }

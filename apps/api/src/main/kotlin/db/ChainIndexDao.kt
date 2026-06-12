@@ -442,4 +442,88 @@ object ChainIndexDao {
         }
         return result
     }
+
+    data class VpChangeEntry(
+        val credHex: String,
+        val currentVp: Long,
+        val prevVp: Long,
+        val delta: Long,
+        val pctChange: Double,
+    )
+
+    /**
+     * Upsert voting-power snapshots for all DReps in [stakeMap] at [epoch].
+     * Called by BackgroundPoller after each successful Ogmios poll.
+     * ON CONFLICT DO UPDATE ensures idempotency — safe to call multiple times per epoch.
+     * Returns the number of rows upserted.
+     */
+    fun upsertVpSnapshots(network: String, epoch: Int, stakeMap: Map<String, Long>): Int {
+        if (stakeMap.isEmpty()) return 0
+        var count = 0
+        transaction {
+            for ((credHex, vp) in stakeMap) {
+                exec(
+                    """INSERT INTO drep_vp_snapshots (network, cred_hex, epoch, voting_power)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT (network, cred_hex, epoch)
+                       DO UPDATE SET voting_power = EXCLUDED.voting_power,
+                                     recorded_at  = now()""",
+                    listOf(
+                        Pair<IColumnType<*>, Any?>(VarCharColumnType(16), network),
+                        Pair<IColumnType<*>, Any?>(VarCharColumnType(64), credHex),
+                        Pair<IColumnType<*>, Any?>(IntegerColumnType(), epoch),
+                        Pair<IColumnType<*>, Any?>(LongColumnType(), vp),
+                    ),
+                )
+                count++
+            }
+        }
+        return count
+    }
+
+    /**
+     * Return top [limit] DReps by absolute voting-power change between [currentEpoch] and
+     * [currentEpoch] - 1. DReps present only in one epoch are excluded.
+     * Result is ordered by |delta| descending so gainers and losers both surface.
+     */
+    fun getTopByVpChange(network: String, currentEpoch: Int, limit: Int): List<VpChangeEntry> {
+        val result = mutableListOf<VpChangeEntry>()
+        transaction {
+            exec(
+                """SELECT curr.cred_hex,
+                          curr.voting_power                                                     AS current_vp,
+                          prev.voting_power                                                     AS prev_vp,
+                          curr.voting_power - prev.voting_power                                AS delta,
+                          ROUND((curr.voting_power - prev.voting_power) * 100.0
+                                / NULLIF(prev.voting_power, 0), 2)                             AS pct_change
+                   FROM   drep_vp_snapshots curr
+                   JOIN   drep_vp_snapshots prev
+                          ON  prev.network  = curr.network
+                          AND prev.cred_hex = curr.cred_hex
+                          AND prev.epoch    = curr.epoch - 1
+                   WHERE  curr.network = ?
+                     AND  curr.epoch   = ?
+                   ORDER BY ABS(curr.voting_power - prev.voting_power) DESC
+                   LIMIT ?""",
+                listOf(
+                    Pair<IColumnType<*>, Any?>(VarCharColumnType(16), network),
+                    Pair<IColumnType<*>, Any?>(IntegerColumnType(), currentEpoch),
+                    Pair<IColumnType<*>, Any?>(IntegerColumnType(), limit),
+                ),
+            ) { rs ->
+                while (rs.next()) {
+                    result.add(
+                        VpChangeEntry(
+                            credHex   = rs.getString("cred_hex"),
+                            currentVp = rs.getLong("current_vp"),
+                            prevVp    = rs.getLong("prev_vp"),
+                            delta     = rs.getLong("delta"),
+                            pctChange = rs.getDouble("pct_change"),
+                        )
+                    )
+                }
+            }
+        }
+        return result
+    }
 }

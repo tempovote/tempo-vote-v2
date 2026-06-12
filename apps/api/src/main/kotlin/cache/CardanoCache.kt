@@ -132,4 +132,21 @@ object CardanoCache {
     val whaleLeaders = Caffeine.newBuilder()
         .expireAfterWrite(2, TimeUnit.HOURS)
         .build<String, JsonElement>()   // key: "NETWORK:limit"
+
+    /**
+     * VP (stake) map per network — credHex → lovelace. Written each main poll cycle so the
+     * whale indexer (2 h schedule) can select candidates by VP in addition to delegator count.
+     */
+    val drepStakeMap = Caffeine.newBuilder()
+        .expireAfterWrite(30, TimeUnit.MINUTES)
+        .build<String, Map<String, Long>>()  // key: network.name
+
+    /**
+     * VP-change leaderboard — top DReps by |delta| between current epoch and previous epoch.
+     * Computed from drep_vp_snapshots table. TTL 10 min (matches BackgroundPoller interval).
+     * Cache is keyed by "NETWORK:limit" — invalidate on epoch change if needed.
+     */
+    val vpChangeLeaderboard = Caffeine.newBuilder()
+        .expireAfterWrite(10, TimeUnit.MINUTES)
+        .build<String, JsonElement>()   // key: "NETWORK:limit"
 }

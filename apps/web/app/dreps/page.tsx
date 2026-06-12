@@ -8,6 +8,7 @@ import { useDRepList } from "@/hooks/useDRepList"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useDRepLeaderboard } from "@/hooks/useDRepLeaderboard"
 import { useDRepWhaleLeaders } from "@/hooks/useDRepWhaleLeaders"
+import { useDRepVpChange } from "@/hooks/useDRepVpChange"
 import { lovelaceToAda } from "@/lib/governance"
 import DRepAvatar from "@/components/drep/DRepAvatar"
 import CopyableId from "@/components/ui/CopyableId"
@@ -17,15 +18,57 @@ function looksLikeDrepId(q: string): boolean {
   return t.toLowerCase().startsWith("drep1") || /^[0-9a-f]{56}$/i.test(t)
 }
 
-function SkeletonRow() {
+function DRepCell({ entry }: {
+  entry: { id: string; credHex: string; name?: string | null; imageUrl?: string | null }
+}) {
+  return (
+    <Link href={`/dreps/${encodeURIComponent(entry.id)}`} className="flex items-center gap-2.5 hover:text-accent-light transition-colors group">
+      <DRepAvatar name={entry.name ?? null} imageUrl={entry.imageUrl ?? null} credHex={entry.credHex} size="sm" />
+      <div className="min-w-0">
+        {entry.name && <div className="font-medium text-xs truncate group-hover:text-accent-light leading-tight">{entry.name}</div>}
+        <CopyableId id={entry.id} />
+      </div>
+    </Link>
+  )
+}
+
+function VpDeltaCell({ entry }: { entry: { delta: number; pctChange: number } }) {
+  const gain = entry.delta >= 0
+  return (
+    <div className="text-right">
+      <div className={`font-bold tabular-nums ${gain ? "text-green-400" : "text-red-400"}`}>
+        {gain ? "+" : ""}{entry.pctChange.toFixed(2)}%
+      </div>
+      <div className={`text-xs tabular-nums ${gain ? "text-green-500/70" : "text-red-500/70"}`}>
+        {gain ? "+" : ""}{lovelaceToAda(Math.abs(entry.delta))} ₳
+      </div>
+    </div>
+  )
+}
+
+function SkeletonRow({ cols = 5 }: { cols?: number }) {
   return (
     <tr className="border-b border-border-subtle">
-      {[...Array(5)].map((_, i) => (
+      {[...Array(cols)].map((_, i) => (
         <td key={i} className="py-3 px-4">
           <div className="h-4 rounded bg-bg-card-hover animate-pulse" style={{ width: i === 1 ? "60%" : "40%" }} />
         </td>
       ))}
     </tr>
+  )
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  const styles: Record<number, string> = {
+    1: "bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30",
+    2: "bg-slate-400/15 text-slate-300 ring-1 ring-slate-400/30",
+    3: "bg-amber-700/15 text-amber-500 ring-1 ring-amber-600/30",
+  }
+  const cls = styles[rank] ?? "text-text-muted"
+  return (
+    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold tabular-nums ${cls}`}>
+      {rank}
+    </span>
   )
 }
 
@@ -38,9 +81,14 @@ export default function DRepsPage() {
   const isIdQuery = looksLikeDrepId(inputValue)
   const nameQ = isIdQuery ? "" : q
 
+  type LeaderboardTab = "delegators" | "whales" | "vp" | "vpChange"
+  const [activeTab, setActiveTab] = useState<LeaderboardTab>("delegators")
+
   const { dreps, isLoading: isDrepsLoading } = useDRepList(network)
-  const { entries: leaderboard, loading: leaderboardLoading } = useDRepLeaderboard(network, 5)
-  const { entries: whaleLeaders, loading: whaleLoading } = useDRepWhaleLeaders(network, 5)
+  const { entries: leaderboard,  loading: leaderboardLoading  } = useDRepLeaderboard(network, 20, "delegators")
+  const { entries: byVp,         loading: byVpLoading         } = useDRepLeaderboard(network, 20, "votingPower")
+  const { entries: whaleLeaders, loading: whaleLoading        } = useDRepWhaleLeaders(network, 20)
+  const { entries: vpChangers,   loading: vpChangeLoading     } = useDRepVpChange(network, 20)
 
   // Only fetch anchor titles for the search list — leaderboard name/imageUrl come from the API.
   const anchorUrlsForSearch = nameQ.length >= 2 ? dreps.map((d) => d.anchorUrl) : []
@@ -77,9 +125,8 @@ export default function DRepsPage() {
     <div className="page-container-wide space-y-10">
       <h1 className="text-2xl font-bold animate-fade-in">DReps</h1>
 
-      {/* Explore DRep search */}
+      {/* Search */}
       <div className="space-y-4 animate-fade-in">
-        <h2 className="text-xl font-bold">Explore DRep</h2>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <svg
@@ -196,147 +243,144 @@ export default function DRepsPage() {
             )}
           </div>
         ) : (
-          /* Leaderboards when not searching */
-          <>
+          /* Leaderboards — tab-based, full-width, 20 results */
           <div className="space-y-4 animate-slide-up">
-            <h2 className="text-xl font-bold">Top 5 DReps with the most delegators</h2>
+
+            {/* Pill tab bar — same pattern as VoteHistoryTab */}
+            <div className="flex gap-1 bg-bg-secondary rounded-xl p-1 overflow-x-auto">
+              {([
+                { id: "delegators", label: "Delegators" },
+                { id: "whales",     label: "Whale Delegators" },
+                { id: "vp",         label: "Voting Power" },
+                { id: "vpChange",   label: "VP Change" },
+              ] as { id: LeaderboardTab; label: string }[]).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                    activeTab === t.id
+                      ? "bg-bg-card text-text-primary shadow-sm"
+                      : "text-text-muted hover:text-text-secondary"
+                  }`}
+                >
+                  {t.label}
+                  {t.id === "whales" && (
+                    <span className="ml-1.5 text-xs text-text-muted">&gt;1M ₳</span>
+                  )}
+                  {t.id === "vpChange" && (
+                    <span className={`ml-1.5 text-xs ${activeTab === t.id ? "text-accent" : "text-text-muted"}`}>epoch Δ</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
             <div className="card-static !p-0 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border-default text-text-muted text-left">
-                      <th className="py-3 px-4 font-medium w-8">#</th>
-                      <th className="py-3 px-4 font-medium">DRep</th>
-                      <th className="py-3 px-4 font-medium text-right">Delegators</th>
-                      <th className="py-3 px-4 font-medium text-right">Active VP</th>
-                      <th className="py-3 px-4 font-medium text-right">Influence</th>
-                    </tr>
-                  </thead>
+              <table className="w-full text-sm">
+
+                {/* ── Delegators ── */}
+                {activeTab === "delegators" && (<>
+                  <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
+                    <th className="py-2.5 px-4 font-medium w-10">#</th>
+                    <th className="py-2.5 px-4 font-medium">DRep</th>
+                    <th className="py-2.5 px-4 font-medium text-right">Delegators</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Active VP</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Influence</th>
+                  </tr></thead>
                   <tbody>
                     {leaderboardLoading
-                      ? [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
-                      : leaderboard.map((entry, i) => {
-                          return (
-                            <tr
-                              key={entry.id}
-                              className="border-b border-border-subtle hover:bg-bg-card-hover transition-colors"
-                            >
-                              <td className="py-3 px-4 text-text-muted text-xs font-mono">{i + 1}</td>
-                              <td className="py-3 px-4">
-                                <Link
-                                  href={`/dreps/${encodeURIComponent(entry.id)}`}
-                                  className="flex items-center gap-3 hover:text-accent-light transition-colors group"
-                                >
-                                  <DRepAvatar
-                                    name={entry.name}
-                                    imageUrl={entry.imageUrl}
-                                    credHex={entry.credHex}
-                                    size="sm"
-                                  />
-                                  <div className="min-w-0">
-                                    {entry.name && (
-                                      <div className="font-medium text-sm truncate group-hover:text-accent-light">
-                                        {entry.name}
-                                      </div>
-                                    )}
-                                    <CopyableId id={entry.id} />
-                                  </div>
-                                </Link>
-                              </td>
-                              <td className="py-3 px-4 text-right font-semibold text-accent-light">
-                                {entry.delegatorCount.toLocaleString()}
-                              </td>
-                              <td className="py-3 px-4 text-right text-text-secondary">
-                                {lovelaceToAda(entry.activeVotingPower)} ₳
-                              </td>
-                              <td className="py-3 px-4 text-right text-text-secondary">
-                                {entry.influencePower.toFixed(2)}%
-                              </td>
-                            </tr>
-                          )
-                        })}
+                      ? [...Array(10)].map((_, i) => <SkeletonRow key={i} cols={5} />)
+                      : leaderboard.map((entry, i) => (
+                          <tr key={entry.id} className={`border-b border-border-subtle hover:bg-bg-card-hover transition-colors ${i === 0 ? "bg-yellow-500/5" : ""}`}>
+                            <td className="py-3 px-4"><RankBadge rank={i + 1} /></td>
+                            <td className="py-3 px-4"><DRepCell entry={entry} /></td>
+                            <td className="py-3 px-4 text-right"><span className="font-bold text-accent-light tabular-nums">{entry.delegatorCount.toLocaleString()}</span></td>
+                            <td className="py-3 px-4 text-right text-text-muted text-xs hidden sm:table-cell">{lovelaceToAda(entry.activeVotingPower)} ₳</td>
+                            <td className="py-3 px-4 text-right text-text-muted text-xs hidden md:table-cell">{entry.influencePower.toFixed(2)}%</td>
+                          </tr>
+                        ))}
                   </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+                </>)}
 
-          {/* Whale delegator leaderboard */}
-          <div className="space-y-4 animate-slide-up">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold">Top 5 DReps with the most whale delegators</h2>
-              <span className="text-xs text-text-muted bg-bg-card px-2 py-0.5 rounded-full border border-border-subtle">
-                &gt;1M ₳
-              </span>
-            </div>
-            <div className="card-static !p-0 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border-default text-text-muted text-left">
-                      <th className="py-3 px-4 font-medium w-8">#</th>
-                      <th className="py-3 px-4 font-medium">DRep</th>
-                      <th className="py-3 px-4 font-medium text-right">Whales</th>
-                      <th className="py-3 px-4 font-medium text-right">Total Delegators</th>
-                      <th className="py-3 px-4 font-medium text-right">Active VP</th>
-                    </tr>
-                  </thead>
+                {/* ── Whale Delegators ── */}
+                {activeTab === "whales" && (<>
+                  <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
+                    <th className="py-2.5 px-4 font-medium w-10">#</th>
+                    <th className="py-2.5 px-4 font-medium">DRep</th>
+                    <th className="py-2.5 px-4 font-medium text-right">Whales</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Total Delegators</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Active VP</th>
+                  </tr></thead>
                   <tbody>
                     {whaleLoading
-                      ? [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
+                      ? [...Array(10)].map((_, i) => <SkeletonRow key={i} cols={5} />)
                       : whaleLeaders.length === 0
-                        ? (
-                          <tr>
-                            <td colSpan={5} className="py-8 text-center text-text-muted text-sm">
-                              Whale data is being indexed — check back in a few minutes
-                            </td>
-                          </tr>
-                        )
+                        ? <tr><td colSpan={5} className="py-12 text-center text-text-muted text-sm">Whale data is being indexed — check back in a few minutes</td></tr>
                         : whaleLeaders.map((entry, i) => (
-                          <tr
-                            key={entry.id}
-                            className="border-b border-border-subtle hover:bg-bg-card-hover transition-colors"
-                          >
-                            <td className="py-3 px-4 text-text-muted text-xs font-mono">{i + 1}</td>
-                            <td className="py-3 px-4">
-                              <Link
-                                href={`/dreps/${encodeURIComponent(entry.id)}`}
-                                className="flex items-center gap-3 hover:text-accent-light transition-colors group"
-                              >
-                                <DRepAvatar
-                                  name={entry.name}
-                                  imageUrl={entry.imageUrl}
-                                  credHex={entry.credHex}
-                                  size="sm"
-                                />
-                                <div className="min-w-0">
-                                  {entry.name && (
-                                    <div className="font-medium text-sm truncate group-hover:text-accent-light">
-                                      {entry.name}
-                                    </div>
-                                  )}
-                                  <CopyableId id={entry.id} />
-                                </div>
-                              </Link>
-                            </td>
-                            <td className="py-3 px-4 text-right font-semibold text-accent-light">
-                              {entry.whaleCount.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-4 text-right text-text-secondary">
-                              {entry.delegatorCount.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-4 text-right text-text-secondary">
-                              {lovelaceToAda(entry.activeVotingPower)} ₳
-                            </td>
-                          </tr>
-                        ))
-                    }
+                            <tr key={entry.id} className={`border-b border-border-subtle hover:bg-bg-card-hover transition-colors ${i === 0 ? "bg-yellow-500/5" : ""}`}>
+                              <td className="py-3 px-4"><RankBadge rank={i + 1} /></td>
+                              <td className="py-3 px-4"><DRepCell entry={entry} /></td>
+                              <td className="py-3 px-4 text-right"><span className="font-bold text-accent-light tabular-nums">{entry.whaleCount.toLocaleString()}</span></td>
+                              <td className="py-3 px-4 text-right text-text-muted text-xs hidden sm:table-cell">{entry.delegatorCount.toLocaleString()}</td>
+                              <td className="py-3 px-4 text-right text-text-muted text-xs hidden md:table-cell">{lovelaceToAda(entry.activeVotingPower)} ₳</td>
+                            </tr>
+                          ))}
                   </tbody>
-                </table>
-              </div>
+                </>)}
+
+                {/* ── Voting Power ── */}
+                {activeTab === "vp" && (<>
+                  <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
+                    <th className="py-2.5 px-4 font-medium w-10">#</th>
+                    <th className="py-2.5 px-4 font-medium">DRep</th>
+                    <th className="py-2.5 px-4 font-medium text-right">Active VP</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Influence</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Delegators</th>
+                  </tr></thead>
+                  <tbody>
+                    {byVpLoading
+                      ? [...Array(10)].map((_, i) => <SkeletonRow key={i} cols={5} />)
+                      : byVp.map((entry, i) => (
+                          <tr key={entry.id} className={`border-b border-border-subtle hover:bg-bg-card-hover transition-colors ${i === 0 ? "bg-yellow-500/5" : ""}`}>
+                            <td className="py-3 px-4"><RankBadge rank={i + 1} /></td>
+                            <td className="py-3 px-4"><DRepCell entry={entry} /></td>
+                            <td className="py-3 px-4 text-right"><span className="font-bold text-accent-light tabular-nums">{lovelaceToAda(entry.activeVotingPower)} ₳</span></td>
+                            <td className="py-3 px-4 text-right text-text-muted text-xs hidden sm:table-cell">{entry.influencePower.toFixed(2)}%</td>
+                            <td className="py-3 px-4 text-right text-text-muted text-xs hidden md:table-cell">{entry.delegatorCount.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                  </tbody>
+                </>)}
+
+                {/* ── VP Change ── */}
+                {activeTab === "vpChange" && (<>
+                  <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
+                    <th className="py-2.5 px-4 font-medium w-10">#</th>
+                    <th className="py-2.5 px-4 font-medium">DRep</th>
+                    <th className="py-2.5 px-4 font-medium text-right">Change</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Current VP</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Prev VP</th>
+                  </tr></thead>
+                  <tbody>
+                    {vpChangeLoading
+                      ? [...Array(10)].map((_, i) => <SkeletonRow key={i} cols={5} />)
+                      : vpChangers.length === 0
+                        ? <tr><td colSpan={5} className="py-12 text-center text-text-muted text-sm">Collecting epoch snapshots — data available after the next epoch boundary</td></tr>
+                        : vpChangers.map((entry, i) => (
+                            <tr key={entry.id} className={`border-b border-border-subtle hover:bg-bg-card-hover transition-colors ${i === 0 ? "bg-yellow-500/5" : ""}`}>
+                              <td className="py-3 px-4"><RankBadge rank={i + 1} /></td>
+                              <td className="py-3 px-4"><DRepCell entry={entry} /></td>
+                              <td className="py-3 px-4"><VpDeltaCell entry={entry} /></td>
+                              <td className="py-3 px-4 text-right text-text-muted text-xs hidden sm:table-cell">{lovelaceToAda(entry.currentVp)} ₳</td>
+                              <td className="py-3 px-4 text-right text-text-muted text-xs hidden md:table-cell">{lovelaceToAda(entry.prevVp)} ₳</td>
+                            </tr>
+                          ))}
+                  </tbody>
+                </>)}
+
+              </table>
             </div>
           </div>
-          </>
         )}
       </div>
     </div>

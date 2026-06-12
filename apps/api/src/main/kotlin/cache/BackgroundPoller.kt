@@ -153,6 +153,7 @@ private suspend fun pollNetwork(network: Network) {
             if (ccRaw != null) CardanoCache.ccCommittee.put(network.name, ccRaw)
 
             val stakeCtx   = parseDRepStakeContext(dreps)
+            CardanoCache.drepStakeMap.put(network.name, stakeCtx.stakeMap)
             val ccCtx      = ccRaw
                 ?.let { runCatching { parseCCContext(it) }.getOrDefault(CCContext.EMPTY) }
                 ?: CCContext.EMPTY
@@ -182,6 +183,13 @@ private suspend fun pollNetwork(network: Network) {
             }
             if (powerFilled > 0)
                 logger.info { "BackgroundPoller [$network] filled voting_power for $powerFilled vote rows from Ogmios stakeCtx" }
+
+            // Write VP snapshot for this epoch — used by vp-change leaderboard.
+            // Idempotent: ON CONFLICT DO UPDATE, safe to call every 5 min poll.
+            withContext(Dispatchers.IO) {
+                ChainIndexDao.upsertVpSnapshots(network.name.lowercase(), epoch, stakeCtx.stakeMap)
+            }
+            logger.debug { "BackgroundPoller [$network] VP snapshot written for epoch $epoch (${stakeCtx.stakeMap.size} DReps)" }
         }
         // Success — reset backoff
         consecutiveFailures.remove(network)
@@ -267,9 +275,19 @@ private suspend fun fetchAndIndexWhaleDelegators(networks: List<Network>) {
             continue
         }
 
-        val topDreps = delegCounts.entries
+        // Union top-N by delegator count with top-N by VP so high-VP/low-delegator DReps
+        // (e.g. a DRep with 3 delegators each holding 1M+ ADA) are also indexed.
+        val topByDelegators = delegCounts.entries
             .sortedByDescending { it.value }
             .take(WHALE_TOP_DREPS)
+            .map { it.key }
+        val stakeMap = CardanoCache.drepStakeMap.getIfPresent(network.name) ?: emptyMap()
+        val topByVp = stakeMap.entries
+            .sortedByDescending { it.value }
+            .take(WHALE_TOP_DREPS)
+            .map { it.key }
+        val candidateCredHexes = (topByDelegators + topByVp).distinct()
+        val topDreps = candidateCredHexes.map { it to (delegCounts[it] ?: 0) }
 
         var indexed = 0
         for ((credHex, delegatorCount) in topDreps) {

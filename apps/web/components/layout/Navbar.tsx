@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useWalletStore } from "@/store/wallet"
 import WalletModal from "@/components/wallet/WalletModal"
 
@@ -14,6 +14,12 @@ const navLinks = [
   { href: "/governance-actions", label: "Governance Actions" },
 ]
 
+const othersLinks = [
+  { href: "/treasury-projection", label: "Treasury Projection" },
+  { href: "/user-guides",         label: "User Guides" },
+  { href: "/about",               label: "About" },
+]
+
 function truncate(addr: string, chars = 6) {
   if (!addr || addr.length <= chars * 2 + 3) return addr
   return `${addr.slice(0, chars)}...${addr.slice(-4)}`
@@ -21,7 +27,21 @@ function truncate(addr: string, chars = 6) {
 
 export default function Navbar() {
   const pathname = usePathname()
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileOpen,  setMobileOpen]  = useState(false)
+  const [othersOpen,  setOthersOpen]  = useState(false)
+  const [mobileOthersOpen, setMobileOthersOpen] = useState(false)
+  const othersRef = useRef<HTMLDivElement>(null)
+
+  // Close Others dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (othersRef.current && !othersRef.current.contains(e.target as Node)) {
+        setOthersOpen(false)
+      }
+    }
+    if (othersOpen) document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [othersOpen])
 
   const { isConnected, isWalletHydrating, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal, reset } =
     useWalletStore()
@@ -78,6 +98,68 @@ export default function Navbar() {
                 </Link>
               )
             })}
+
+            {/* Others dropdown */}
+            <div ref={othersRef} className="relative">
+              <button
+                onClick={() => setOthersOpen(o => !o)}
+                className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  othersLinks.some(l => pathname.startsWith(l.href))
+                    ? "text-accent-light bg-accent/10"
+                    : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+                }`}
+              >
+                Others
+                <svg
+                  width="12" height="12" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                  className={`transition-transform duration-150 ${othersOpen ? "rotate-180" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              {othersOpen && (
+                <div className="absolute top-full left-0 mt-1.5 w-52 bg-bg-card border border-border-default rounded-xl shadow-2xl py-1.5 z-50 animate-fade-in">
+                  {othersLinks.map(link => {
+                    const isActive = pathname.startsWith(link.href)
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setOthersOpen(false)}
+                        className={`flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
+                          isActive
+                            ? "text-accent-light bg-accent/10"
+                            : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+                        }`}
+                      >
+                        {link.label === "Treasury Projection" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                            <polyline points="17 6 23 6 23 12" />
+                          </svg>
+                        )}
+                        {link.label === "User Guides" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                          </svg>
+                        )}
+                        {link.label === "About" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
+                          </svg>
+                        )}
+                        {link.label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right side */}
@@ -226,6 +308,44 @@ export default function Navbar() {
                   </Link>
                 )
               })}
+
+              {/* Others section in mobile */}
+              <div>
+                <button
+                  onClick={() => setMobileOthersOpen(o => !o)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
+                >
+                  Others
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                    className={`transition-transform duration-150 ${mobileOthersOpen ? "rotate-180" : ""}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                {mobileOthersOpen && (
+                  <div className="pl-4 space-y-0.5 mt-0.5">
+                    {othersLinks.map(link => {
+                      const isActive = pathname.startsWith(link.href)
+                      return (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          onClick={() => { setMobileOpen(false); setMobileOthersOpen(false) }}
+                          className={`block px-3 py-2 rounded-lg text-sm transition-colors ${
+                            isActive
+                              ? "text-accent-light bg-accent/10"
+                              : "text-text-muted hover:text-text-secondary hover:bg-white/5"
+                          }`}
+                        >
+                          {link.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
 
               {/* Network selector in mobile */}
               <div className="flex items-center gap-2 px-3 py-2">
