@@ -1,6 +1,5 @@
-# Database backups — never commit SQL dumps or metadata fetches to git
-backups/*.sql
-backups/ga_metadata_*.json
+# Backups directory — never commit to git
+backups/
 
 # Dependencies
 node_modules/
