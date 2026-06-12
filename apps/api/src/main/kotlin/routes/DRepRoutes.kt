@@ -27,6 +27,7 @@ import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.DrepVotes
 import vote.tempo.db.GovernanceActionSnapshots
+import vote.tempo.db.IdxGovernanceProposals
 
 internal val httpClient = HttpClient(CIO)
 
@@ -195,8 +196,20 @@ fun Route.drepRoutes() {
                 activeVotingPower.toDouble() / stakeCtx!!.totalActiveDRepStake.toDouble() * 100.0
             else 0.0
 
-            // ── Total GA count from DB snapshot + live Ogmios ─────────────────
-            val dbGaCount = runCatching {
+            // ── Total GA count: chain index (all since Conway genesis) > snapshots > live ──
+            // idx_governance_proposals is populated by VoteIndexer from chain-sync —
+            // covers all proposals since Conway genesis, not just post-deployment ones.
+            // governance_action_snapshots only has proposals BackgroundPoller has seen,
+            // which causes totalGaCount << votedCount → votedPercent > 100%.
+            val chainIdxGaCount = runCatching {
+                transaction {
+                    IdxGovernanceProposals.selectAll()
+                        .where { IdxGovernanceProposals.network eq network.name.lowercase() }
+                        .count()
+                        .toInt()
+                }
+            }.getOrDefault(0)
+            val snapshotGaCount = runCatching {
                 transaction {
                     GovernanceActionSnapshots.selectAll()
                         .where { GovernanceActionSnapshots.network eq network.name.lowercase() }
@@ -216,8 +229,10 @@ fun Route.drepRoutes() {
             val votedCount = if (votedCountVi > 0) votedCountVi
                 else ChainIndexDao.getVotedCountFromSnapshots(credentialHex, network.name.lowercase())
 
-            val liveGaCount     = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
-            val totalGaCount    = dbGaCount.coerceAtLeast(liveGaCount)
+            val liveGaCount  = CardanoCache.parsedGovActions.getIfPresent(network.name)?.size ?: 0
+            // Chain index is the most complete source; fall back in order of completeness.
+            val totalGaCount = if (chainIdxGaCount > 0) chainIdxGaCount.coerceAtLeast(liveGaCount)
+                               else snapshotGaCount.coerceAtLeast(liveGaCount)
 
             val votedPercent    = if (totalGaCount > 0) votedCount.toDouble() / totalGaCount * 100.0 else 0.0
             val notVotedPercent = (100.0 - votedPercent).coerceAtLeast(0.0)

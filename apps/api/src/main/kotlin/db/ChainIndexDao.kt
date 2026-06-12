@@ -181,17 +181,21 @@ object ChainIndexDao {
         }
     }.getOrNull()
 
-    /** Number of governance actions a DRep has voted on (DRep role only). */
-    fun getVotedCount(drepCredentialHex: String, network: String): Int = transaction {
-        DrepVotes
-            .selectAll()
-            .where {
-                (DrepVotes.network eq network) and
-                (DrepVotes.drepCredentialHex eq drepCredentialHex) and
-                (DrepVotes.voterRole eq "drep")
-            }
-            .count()
-            .toInt()
+    /** Number of distinct governance actions a DRep has voted on (DRep role only). */
+    fun getVotedCount(drepCredentialHex: String, network: String): Int {
+        var count = 0
+        transaction {
+            exec(
+                """SELECT COUNT(DISTINCT proposal_tx_hash || '#' || proposal_index)
+                   FROM drep_votes
+                   WHERE network = ? AND drep_credential_hex = ? AND voter_role = 'drep'""",
+                listOf(
+                    Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network),
+                    Pair<IColumnType<*>, Any?>(VarCharColumnType(56), drepCredentialHex),
+                )
+            ) { rs -> if (rs.next()) count = rs.getInt(1) }
+        }
+        return count
     }
 
     /**
