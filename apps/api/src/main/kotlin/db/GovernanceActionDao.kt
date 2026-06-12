@@ -85,6 +85,16 @@ object GovernanceActionDao {
                     logger.debug { "GovernanceActionDao [$network] epoch=$currentEpoch upserted=${proposals.size}" }
                 }
             }
+
+            // Persist per-voter voting_power into drep_votes so that when a proposal later
+            // expires and leaves Ogmios, historical detail views can still show real power.
+            for (proposal in proposals) {
+                if (proposal.votes.isNotEmpty()) {
+                    ChainIndexDao.updateVotingPowerForProposal(
+                        network, proposal.txHash, proposal.index, proposal.votes
+                    )
+                }
+            }
         }.onFailure { e ->
             logger.warn { "GovernanceActionDao.sync failed (DB unavailable?): ${e.message}" }
         }
@@ -127,27 +137,34 @@ object GovernanceActionDao {
 
             if (rows.isEmpty()) return@transaction emptyList<GovernanceActionDto>()
 
-            // Aggregate vote counts per (proposalTxHash, proposalIndex, voterRole, vote) in SQL.
-            // This avoids loading all drep_votes rows into memory.
+            // Aggregate vote counts + voting_power per (proposalTxHash, proposalIndex, voterRole, vote) in SQL.
+            // voting_power is populated by BackgroundPoller for active proposals — 0 for pre-deployment GAs.
             data class VoteTally(
                 var drepYes: Int = 0, var drepNo: Int = 0, var drepAbstain: Int = 0,
                 var ccYes: Int   = 0, var ccNo: Int   = 0, var ccAbstain: Int   = 0,
                 var spoYes: Int  = 0, var spoNo: Int  = 0, var spoAbstain: Int  = 0,
+                var drepYesPower: Long = 0L, var drepNoPower: Long = 0L, var drepAbstainPower: Long = 0L,
             )
 
             val tally = mutableMapOf<String, VoteTally>()
             val cnt   = DrepVotes.id.count()
+            val power = DrepVotes.votingPower.sum()
 
             DrepVotes
-                .select(DrepVotes.proposalTxHash, DrepVotes.proposalIndex, DrepVotes.voterRole, DrepVotes.vote, cnt)
+                .select(DrepVotes.proposalTxHash, DrepVotes.proposalIndex, DrepVotes.voterRole, DrepVotes.vote, cnt, power)
                 .where { DrepVotes.network eq network }
                 .groupBy(DrepVotes.proposalTxHash, DrepVotes.proposalIndex, DrepVotes.voterRole, DrepVotes.vote)
                 .forEach { r ->
-                    val key   = "${r[DrepVotes.proposalTxHash]}:${r[DrepVotes.proposalIndex]}"
-                    val t     = tally.getOrPut(key) { VoteTally() }
-                    val count = r[cnt].toInt()
+                    val key      = "${r[DrepVotes.proposalTxHash]}:${r[DrepVotes.proposalIndex]}"
+                    val t        = tally.getOrPut(key) { VoteTally() }
+                    val count    = r[cnt].toInt()
+                    val totalPow = r[power] ?: 0L
                     when (r[DrepVotes.voterRole]) {
-                        "drep" -> when (r[DrepVotes.vote]) { "yes" -> t.drepYes += count; "no" -> t.drepNo += count; else -> t.drepAbstain += count }
+                        "drep" -> when (r[DrepVotes.vote]) {
+                            "yes"     -> { t.drepYes     += count; t.drepYesPower     += totalPow }
+                            "no"      -> { t.drepNo      += count; t.drepNoPower      += totalPow }
+                            else      -> { t.drepAbstain += count; t.drepAbstainPower += totalPow }
+                        }
                         "cc"   -> when (r[DrepVotes.vote]) { "yes" -> t.ccYes   += count; "no" -> t.ccNo   += count; else -> t.ccAbstain   += count }
                         "spo"  -> when (r[DrepVotes.vote]) { "yes" -> t.spoYes  += count; "no" -> t.spoNo  += count; else -> t.spoAbstain  += count }
                     }
@@ -170,7 +187,7 @@ object GovernanceActionDao {
                     anchorHash   = row[IdxGovernanceProposals.anchorHash],
                     expiresEpoch = expiresEpoch,
                     deposit      = row[IdxGovernanceProposals.deposit],
-                    drepVotes    = DRepVoteStats(t.drepYes, t.drepNo, t.drepAbstain, 0L, 0L, 0L, 0L, 0L, 0L),
+                    drepVotes    = DRepVoteStats(t.drepYes, t.drepNo, t.drepAbstain, t.drepYesPower, t.drepNoPower, t.drepAbstainPower, 0L, 0L, 0L),
                     spoVotes     = SPOVoteStats(t.spoYes, t.spoNo, t.spoAbstain),
                     ccVotes      = VoteCounts(t.ccYes, t.ccNo, t.ccAbstain),
                     votes        = emptyList(),

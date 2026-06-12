@@ -5,6 +5,7 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.VarCharColumnType
 import vote.tempo.cardano.PoolInfo
+import vote.tempo.cardano.VoteEntry
 
 /**
  * Query layer for chain index tables populated by the extended VoteIndexer.
@@ -112,6 +113,73 @@ object ChainIndexDao {
             result
         }
     }
+
+    /**
+     * Load individual vote entries for a single proposal from drep_votes.
+     * Used by the detail endpoint to populate the vote history tab for historical proposals
+     * (getHistoricalFromIndex returns votes = emptyList() to avoid bloating the list response).
+     * Capped at 2000 rows — enough to cover any realistic proposal.
+     */
+    fun getVoteEntriesForProposal(network: String, txHash: String, index: Int): List<VoteEntry> =
+        transaction {
+            DrepVotes
+                .select(
+                    DrepVotes.drepCredentialHex,
+                    DrepVotes.voterRole,
+                    DrepVotes.vote,
+                    DrepVotes.anchorUrl,
+                    DrepVotes.votingPower,
+                )
+                .where {
+                    (DrepVotes.network eq network) and
+                    (DrepVotes.proposalTxHash eq txHash) and
+                    (DrepVotes.proposalIndex eq index)
+                }
+                .orderBy(DrepVotes.slot, SortOrder.ASC)
+                .limit(2000)
+                .mapNotNull { row ->
+                    val role = row[DrepVotes.voterRole]
+                    if (role !in setOf("drep", "cc", "spo")) return@mapNotNull null
+                    VoteEntry(
+                        role         = role,
+                        id           = row[DrepVotes.drepCredentialHex],
+                        vote         = row[DrepVotes.vote],
+                        votingPower  = row[DrepVotes.votingPower],
+                        anchorUrl    = null,
+                        rationaleUrl = row[DrepVotes.anchorUrl],
+                        memberName   = null,
+                        poolName     = null,
+                        voterName    = null,
+                    )
+                }
+        }
+
+    /**
+     * Bulk-update voting_power in drep_votes from a live BackgroundPoller snapshot.
+     * Called after each BackgroundPoller refresh so that when a proposal later expires
+     * and leaves Ogmios, drep_votes retains the last-known per-voter stake.
+     * Only updates rows where voting_power would change (non-zero power from Ogmios).
+     */
+    fun updateVotingPowerForProposal(
+        network: String,
+        proposalTxHash: String,
+        proposalIndex: Int,
+        votes: List<VoteEntry>,
+    ) = runCatching {
+        transaction {
+            for (vote in votes) {
+                if (vote.votingPower <= 0L) continue
+                DrepVotes.update({
+                    (DrepVotes.network          eq network) and
+                    (DrepVotes.proposalTxHash   eq proposalTxHash) and
+                    (DrepVotes.proposalIndex     eq proposalIndex) and
+                    (DrepVotes.drepCredentialHex eq vote.id)
+                }) {
+                    it[DrepVotes.votingPower] = vote.votingPower
+                }
+            }
+        }
+    }.getOrNull()
 
     /** Number of governance actions a DRep has voted on (DRep role only). */
     fun getVotedCount(drepCredentialHex: String, network: String): Int = transaction {

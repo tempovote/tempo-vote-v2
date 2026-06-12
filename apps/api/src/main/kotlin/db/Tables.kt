@@ -92,12 +92,13 @@ object DrepVotes : Table("drep_votes") {
     val anchorUrl         = text("anchor_url").nullable()
     val anchorHash        = text("anchor_hash").nullable()
     val expiresEpoch      = integer("expires_epoch").nullable()
+    val votingPower       = long("voting_power").default(0)
 
     override val primaryKey = PrimaryKey(id)
 }
 
 object IndexerCheckpoint : Table("indexer_checkpoint") {
-    val network   = varchar("network", 10)
+    val network   = varchar("network", 30)  // supports milestone keys like "mainnet_conway_genesis"
     val slot      = long("slot")
     val blockHash = varchar("block_hash", 64)
 
