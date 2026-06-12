@@ -6,6 +6,7 @@ import type {
   HardForkDetails,
   NewConstitutionDetails,
   TreasuryWithdrawalDetails,
+  TreasuryWithdrawalRow,
   UpdateCommitteeDetails,
   ProtocolParamChangeDetails,
 } from "@tempo/types"
@@ -272,7 +273,19 @@ function NewConstitutionDetail({ d }: { d: NewConstitutionDetails }) {
 }
 
 function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
-  const totalLovelace = d.withdrawals.reduce((s, w) => s + w.lovelace, 0)
+  // Ogmios returns withdrawals as { stakeAddr: { ada: { lovelace: N } } } (object),
+  // but older/normalized data may already be an array. Handle both.
+  const raw = d as unknown as Record<string, unknown>
+  const withdrawals: TreasuryWithdrawalRow[] = Array.isArray(d.withdrawals)
+    ? d.withdrawals
+    : Object.entries((d.withdrawals ?? {}) as Record<string, { ada?: { lovelace?: number } }>)
+        .map(([addr, val]) => ({ stakeCredential: addr, lovelace: val?.ada?.lovelace ?? 0 }))
+
+  // Ogmios nests guardrails hash as { guardrails: { hash: "..." } }
+  const guardrailsHash = d.guardrailsHash
+    ?? (raw.guardrails as { hash?: string } | undefined)?.hash
+
+  const totalLovelace = withdrawals.reduce((s, w) => s + w.lovelace, 0)
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-xl border border-border-subtle">
@@ -284,7 +297,7 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
             </tr>
           </thead>
           <tbody>
-            {d.withdrawals.map((w, i) => (
+            {withdrawals.map((w, i) => (
               <tr key={i} className="border-b border-border-subtle/50 last:border-0">
                 <td className="px-3 py-2 font-mono text-xs text-text-secondary">
                   {shortHash(w.stakeCredential)}
@@ -297,7 +310,7 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
               </tr>
             ))}
           </tbody>
-          {d.withdrawals.length > 1 && (
+          {withdrawals.length > 1 && (
             <tfoot>
               <tr className="bg-bg-secondary border-t border-border-subtle">
                 <td className="px-3 py-2 text-xs text-text-muted font-semibold">Tổng cộng</td>
@@ -310,8 +323,8 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
           )}
         </table>
       </div>
-      {d.guardrailsHash && (
-        <HashRow label="Guardrails Script Hash" value={d.guardrailsHash} />
+      {guardrailsHash && (
+        <HashRow label="Guardrails Script Hash" value={guardrailsHash} />
       )}
       <PrevAction txHash={d.prevActionTxHash} index={d.prevActionIndex} />
     </div>
