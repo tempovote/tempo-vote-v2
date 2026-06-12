@@ -128,6 +128,7 @@ object ChainIndexDao {
                     DrepVotes.voterRole,
                     DrepVotes.vote,
                     DrepVotes.anchorUrl,
+                    DrepVotes.votingPower,
                 )
                 .where {
                     (DrepVotes.network eq network) and
@@ -143,7 +144,7 @@ object ChainIndexDao {
                         role         = role,
                         id           = row[DrepVotes.drepCredentialHex],
                         vote         = row[DrepVotes.vote],
-                        votingPower  = 0L,
+                        votingPower  = row[DrepVotes.votingPower],
                         anchorUrl    = null,
                         rationaleUrl = row[DrepVotes.anchorUrl],
                         memberName   = null,
@@ -152,6 +153,33 @@ object ChainIndexDao {
                     )
                 }
         }
+
+    /**
+     * Bulk-update voting_power in drep_votes from a live BackgroundPoller snapshot.
+     * Called after each BackgroundPoller refresh so that when a proposal later expires
+     * and leaves Ogmios, drep_votes retains the last-known per-voter stake.
+     * Only updates rows where voting_power would change (non-zero power from Ogmios).
+     */
+    fun updateVotingPowerForProposal(
+        network: String,
+        proposalTxHash: String,
+        proposalIndex: Int,
+        votes: List<VoteEntry>,
+    ) = runCatching {
+        transaction {
+            for (vote in votes) {
+                if (vote.votingPower <= 0L) continue
+                DrepVotes.update({
+                    (DrepVotes.network          eq network) and
+                    (DrepVotes.proposalTxHash   eq proposalTxHash) and
+                    (DrepVotes.proposalIndex     eq proposalIndex) and
+                    (DrepVotes.drepCredentialHex eq vote.id)
+                }) {
+                    it[DrepVotes.votingPower] = vote.votingPower
+                }
+            }
+        }
+    }.getOrNull()
 
     /** Number of governance actions a DRep has voted on (DRep role only). */
     fun getVotedCount(drepCredentialHex: String, network: String): Int = transaction {

@@ -92,6 +92,7 @@ object DrepVotes : Table("drep_votes") {
     val anchorUrl         = text("anchor_url").nullable()
     val anchorHash        = text("anchor_hash").nullable()
     val expiresEpoch      = integer("expires_epoch").nullable()
+    val votingPower       = long("voting_power").default(0)
 
     override val primaryKey = PrimaryKey(id)
 }
