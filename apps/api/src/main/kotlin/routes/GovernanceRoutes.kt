@@ -182,6 +182,8 @@ fun Route.governanceRoutes() {
         /**
          * GET /governance-actions/{txHash}/{index}?network=preprod
          * Returns a single governance action. 404 if not found.
+         * For historical proposals (votes = emptyList from getHistoricalFromIndex), loads
+         * individual vote entries from drep_votes so the vote history tab is populated.
          */
         get("/{txHash}/{index}") {
             val txHash = call.parameters["txHash"]
@@ -194,6 +196,11 @@ fun Route.governanceRoutes() {
 
             if (proposal == null) {
                 call.respond(HttpStatusCode.NotFound, mapOf("error" to "Governance action not found"))
+            } else if (proposal.votes.isEmpty()) {
+                val dbVotes = withContext(Dispatchers.IO) {
+                    ChainIndexDao.getVoteEntriesForProposal(network.name.lowercase(), txHash, index)
+                }
+                call.respond(proposal.copy(votes = dbVotes))
             } else {
                 call.respond(proposal)
             }

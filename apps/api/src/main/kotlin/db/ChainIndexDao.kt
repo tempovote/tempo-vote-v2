@@ -5,6 +5,7 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.VarCharColumnType
 import vote.tempo.cardano.PoolInfo
+import vote.tempo.cardano.VoteEntry
 
 /**
  * Query layer for chain index tables populated by the extended VoteIndexer.
@@ -112,6 +113,45 @@ object ChainIndexDao {
             result
         }
     }
+
+    /**
+     * Load individual vote entries for a single proposal from drep_votes.
+     * Used by the detail endpoint to populate the vote history tab for historical proposals
+     * (getHistoricalFromIndex returns votes = emptyList() to avoid bloating the list response).
+     * Capped at 2000 rows — enough to cover any realistic proposal.
+     */
+    fun getVoteEntriesForProposal(network: String, txHash: String, index: Int): List<VoteEntry> =
+        transaction {
+            DrepVotes
+                .select(
+                    DrepVotes.drepCredentialHex,
+                    DrepVotes.voterRole,
+                    DrepVotes.vote,
+                    DrepVotes.anchorUrl,
+                )
+                .where {
+                    (DrepVotes.network eq network) and
+                    (DrepVotes.proposalTxHash eq txHash) and
+                    (DrepVotes.proposalIndex eq index)
+                }
+                .orderBy(DrepVotes.slot, SortOrder.ASC)
+                .limit(2000)
+                .mapNotNull { row ->
+                    val role = row[DrepVotes.voterRole]
+                    if (role !in setOf("drep", "cc", "spo")) return@mapNotNull null
+                    VoteEntry(
+                        role         = role,
+                        id           = row[DrepVotes.drepCredentialHex],
+                        vote         = row[DrepVotes.vote],
+                        votingPower  = 0L,
+                        anchorUrl    = null,
+                        rationaleUrl = row[DrepVotes.anchorUrl],
+                        memberName   = null,
+                        poolName     = null,
+                        voterName    = null,
+                    )
+                }
+        }
 
     /** Number of governance actions a DRep has voted on (DRep role only). */
     fun getVotedCount(drepCredentialHex: String, network: String): Int = transaction {
