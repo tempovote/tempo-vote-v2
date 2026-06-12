@@ -11,10 +11,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import org.jetbrains.exposed.sql.IColumnType
 import org.jetbrains.exposed.sql.SortOrder
+import org.jetbrains.exposed.sql.VarCharColumnType
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.transactions.TransactionManager
 import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
@@ -79,35 +82,65 @@ fun Route.drepRoutes() {
             // Key: "proposalTxHash#proposalIndex" → vote entry (dedup keeps most recent)
             val merged = mutableMapOf<String, JsonObject>()
 
-            // ── Source 1: Chain-sync indexed votes from DB ────────────────────
+            // ── Source 1: Chain-sync indexed votes joined with proposal metadata ─
+            // LEFT JOIN idx_governance_proposals to get action_type + expires_epoch
+            // for ALL proposals (VoteIndexer doesn't store these on the vote row itself).
+            // network.name.lowercase() — enum is "MAINNET" but DB stores "mainnet".
             try {
                 transaction {
-                    DrepVotes.selectAll()
-                        .where {
-                            (DrepVotes.network eq network.name) and
-                            (DrepVotes.drepCredentialHex eq credentialHex)
-                        }
-                        .orderBy(DrepVotes.slot, SortOrder.DESC)
-                        .forEach { row ->
-                            val key = "${row[DrepVotes.proposalTxHash]}#${row[DrepVotes.proposalIndex]}"
+                    exec(
+                        """
+                        SELECT dv.proposal_tx_hash, dv.proposal_index,
+                               COALESCE(dv.anchor_url, gp.anchor_url) AS anchor_url,
+                               dv.vote, dv.slot,
+                               COALESCE(gp.action_type, dv.action_type)     AS resolved_type,
+                               COALESCE(gp.expires_epoch, dv.expires_epoch) AS resolved_expires,
+                               gp.title                                      AS ga_title
+                        FROM drep_votes dv
+                        LEFT JOIN idx_governance_proposals gp
+                            ON  gp.network       = dv.network
+                            AND gp.tx_hash       = dv.proposal_tx_hash
+                            AND gp.index         = dv.proposal_index
+                        WHERE dv.network = ? AND dv.drep_credential_hex = ?
+                          AND dv.voter_role = 'drep'
+                        ORDER BY dv.slot DESC
+                        """.trimIndent(),
+                        listOf(
+                            Pair<IColumnType<*>, Any?>(VarCharColumnType(10), network.name.lowercase()),
+                            Pair<IColumnType<*>, Any?>(VarCharColumnType(56), credentialHex),
+                        ),
+                    ) { rs ->
+                        while (rs.next()) {
+                            val proposalTxHash = rs.getString("proposal_tx_hash")
+                            val proposalIndex  = rs.getInt("proposal_index")
+                            val actionType     = rs.getString("resolved_type") ?: "unknown"
+                            val anchorUrl      = rs.getString("anchor_url")
+                            val vote           = rs.getString("vote")
+                            val slot           = rs.getLong("slot")
+                            val expiresEpoch   = rs.getInt("resolved_expires").takeIf { !rs.wasNull() }
+                            val gaTitle        = rs.getString("ga_title")
+
+                            val key = "$proposalTxHash#$proposalIndex"
                             merged[key] = buildJsonObject {
-                                put("txHash",      row[DrepVotes.proposalTxHash])
-                                put("index",       row[DrepVotes.proposalIndex])
-                                put("type",        actionTypeLabel(row[DrepVotes.actionType] ?: "unknown"))
-                                put("actionType",  row[DrepVotes.actionType] ?: "unknown")
-                                put("anchorUrl",   row[DrepVotes.anchorUrl]?.let { JsonPrimitive(it) } ?: JsonNull)
-                                put("vote",        row[DrepVotes.vote])
-                                put("expiresEpoch", row[DrepVotes.expiresEpoch]?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("txHash",       proposalTxHash)
+                                put("index",        proposalIndex)
+                                put("type",         actionTypeLabel(actionType))
+                                put("actionType",   actionType)
+                                put("anchorUrl",    anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("vote",         vote)
+                                put("expiresEpoch", expiresEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("slot",         slot)
+                                put("title",        gaTitle?.let { JsonPrimitive(it) } ?: JsonNull)
                             }
                         }
+                    }
                 }
             } catch (_: Exception) {
                 // DB unavailable — continue with ledger-state source only
             }
 
             // ── Source 2: Active proposals from Ogmios ledger state ───────────
-            // Enriches DB entries with action metadata; also covers proposals not
-            // yet indexed (e.g. submitted in the current slot window).
+            // Enriches DB entries with live expiresEpoch; preserves slot from DB for sort.
             try {
                 val raw = CardanoCache.govActions.getIfPresent(network.name) ?: run {
                     val r = OgmiosStateQueries(network).getGovernanceProposals()
@@ -145,6 +178,7 @@ fun Route.drepRoutes() {
                     val expiresEpoch = obj["until"]?.jsonObject?.get("epoch")?.jsonPrimitive?.int
 
                     val key = "$proposalTxHash#$index"
+                    val existing = merged[key]
                     merged[key] = buildJsonObject {
                         put("txHash",      proposalTxHash)
                         put("index",       index)
@@ -153,12 +187,17 @@ fun Route.drepRoutes() {
                         put("anchorUrl",   anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
                         put("vote",        myVote)
                         put("expiresEpoch", expiresEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
+                        // preserve DB slot + title from Source 1 if available
+                        existing?.get("slot")?.let { put("slot", it) }
+                        existing?.get("title")?.let { put("title", it) }
                     }
                 }
             } catch (_: Exception) { }
 
+            // Sort: slot DESC (most recent votes first). Entries without slot (Ogmios-only,
+            // not yet indexed) use Long.MAX_VALUE so they appear at top.
             val allVotes = merged.values
-                .sortedByDescending { it["expiresEpoch"]?.jsonPrimitive?.intOrNull ?: 0 }
+                .sortedByDescending { it["slot"]?.jsonPrimitive?.longOrNull ?: Long.MAX_VALUE }
             val total = allVotes.size
             val offset = (page - 1) * limit
             val pageVotes = allVotes.drop(offset).take(limit)

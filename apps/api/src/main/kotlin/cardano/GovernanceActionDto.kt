@@ -63,6 +63,7 @@ data class GovernanceActionDto(
     val votes: List<VoteEntry> = emptyList(),  // individual votes for vote history display
     val details: JsonElement? = null,           // type-specific action body — see extractActionDetails()
     val status: String = "active",              // computed by computeGAStatus()
+    val title: String? = null,                  // resolved from anchor metadata (idx_governance_proposals.title)
 )
 
 /**

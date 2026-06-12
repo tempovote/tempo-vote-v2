@@ -50,8 +50,10 @@ object ChainIndexDao {
      * Compute Map<drepCredentialHex, delegatorCount> using a PostgreSQL DISTINCT ON query.
      * Resolves latest delegation per stake credential in the DB engine — result set is at
      * most one row per active DRep (hundreds), not one row per delegation cert (millions).
+     * Public so BackgroundPoller can populate drepDelegatorCounts from accurate chain data
+     * instead of the Ogmios `delegators` array (which is capped at ~8 MB response size).
      */
-    private fun latestDelegationsByDrep(network: String): Map<String, Int> {
+    fun latestDelegationsByDrep(network: String): Map<String, Int> {
         val result = mutableMapOf<String, Int>()
         transaction {
             exec(
@@ -86,6 +88,21 @@ object ChainIndexDao {
                 }
                 .associate { it[DrepVotes.drepCredentialHex] to it[DrepVotes.anchorUrl]!! }
         }
+
+    /**
+     * Batch-load GA titles from idx_governance_proposals for a whole network.
+     * Returns Map<"txHash#index", title> — missing rows have no entry.
+     * One query for the entire list; callers merge into DTOs with a simple lookup.
+     */
+    fun buildGaTitleMap(network: String): Map<String, String> = transaction {
+        IdxGovernanceProposals
+            .select(IdxGovernanceProposals.txHash, IdxGovernanceProposals.index, IdxGovernanceProposals.title)
+            .where {
+                (IdxGovernanceProposals.network eq network) and
+                IdxGovernanceProposals.title.isNotNull()
+            }
+            .associate { "${it[IdxGovernanceProposals.txHash]}#${it[IdxGovernanceProposals.index]}" to it[IdxGovernanceProposals.title]!! }
+    }
 
     /**
      * Build rationale maps for multiple proposals at once.
@@ -180,6 +197,57 @@ object ChainIndexDao {
             }
         }
     }.getOrNull()
+
+    /**
+     * Bulk-update voting_power = 0 rows using the Ogmios stakeMap (credentialHex → lovelace).
+     * Runs after each BackgroundPoller refresh to cover DReps still registered in Ogmios.
+     * Never overwrites existing non-zero values — those are accurate historical snapshots.
+     * Returns total number of rows updated.
+     */
+    fun bulkUpdateDRepVotingPowerFromMap(network: String, stakeMap: Map<String, Long>): Int {
+        val nonZero = stakeMap.filter { (cred, power) -> power > 0L && cred.length == 56 }
+        if (nonZero.isEmpty()) return 0
+        return transaction {
+            var total = 0
+            for ((cred, power) in nonZero) {
+                total += DrepVotes.update({
+                    (DrepVotes.network          eq network) and
+                    (DrepVotes.drepCredentialHex eq cred) and
+                    (DrepVotes.voterRole         eq "drep") and
+                    (DrepVotes.votingPower       eq 0L)
+                }) { it[DrepVotes.votingPower] = power }
+            }
+            total
+        }
+    }
+
+    /** Returns distinct DRep credential hexes that still have voting_power = 0. */
+    fun getDrepCredentialsWithZeroPower(network: String): List<String> =
+        transaction {
+            DrepVotes
+                .select(DrepVotes.drepCredentialHex)
+                .where {
+                    (DrepVotes.network     eq network) and
+                    (DrepVotes.voterRole   eq "drep") and
+                    (DrepVotes.votingPower eq 0L)
+                }
+                .withDistinct()
+                .map { it[DrepVotes.drepCredentialHex] }
+        }
+
+    /**
+     * Update voting_power for all drep_votes rows of a specific DRep where existing value is 0.
+     * Used by the Blockfrost backfiller to fill power for deregistered DReps.
+     */
+    fun updateVotingPowerForCredential(network: String, credHex: String, power: Long): Int =
+        transaction {
+            DrepVotes.update({
+                (DrepVotes.network          eq network) and
+                (DrepVotes.drepCredentialHex eq credHex) and
+                (DrepVotes.voterRole         eq "drep") and
+                (DrepVotes.votingPower       eq 0L)
+            }) { it[DrepVotes.votingPower] = power }
+        }
 
     /** Number of distinct governance actions a DRep has voted on (DRep role only). */
     fun getVotedCount(drepCredentialHex: String, network: String): Int {

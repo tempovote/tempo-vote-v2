@@ -185,6 +185,8 @@ object IdxGovernanceProposals : Table("idx_governance_proposals") {
     val expiresEpoch   = integer("expires_epoch")
     val actionDetails  = text("action_details").nullable()  // raw Ogmios action JSON
     val returnAddress  = text("return_address").nullable()
+    val title          = text("title").nullable()
+    val abstract       = text("abstract").nullable()
 
     override val primaryKey = PrimaryKey(network, txHash, index)
 }

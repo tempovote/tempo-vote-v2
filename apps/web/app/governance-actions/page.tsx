@@ -46,14 +46,14 @@ export default function GovernanceActionsPage() {
       ? actions.filter((a) => a.status === activeFilter)
       : actions
 
-  // Batch-resolve anchor titles so we can search by proposal name (from IPFS metadata).
-  // Re-renders as titles load in, so filter results stay live while fetches complete.
-  const titlesMap = useAnchorTitlesMap(statusFiltered.map((a) => a.anchorUrl))
+  // Titles are served by the API (DB-backed). Only fall back to anchor-fetch for GAs
+  // not yet in the DB (new proposals). Pass null for anchors that already have a title.
+  const titlesMap = useAnchorTitlesMap(statusFiltered.map((a) => a.title ? null : a.anchorUrl))
 
   const q = search.trim().toLowerCase()
   const visible = [...(q
     ? statusFiltered.filter((a) => {
-        const title = a.anchorUrl ? (titlesMap.get(a.anchorUrl) ?? null) : null
+        const title = a.title ?? (a.anchorUrl ? (titlesMap.get(a.anchorUrl) ?? null) : null)
         return (
           a.txHash.toLowerCase().includes(q) ||
           a.type.toLowerCase().includes(q) ||

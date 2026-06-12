@@ -413,9 +413,10 @@ export default function GovernanceActionDetailPage({
 
   const { action, loading, error: fetchError } = useGovernanceAction(network, txHash, index)
 
-  const anchorTitle = useAnchorTitle(action?.anchorUrl ?? null)
+  // Use DB title if available; fall back to anchor-fetch for new proposals not yet in DB
+  const anchorTitle = useAnchorTitle(action?.title ? null : (action?.anchorUrl ?? null))
 
-  const heading = anchorTitle ?? action?.type ?? "Governance Action"
+  const heading = action?.title ?? anchorTitle ?? action?.type ?? "Governance Action"
 
   return (
     <div className="page-container space-y-6">

@@ -127,12 +127,17 @@ private suspend fun pollNetwork(network: Network) {
             val dreps = q.getDelegateRepresentatives()
             CardanoCache.drepList.put(network.name, dreps)
 
-            // Delegator counts come directly from the same Ogmios response —
-            // no VoteIndexer or Koios needed.
-            val delegCounts = parseDRepDelegatorCounts(dreps)
+            // Delegator counts: prefer chain-indexed DB (accurate, full dataset) over the
+            // Ogmios `delegators` array which is truncated by the ~8 MB response cap.
+            // Fall back to Ogmios parse when idx_delegation_vote is not yet synced.
+            val delegCountsDb = withContext(Dispatchers.IO) {
+                ChainIndexDao.latestDelegationsByDrep(network.name.lowercase())
+            }
+            val delegCounts = delegCountsDb.takeIf { it.isNotEmpty() } ?: parseDRepDelegatorCounts(dreps)
             CardanoCache.drepDelegatorCounts.put(network.name, delegCounts)
             CardanoCache.leaderboard.invalidateAll()
-            logger.info { "BackgroundPoller [$network] delegator counts refreshed: ${delegCounts.size} DReps" }
+            val source = if (delegCountsDb.isNotEmpty()) "chain-index DB" else "Ogmios (fallback)"
+            logger.info { "BackgroundPoller [$network] delegator counts refreshed: ${delegCounts.size} DReps (source: $source)" }
 
             val gas = q.getGovernanceProposals()
             CardanoCache.govActions.put(network.name, gas)
@@ -168,6 +173,15 @@ private suspend fun pollNetwork(network: Network) {
             // Persist snapshot to DB — marks disappeared proposals with final status
             // so the list endpoint can serve a complete history (expired / enacted / dropped).
             GovernanceActionDao.sync(parsed, network.name.lowercase(), epoch)
+
+            // Bulk-update voting_power=0 rows for DReps currently in Ogmios stakeCtx.
+            // Covers: historical votes for active DReps that were expired before V12 migration.
+            // No-op after all rows are backfilled (UPDATE affects 0 rows).
+            val powerFilled = withContext(Dispatchers.IO) {
+                ChainIndexDao.bulkUpdateDRepVotingPowerFromMap(network.name.lowercase(), stakeCtx.stakeMap)
+            }
+            if (powerFilled > 0)
+                logger.info { "BackgroundPoller [$network] filled voting_power for $powerFilled vote rows from Ogmios stakeCtx" }
         }
         // Success — reset backoff
         consecutiveFailures.remove(network)
@@ -309,3 +323,4 @@ private suspend fun buildLocalRationalesMap(
         ChainIndexDao.buildRationalesMap(proposals, network.name.lowercase())
     }
 }
+

@@ -1,3 +1,7 @@
+# Database backups — never commit SQL dumps or metadata fetches to git
+backups/*.sql
+backups/ga_metadata_*.json
+
 # Dependencies
 node_modules/
 .pnpm-store/

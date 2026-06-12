@@ -92,6 +92,31 @@ suspend fun fetchPoolInfoBlockfrost(
 }
 
 /**
+ * Fetch a DRep's current amount from Blockfrost.
+ * Even for deregistered DReps, Blockfrost retains the last-known amount.
+ * Returns null if Blockfrost is not configured or the call fails/404s.
+ */
+suspend fun fetchDRepVotingPowerBlockfrost(drepId: String, network: Network): Long? {
+    val projectId = blockfrostProjectId(network) ?: return null
+    val base = blockfrostBaseUrl(network)
+    return runCatching {
+        withTimeout(10_000L) {
+            val resp = blockfrostHttp.get("$base/governance/dreps/$drepId") {
+                header("project_id", projectId)
+            }
+            if (!resp.status.isSuccess()) {
+                logger.warn { "Blockfrost GET /governance/dreps/$drepId → HTTP ${resp.status.value} [$network]" }
+                return@withTimeout null
+            }
+            val body = blockfrostJson.parseToJsonElement(resp.bodyAsText()).jsonObject
+            body["amount"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+        }
+    }.onFailure { e ->
+        logger.warn { "Blockfrost fetchDRepVotingPower failed for $drepId [$network]: ${e.message}" }
+    }.getOrNull()
+}
+
+/**
  * Fetch all delegators of a DRep from Blockfrost with their active stake amounts.
  * Paginates automatically (100 rows per page) until all delegators are fetched.
  *

@@ -76,6 +76,7 @@ export const GovernanceActionSchema = z.object({
   votes: z.array(VoteEntrySchema).default([]),  // individual votes for vote history display
   details: z.unknown().nullable().optional(),    // type-specific action body from extractActionDetails()
   status: z.string().default("active"),          // computed by backend: active | ratified | expired | enacted | dropped
+  title: z.string().nullable().optional(),       // resolved from anchor metadata; null if not yet fetched
 })
 export type GovernanceAction = z.infer<typeof GovernanceActionSchema>
 
