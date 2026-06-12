@@ -181,6 +181,57 @@ object ChainIndexDao {
         }
     }.getOrNull()
 
+    /**
+     * Bulk-update voting_power = 0 rows using the Ogmios stakeMap (credentialHex → lovelace).
+     * Runs after each BackgroundPoller refresh to cover DReps still registered in Ogmios.
+     * Never overwrites existing non-zero values — those are accurate historical snapshots.
+     * Returns total number of rows updated.
+     */
+    fun bulkUpdateDRepVotingPowerFromMap(network: String, stakeMap: Map<String, Long>): Int {
+        val nonZero = stakeMap.filter { (cred, power) -> power > 0L && cred.length == 56 }
+        if (nonZero.isEmpty()) return 0
+        return transaction {
+            var total = 0
+            for ((cred, power) in nonZero) {
+                total += DrepVotes.update({
+                    (DrepVotes.network          eq network) and
+                    (DrepVotes.drepCredentialHex eq cred) and
+                    (DrepVotes.voterRole         eq "drep") and
+                    (DrepVotes.votingPower       eq 0L)
+                }) { it[DrepVotes.votingPower] = power }
+            }
+            total
+        }
+    }
+
+    /** Returns distinct DRep credential hexes that still have voting_power = 0. */
+    fun getDrepCredentialsWithZeroPower(network: String): List<String> =
+        transaction {
+            DrepVotes
+                .select(DrepVotes.drepCredentialHex)
+                .where {
+                    (DrepVotes.network     eq network) and
+                    (DrepVotes.voterRole   eq "drep") and
+                    (DrepVotes.votingPower eq 0L)
+                }
+                .withDistinct()
+                .map { it[DrepVotes.drepCredentialHex] }
+        }
+
+    /**
+     * Update voting_power for all drep_votes rows of a specific DRep where existing value is 0.
+     * Used by the Blockfrost backfiller to fill power for deregistered DReps.
+     */
+    fun updateVotingPowerForCredential(network: String, credHex: String, power: Long): Int =
+        transaction {
+            DrepVotes.update({
+                (DrepVotes.network          eq network) and
+                (DrepVotes.drepCredentialHex eq credHex) and
+                (DrepVotes.voterRole         eq "drep") and
+                (DrepVotes.votingPower       eq 0L)
+            }) { it[DrepVotes.votingPower] = power }
+        }
+
     /** Number of distinct governance actions a DRep has voted on (DRep role only). */
     fun getVotedCount(drepCredentialHex: String, network: String): Int {
         var count = 0

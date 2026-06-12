@@ -20,6 +20,7 @@ import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.parseProposals
 import vote.tempo.cardano.blockfrostProjectId
 import vote.tempo.cardano.fetchDRepDelegatorsBlockfrost
+import vote.tempo.cardano.fetchDRepVotingPowerBlockfrost
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
 
@@ -98,6 +99,12 @@ fun Application.startBackgroundPoller() {
             }
         }
         logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 10 min)" }
+
+        // One-time backfill: fill voting_power=0 rows for deregistered DReps via Blockfrost.
+        // Runs 2 min after startup (after Ogmios first poll fills active DReps).
+        // Rate-limited at 200 ms/request ≈ 5 req/s — well under Blockfrost free tier.
+        scope.launch { runDRepVotingPowerBackfiller(blockfrostNetworks) }
+        logger.info { "DRep voting_power backfiller scheduled — runs once after 2 min startup delay" }
     }
 
     logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min (delegator counts inline), pool metadata fetch every 1 h" }
@@ -168,6 +175,15 @@ private suspend fun pollNetwork(network: Network) {
             // Persist snapshot to DB — marks disappeared proposals with final status
             // so the list endpoint can serve a complete history (expired / enacted / dropped).
             GovernanceActionDao.sync(parsed, network.name.lowercase(), epoch)
+
+            // Bulk-update voting_power=0 rows for DReps currently in Ogmios stakeCtx.
+            // Covers: historical votes for active DReps that were expired before V12 migration.
+            // No-op after all rows are backfilled (UPDATE affects 0 rows).
+            val powerFilled = withContext(Dispatchers.IO) {
+                ChainIndexDao.bulkUpdateDRepVotingPowerFromMap(network.name.lowercase(), stakeCtx.stakeMap)
+            }
+            if (powerFilled > 0)
+                logger.info { "BackgroundPoller [$network] filled voting_power for $powerFilled vote rows from Ogmios stakeCtx" }
         }
         // Success — reset backoff
         consecutiveFailures.remove(network)
@@ -307,5 +323,42 @@ private suspend fun buildLocalRationalesMap(
 
     return withContext(Dispatchers.IO) {
         ChainIndexDao.buildRationalesMap(proposals, network.name.lowercase())
+    }
+}
+
+/**
+ * One-time backfill: query Blockfrost for voting_power of DReps that still have 0
+ * in drep_votes (deregistered DReps not in current Ogmios stakeCtx).
+ *
+ * Runs once on startup after a 2 min delay (to let the Ogmios first poll fill active DReps first).
+ * Rate-limited at 200 ms per request (~5 req/s) — stays under Blockfrost free tier (10 req/s).
+ */
+private suspend fun runDRepVotingPowerBackfiller(networks: List<Network>) {
+    delay(2 * 60_000L)  // 2 min — let Ogmios poll fill active DReps first
+
+    for (network in networks) {
+        val creds = withContext(Dispatchers.IO) {
+            ChainIndexDao.getDrepCredentialsWithZeroPower(network.name.lowercase())
+        }
+        if (creds.isEmpty()) {
+            logger.info { "DRep power backfiller [$network] — nothing to backfill" }
+            continue
+        }
+        logger.info { "DRep power backfiller [$network] — ${creds.size} DReps with voting_power=0, querying Blockfrost" }
+
+        var filled = 0
+        for (credHex in creds) {
+            val drepId = credentialHexToDrepIdCip105(credHex) ?: run { delay(200L); continue }
+            val power  = fetchDRepVotingPowerBlockfrost(drepId, network)
+            if (power != null && power > 0L) {
+                withContext(Dispatchers.IO) {
+                    ChainIndexDao.updateVotingPowerForCredential(network.name.lowercase(), credHex, power)
+                }
+                filled++
+            }
+            delay(200L)  // 5 req/s — Blockfrost free tier limit is 10 req/s
+        }
+
+        logger.info { "DRep power backfiller [$network] done — filled $filled / ${creds.size} DReps" }
     }
 }
