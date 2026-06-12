@@ -234,7 +234,8 @@ private fun indexVote(
         ?.jsonPrimitive?.contentOrNull ?: return false
     val proposalIndex  = proposal["index"]?.jsonPrimitive?.intOrNull ?: 0
     val vote           = vp["vote"]?.jsonPrimitive?.contentOrNull ?: return false
-    val anchor     = vp["anchor"]?.jsonObject
+    // Ogmios 6.x uses "metadata" (not "anchor") for the vote rationale anchor.
+    val anchor     = (vp["metadata"] ?: vp["anchor"])?.jsonObject
     val anchorUrl  = anchor?.get("url")?.jsonPrimitive?.contentOrNull
     val anchorHash = anchor?.get("hash")?.jsonPrimitive?.contentOrNull
 
