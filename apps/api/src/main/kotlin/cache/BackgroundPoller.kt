@@ -20,7 +20,6 @@ import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.parseProposals
 import vote.tempo.cardano.blockfrostProjectId
 import vote.tempo.cardano.fetchDRepDelegatorsBlockfrost
-import vote.tempo.cardano.fetchDRepVotingPowerBlockfrost
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
 
@@ -99,12 +98,6 @@ fun Application.startBackgroundPoller() {
             }
         }
         logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 10 min)" }
-
-        // One-time backfill: fill voting_power=0 rows for deregistered DReps via Blockfrost.
-        // Runs 2 min after startup (after Ogmios first poll fills active DReps).
-        // Rate-limited at 200 ms/request ≈ 5 req/s — well under Blockfrost free tier.
-        scope.launch { runDRepVotingPowerBackfiller(blockfrostNetworks) }
-        logger.info { "DRep voting_power backfiller scheduled — runs once after 2 min startup delay" }
     }
 
     logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min (delegator counts inline), pool metadata fetch every 1 h" }
@@ -326,39 +319,3 @@ private suspend fun buildLocalRationalesMap(
     }
 }
 
-/**
- * One-time backfill: query Blockfrost for voting_power of DReps that still have 0
- * in drep_votes (deregistered DReps not in current Ogmios stakeCtx).
- *
- * Runs once on startup after a 2 min delay (to let the Ogmios first poll fill active DReps first).
- * Rate-limited at 200 ms per request (~5 req/s) — stays under Blockfrost free tier (10 req/s).
- */
-private suspend fun runDRepVotingPowerBackfiller(networks: List<Network>) {
-    delay(2 * 60_000L)  // 2 min — let Ogmios poll fill active DReps first
-
-    for (network in networks) {
-        val creds = withContext(Dispatchers.IO) {
-            ChainIndexDao.getDrepCredentialsWithZeroPower(network.name.lowercase())
-        }
-        if (creds.isEmpty()) {
-            logger.info { "DRep power backfiller [$network] — nothing to backfill" }
-            continue
-        }
-        logger.info { "DRep power backfiller [$network] — ${creds.size} DReps with voting_power=0, querying Blockfrost" }
-
-        var filled = 0
-        for (credHex in creds) {
-            val drepId = credentialHexToDrepIdCip105(credHex) ?: run { delay(200L); continue }
-            val power  = fetchDRepVotingPowerBlockfrost(drepId, network)
-            if (power != null && power > 0L) {
-                withContext(Dispatchers.IO) {
-                    ChainIndexDao.updateVotingPowerForCredential(network.name.lowercase(), credHex, power)
-                }
-                filled++
-            }
-            delay(200L)  // 5 req/s — Blockfrost free tier limit is 10 req/s
-        }
-
-        logger.info { "DRep power backfiller [$network] done — filled $filled / ${creds.size} DReps" }
-    }
-}
