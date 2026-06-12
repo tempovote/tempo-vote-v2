@@ -88,6 +88,21 @@ object ChainIndexDao {
         }
 
     /**
+     * Batch-load GA titles from idx_governance_proposals for a whole network.
+     * Returns Map<"txHash#index", title> — missing rows have no entry.
+     * One query for the entire list; callers merge into DTOs with a simple lookup.
+     */
+    fun buildGaTitleMap(network: String): Map<String, String> = transaction {
+        IdxGovernanceProposals
+            .select(IdxGovernanceProposals.txHash, IdxGovernanceProposals.index, IdxGovernanceProposals.title)
+            .where {
+                (IdxGovernanceProposals.network eq network) and
+                IdxGovernanceProposals.title.isNotNull()
+            }
+            .associate { "${it[IdxGovernanceProposals.txHash]}#${it[IdxGovernanceProposals.index]}" to it[IdxGovernanceProposals.title]!! }
+    }
+
+    /**
      * Build rationale maps for multiple proposals at once.
      * Returns Map<"txHash#index", Map<voterHex, rationaleUrl>>.
      */

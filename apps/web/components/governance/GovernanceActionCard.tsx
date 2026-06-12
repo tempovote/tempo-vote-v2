@@ -31,13 +31,14 @@ function MyVoteBadge({ vote }: { vote: MyVote }) {
 }
 
 export default function GovernanceActionCard({ action, compact = false }: Props) {
-  const anchorTitle = useAnchorTitle(action.anchorUrl)
+  // Use DB title if available; fall back to anchor URL fetch (CORS-friendly hosts only)
+  const anchorTitle = useAnchorTitle(action.title ? null : action.anchorUrl)
 
   const { isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
   const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
-  const proposalTitle = anchorTitle ?? getActionTypeLabel(action.actionType)
+  const proposalTitle = action.title ?? anchorTitle ?? getActionTypeLabel(action.actionType)
 
   return (
     <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block">

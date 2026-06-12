@@ -194,6 +194,7 @@ object GovernanceActionDao {
                     details      = row[IdxGovernanceProposals.actionDetails]
                         ?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() },
                     status       = status,
+                    title        = row[IdxGovernanceProposals.title],
                 )
             }
         }

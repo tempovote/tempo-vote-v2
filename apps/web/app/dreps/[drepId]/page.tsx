@@ -101,36 +101,8 @@ function VoteBadge({ vote }: { vote: DRepVote["vote"] }) {
 // ─── Voting history row ───────────────────────────────────────────────────────
 
 function VoteHistoryRow({ entry }: { entry: DRepVote }) {
-  const [title, setTitle] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!entry.anchorUrl) return
-    const urls = resolveAnchorUrls(entry.anchorUrl)
-    if (urls.length === 0) return
-    let cancelled = false
-
-    const tryFetch = async (remaining: string[]): Promise<void> => {
-      if (cancelled || remaining.length === 0) return
-      const [url, ...rest] = remaining as [string, ...string[]]
-      try {
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 4000)
-        const r = await fetch(url, { signal: controller.signal })
-        clearTimeout(timer)
-        if (!r.ok) return tryFetch(rest)
-        const data = await r.json() as Record<string, unknown>
-        const body = ((data.body ?? data) as Record<string, unknown>)
-        const t = typeof body.title === "string" ? body.title : null
-        if (t && !cancelled) { setTitle(t); return }
-        return tryFetch(rest)
-      } catch {
-        return tryFetch(rest)
-      }
-    }
-
-    tryFetch(urls)
-    return () => { cancelled = true }
-  }, [entry.anchorUrl])
+  const displayTitle = entry.title
+    ?? `${entry.txHash.slice(0, 10)}…${entry.txHash.slice(-6)}#${entry.index}`
 
   return (
     <Link
@@ -141,7 +113,7 @@ function VoteHistoryRow({ entry }: { entry: DRepVote }) {
         {entry.type}
       </span>
       <span className="flex-1 text-sm text-text-primary group-hover:text-accent-light transition-colors truncate min-w-0">
-        {title ?? `${entry.txHash.slice(0, 10)}…${entry.txHash.slice(-6)}#${entry.index}`}
+        {displayTitle}
       </span>
       <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
         {entry.expiresEpoch != null ? `Epoch ${entry.expiresEpoch}` : "Expired"}

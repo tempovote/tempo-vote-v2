@@ -91,9 +91,11 @@ fun Route.drepRoutes() {
                     exec(
                         """
                         SELECT dv.proposal_tx_hash, dv.proposal_index,
-                               dv.anchor_url, dv.vote, dv.slot,
-                               COALESCE(gp.action_type, dv.action_type)  AS resolved_type,
-                               COALESCE(gp.expires_epoch, dv.expires_epoch) AS resolved_expires
+                               COALESCE(dv.anchor_url, gp.anchor_url) AS anchor_url,
+                               dv.vote, dv.slot,
+                               COALESCE(gp.action_type, dv.action_type)     AS resolved_type,
+                               COALESCE(gp.expires_epoch, dv.expires_epoch) AS resolved_expires,
+                               gp.title                                      AS ga_title
                         FROM drep_votes dv
                         LEFT JOIN idx_governance_proposals gp
                             ON  gp.network       = dv.network
@@ -116,6 +118,7 @@ fun Route.drepRoutes() {
                             val vote           = rs.getString("vote")
                             val slot           = rs.getLong("slot")
                             val expiresEpoch   = rs.getInt("resolved_expires").takeIf { !rs.wasNull() }
+                            val gaTitle        = rs.getString("ga_title")
 
                             val key = "$proposalTxHash#$proposalIndex"
                             merged[key] = buildJsonObject {
@@ -127,6 +130,7 @@ fun Route.drepRoutes() {
                                 put("vote",         vote)
                                 put("expiresEpoch", expiresEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
                                 put("slot",         slot)
+                                put("title",        gaTitle?.let { JsonPrimitive(it) } ?: JsonNull)
                             }
                         }
                     }
@@ -174,7 +178,7 @@ fun Route.drepRoutes() {
                     val expiresEpoch = obj["until"]?.jsonObject?.get("epoch")?.jsonPrimitive?.int
 
                     val key = "$proposalTxHash#$index"
-                    val existingSlot = merged[key]?.get("slot")
+                    val existing = merged[key]
                     merged[key] = buildJsonObject {
                         put("txHash",      proposalTxHash)
                         put("index",       index)
@@ -183,8 +187,9 @@ fun Route.drepRoutes() {
                         put("anchorUrl",   anchorUrl?.let { JsonPrimitive(it) } ?: JsonNull)
                         put("vote",        myVote)
                         put("expiresEpoch", expiresEpoch?.let { JsonPrimitive(it) } ?: JsonNull)
-                        // preserve DB slot for sort; null (not yet indexed) sorts to top as most recent
-                        if (existingSlot != null) put("slot", existingSlot)
+                        // preserve DB slot + title from Source 1 if available
+                        existing?.get("slot")?.let { put("slot", it) }
+                        existing?.get("title")?.let { put("title", it) }
                     }
                 }
             } catch (_: Exception) { }

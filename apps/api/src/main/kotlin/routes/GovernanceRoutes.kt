@@ -361,16 +361,26 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
         }
     }
 
+    // Batch-load titles from idx_governance_proposals for GAs that don't have one yet.
+    val titleMap = withContext(Dispatchers.IO) {
+        ChainIndexDao.buildGaTitleMap(network.name.lowercase())
+    }
+
     // Enrich all DRep vote entries with names from (now-populated) drepInfo cache.
+    // Also merge DB title for any GA missing one (active GAs parsed from Ogmios have title=null).
     return all.map { ga ->
-        ga.copy(votes = ga.votes.map { vote ->
-            if (vote.role == "drep") {
-                val nameEl = CardanoCache.drepInfo
-                    .getIfPresent("${network.name}:${vote.id}")?.get("name")
-                val name = if (nameEl is JsonPrimitive) nameEl.contentOrNull else null
-                vote.copy(voterName = name)
-            } else vote
-        })
+        val enrichedTitle = ga.title ?: titleMap["${ga.txHash}#${ga.index}"]
+        ga.copy(
+            title = enrichedTitle,
+            votes = ga.votes.map { vote ->
+                if (vote.role == "drep") {
+                    val nameEl = CardanoCache.drepInfo
+                        .getIfPresent("${network.name}:${vote.id}")?.get("name")
+                    val name = if (nameEl is JsonPrimitive) nameEl.contentOrNull else null
+                    vote.copy(voterName = name)
+                } else vote
+            },
+        )
     }
 }
 
