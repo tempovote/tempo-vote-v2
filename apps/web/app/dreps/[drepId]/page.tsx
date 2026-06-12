@@ -125,6 +125,16 @@ function VoteHistoryRow({ entry }: { entry: DRepVote }) {
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
+function pageWindow(current: number, total: number): (number | "…")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: (number | "…")[] = [1]
+  if (current > 3) pages.push("…")
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) pages.push(p)
+  if (current < total - 2) pages.push("…")
+  pages.push(total)
+  return pages
+}
+
 function Pagination({ page, total, limit, onPage }: {
   page: number
   total: number
@@ -133,25 +143,59 @@ function Pagination({ page, total, limit, onPage }: {
 }) {
   const totalPages = Math.ceil(total / limit)
   if (totalPages <= 1) return null
+  const pages = pageWindow(page, totalPages)
+
   return (
-    <div className="flex items-center justify-between px-4 pt-3 border-t border-border-subtle">
+    <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border-subtle bg-bg-secondary/40">
+      {/* Prev */}
       <button
         onClick={() => onPage(page - 1)}
         disabled={page <= 1}
-        className="px-3 py-1.5 text-sm rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-text-secondary border border-border-subtle hover:text-text-primary hover:border-border-default hover:bg-bg-elevated transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
       >
-        ← Trước
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        Trước
       </button>
-      <span className="text-xs text-text-muted">
-        Trang {page} / {totalPages} · {total} votes
-      </span>
-      <button
-        onClick={() => onPage(page + 1)}
-        disabled={page >= totalPages}
-        className="px-3 py-1.5 text-sm rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        Tiếp →
-      </button>
+
+      {/* Page numbers */}
+      <div className="flex items-center gap-1">
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} className="w-8 text-center text-xs text-text-muted select-none">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPage(p as number)}
+              className={`min-w-[2rem] h-8 px-1 rounded-lg text-xs font-medium transition-colors ${
+                p === page
+                  ? "bg-accent text-white shadow-sm"
+                  : "text-text-secondary hover:text-text-primary hover:bg-bg-elevated"
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+      </div>
+
+      {/* Next + count */}
+      <div className="flex items-center gap-3">
+        <span className="hidden sm:block text-xs text-text-muted whitespace-nowrap">
+          {total} votes
+        </span>
+        <button
+          onClick={() => onPage(page + 1)}
+          disabled={page >= totalPages}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-text-secondary border border-border-subtle hover:text-text-primary hover:border-border-default hover:bg-bg-elevated transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          Tiếp
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }

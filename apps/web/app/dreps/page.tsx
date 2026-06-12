@@ -288,8 +288,7 @@ export default function DRepsPage() {
                         ? (
                           <tr>
                             <td colSpan={5} className="py-8 text-center text-text-muted text-sm">
-                              <div>Whale data is being indexed</div>
-                              <div className="text-xs mt-1 opacity-60">Requires <code className="font-mono bg-bg-card px-1 rounded">BLOCKFROST_MAINNET_PROJECT_ID</code> on the API server</div>
+                              Whale data is being indexed — check back in a few minutes
                             </td>
                           </tr>
                         )

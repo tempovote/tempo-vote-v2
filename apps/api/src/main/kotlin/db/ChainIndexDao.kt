@@ -50,8 +50,10 @@ object ChainIndexDao {
      * Compute Map<drepCredentialHex, delegatorCount> using a PostgreSQL DISTINCT ON query.
      * Resolves latest delegation per stake credential in the DB engine — result set is at
      * most one row per active DRep (hundreds), not one row per delegation cert (millions).
+     * Public so BackgroundPoller can populate drepDelegatorCounts from accurate chain data
+     * instead of the Ogmios `delegators` array (which is capped at ~8 MB response size).
      */
-    private fun latestDelegationsByDrep(network: String): Map<String, Int> {
+    fun latestDelegationsByDrep(network: String): Map<String, Int> {
         val result = mutableMapOf<String, Int>()
         transaction {
             exec(
