@@ -16,7 +16,7 @@ export const DRepVoteSchema = z.object({
   actionType: z.string(), // raw Ogmios type
   anchorUrl: z.string().nullable(),
   vote: z.enum(["yes", "no", "abstain"]),
-  expiresEpoch: z.number().int(),
+  expiresEpoch: z.number().int().nullable(),
 })
 export type DRepVote = z.infer<typeof DRepVoteSchema>
 

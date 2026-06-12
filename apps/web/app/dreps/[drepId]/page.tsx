@@ -144,7 +144,7 @@ function VoteHistoryRow({ entry }: { entry: DRepVote }) {
         {title ?? `${entry.txHash.slice(0, 10)}…${entry.txHash.slice(-6)}#${entry.index}`}
       </span>
       <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
-        Epoch {entry.expiresEpoch}
+        {entry.expiresEpoch != null ? `Epoch ${entry.expiresEpoch}` : "Expired"}
       </span>
       <VoteBadge vote={entry.vote} />
     </Link>
@@ -455,7 +455,7 @@ export default function DRepProfilePage({
   )
   const [votePage, setVotePage] = useState(1)
   const { votes, total, limit, isLoading: isLoadingVotes, error: voteError } =
-    useDRepVotingHistory(canonicalId, network, votePage)
+    useDRepVotingHistory(canonicalId, network, votePage, 10)
 
   // Community state
   const { isActive, isLoading: communityLoading, refetch: refetchCommunity } = useCommunity(drepId, network)
