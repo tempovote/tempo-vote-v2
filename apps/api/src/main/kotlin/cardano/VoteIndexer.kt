@@ -65,16 +65,24 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                 // Send findIntersect before the nextBlock pipeline when we have a valid checkpoint.
                 // This tells Ogmios to start streaming from that point instead of genesis,
                 // making restarts O(new blocks) rather than O(entire chain).
-                // A "reset" checkpoint (all-zero hash) is skipped — let Ogmios stream from genesis.
-                val validCheckpoint = checkpoint?.takeIf { (_, hash) ->
-                    hash.length == 64 && hash.any { it != '0' }
+                // A "reset" checkpoint (all-zero hash) triggers a genesis scan — but we first
+                // check for a saved Conway genesis milestone to skip the ~40-min pre-Conway scan.
+                val isReset = checkpoint == null ||
+                    checkpoint.second.length == 64 && checkpoint.second.all { it == '0' }
+                val validCheckpoint = when {
+                    !isReset -> checkpoint?.takeIf { (_, hash) ->
+                        hash.length == 64 && hash.any { it != '0' }
+                    }
+                    // On reset: prefer the Conway genesis milestone over full genesis scan
+                    else -> loadConwayMilestone(network)
                 }
                 if (validCheckpoint != null) {
                     val (cpSlot, cpHash) = validCheckpoint
                     send(Frame.Text(
                         """{"jsonrpc":"2.0","method":"findIntersection","params":{"points":[{"slot":$cpSlot,"id":"$cpHash"}]},"id":-1}"""
                     ))
-                    logger.info { "VoteIndexer [$network] findIntersection requested at slot=$cpSlot" }
+                    val label = if (isReset) "Conway genesis milestone" else "checkpoint"
+                    logger.info { "VoteIndexer [$network] findIntersection at $label slot=$cpSlot" }
                 }
 
                 repeat(PIPELINE_SIZE) { sendNextBlock(inFlight++) }
@@ -85,6 +93,7 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                 var delegsInserted     = 0L
                 var poolsInserted      = 0L
                 var proposalsInserted  = 0L
+                var conwayMilestoneSaved = !isReset  // skip if not a genesis scan
 
                 for (frame in incoming) {
                     if (frame !is Frame.Text) continue
@@ -127,6 +136,12 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                     }
 
                     if (slot >= conwayStartSlot) {
+                        // Save Conway genesis milestone on the first block we see in Conway era
+                        if (!conwayMilestoneSaved && blockHash.isNotEmpty()) {
+                            saveConwayMilestoneIfNew(network, slot, blockHash)
+                            conwayMilestoneSaved = true
+                        }
+
                         val checkpointSlot = checkpoint?.first ?: 0L
 
                         if (slot > checkpointSlot) {
@@ -412,11 +427,24 @@ private fun bech32ToHex(bech32: String): String {
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
+private fun conwayMilestoneKey(network: String) = "${network}_conway_genesis"
+
 private fun loadCheckpoint(network: String): Pair<Long, String>? =
     runCatching {
         transaction {
             IndexerCheckpoint.selectAll()
                 .where { IndexerCheckpoint.network eq network }
+                .singleOrNull()
+                ?.let { it[IndexerCheckpoint.slot] to it[IndexerCheckpoint.blockHash] }
+        }
+    }.getOrNull()
+
+/** Reads the saved Conway genesis milestone for this network, if present. */
+private fun loadConwayMilestone(network: String): Pair<Long, String>? =
+    runCatching {
+        transaction {
+            IndexerCheckpoint.selectAll()
+                .where { IndexerCheckpoint.network eq conwayMilestoneKey(network) }
                 .singleOrNull()
                 ?.let { it[IndexerCheckpoint.slot] to it[IndexerCheckpoint.blockHash] }
         }
@@ -429,6 +457,31 @@ private fun saveCheckpoint(network: String, slot: Long, blockHash: String) {
                 it[IndexerCheckpoint.network]   = network
                 it[IndexerCheckpoint.slot]      = slot
                 it[IndexerCheckpoint.blockHash] = blockHash
+            }
+        }
+    }
+}
+
+/**
+ * Saves the Conway genesis milestone once — the first block at or after the Conway
+ * start slot. Used as a fast-start checkpoint so future re-syncs skip pre-Conway
+ * (~40 min on mainnet) and begin directly at Conway genesis (~15 min).
+ * No-op if the milestone is already saved.
+ */
+private fun saveConwayMilestoneIfNew(network: String, slot: Long, blockHash: String) {
+    runCatching {
+        val key = conwayMilestoneKey(network)
+        transaction {
+            val exists = IndexerCheckpoint.selectAll()
+                .where { IndexerCheckpoint.network eq key }
+                .count() > 0
+            if (!exists) {
+                IndexerCheckpoint.insert {
+                    it[IndexerCheckpoint.network]   = key
+                    it[IndexerCheckpoint.slot]      = slot
+                    it[IndexerCheckpoint.blockHash] = blockHash
+                }
+                logger.info { "VoteIndexer [$network] Conway genesis milestone saved: slot=$slot hash=${blockHash.take(16)}…" }
             }
         }
     }

@@ -97,7 +97,7 @@ object DrepVotes : Table("drep_votes") {
 }
 
 object IndexerCheckpoint : Table("indexer_checkpoint") {
-    val network   = varchar("network", 10)
+    val network   = varchar("network", 30)  // supports milestone keys like "mainnet_conway_genesis"
     val slot      = long("slot")
     val blockHash = varchar("block_hash", 64)
 
