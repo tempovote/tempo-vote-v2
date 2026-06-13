@@ -56,19 +56,22 @@ Ghi lại chi tiết từng lỗi đã sửa theo thứ tự hoàn thành. Tham 
 ---
 
 ## #6 — DApp Ranking: cột TVL bị cắt cụt
-**Phát hiện:** "$25.08B" → "$25.08l" — ký tự cuối bị clip.
-**Nguyên nhân:** `<table className="w-full">` không có `min-width`.
-**Giải pháp:** Thêm `min-w-[700px]` vào `<table>` trong `ProtocolTable.tsx`.
+**Phát hiện (lần 1):** "$25.08B" → "$25.08l" — ký tự cuối bị clip. Fix lần 1: `min-w-[700px]`.
+**Phát hiện (lần 2, re-test):** Vẫn clip. `min-w-[700px]` không giải quyết được vì bảng có quá nhiều cột so với viewport 500px.
+**Nguyên nhân thực:** Table 10 cột + `w-full` → browser chia đều → cột TVL quá hẹp → nội dung bị clip.
+**Giải pháp cuối:**
+- Ẩn cột 1d%/7d% trên mobile (`hidden sm:table-cell`).
+- Ẩn cột Vol/Fees/Revenue trên tablet- (`hidden md:table-cell`).
+- Đổi min-width thành `md:min-w-[700px]` (chỉ áp dụng từ md trở lên).
+- Kết quả: mobile chỉ còn 5 cột (#, logo, name, category, TVL) — TVL hiển thị đủ.
 
 ---
 
 ## #7 — DApp Ranking: biểu đồ TVL trống
-**Phát hiện:** Chỉ thấy lưới, không thấy đường dữ liệu.
-**Giải pháp:**
-- Thêm empty state khi `chartData.length === 0`.
-- Đổi màu stroke/fill sang `#818cf8` (accent-light, sáng hơn).
-- Tăng `strokeWidth` từ `2` → `2.5`, gradient opacity `0.35` → `0.45`.
-- Thêm `w-full` wrapper cho `ResponsiveContainer`.
+**Phát hiện (lần 1):** Chỉ thấy lưới, không thấy đường dữ liệu. Fix lần 1: màu sáng hơn, empty state, w-full wrapper.
+**Phát hiện (lần 2, re-test):** Path SVG có tồn tại trong DOM (stroke `#818cf8`) nhưng toạ độ co cụm vào vùng cực nhỏ (~vài px).
+**Nguyên nhân thực:** `ResponsiveContainer height="100%"` phụ thuộc vào parent `h-48` div nhưng recharts đo container sai kích thước khi render trên mobile (ResizeObserver timing issue → báo height≈0 → tất cả điểm dữ liệu mapping vào top-left).
+**Giải pháp cuối:** Dùng `height={192}` (số cố định) trực tiếp trên `ResponsiveContainer` thay vì `"100%"` → recharts luôn có đủ chiều cao để render đúng.
 
 ---
 
@@ -122,3 +125,17 @@ Ghi lại chi tiết từng lỗi đã sửa theo thứ tự hoàn thành. Tham 
 ## #17 — Register page: thiếu nút Connect inline
 **Phát hiện:** Empty state không có nút → user phải lên header.
 **Giải pháp:** Thêm `openWalletModal` từ wallet store, render `<button onClick={openWalletModal}>Kết nối ví</button>` inline.
+
+---
+
+## N1 — Tab "Whales >1M ₳>1M ₳" bị lặp ngưỡng
+**Phát hiện:** Tab thứ 2 render label "Whales >1M ₳" + badge span ">1M ₳" dính liền → "Whales >1M ₳>1M ₳".
+**Nguyên nhân:** Label đã có ">1M ₳" nhưng vẫn còn `{t.id === "whales" && <span>...>1M ₳</span>}` thừa từ thiết kế gốc.
+**Giải pháp:** Xóa span badge thừa, giữ nguyên label.
+
+---
+
+## N2 — Tab "VP Changeepoch Δ" thiếu dấu cách
+**Phát hiện:** Label "VP Change" và span "epoch Δ" (có `ml-1.5`) nhưng render dính nhau.
+**Nguyên nhân:** `ml-1.5` trên inline span không đủ rõ ràng; trên một số viewport/font rendering bị bỏ qua.
+**Giải pháp:** Merge thành một chuỗi label duy nhất `"VP Change / epoch Δ"`, bỏ span riêng.

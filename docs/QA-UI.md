@@ -21,8 +21,8 @@
 - [x] **#3** — Trộn lẫn tiếng Anh – tiếng Việt — dịch Home, Footer, banner, "Stake Address", "Deposit", "Anchor". ✅
 - [x] **#4** — Menu mobile: contrast + overlay — `bg-black/60` backdrop, `bg-bg-card` solid, text-primary. ✅
 - [x] **#5** — Vote page 2 cột quá chật mobile — mobile filter tabs YES/NO/ABSTAIN + 1 cột. ✅
-- [x] **#6** — DApp Ranking TVL bị cắt — `min-w-[700px]` trên `<table>`. ✅
-- [x] **#7** — DApp Ranking biểu đồ trống — empty state + màu `#818cf8` + `strokeWidth 2.5`. ✅
+- [x] **#6** — DApp Ranking TVL bị cắt — ẩn cột 1d%/7d% trên mobile, Vol/Fees/Revenue trên md-; bỏ min-w lớn khi chỉ còn 5 cột. ✅
+- [x] **#7** — DApp Ranking biểu đồ TVL path bị co cụm — `ResponsiveContainer height={192}` cố định thay vì `"100%"`. ✅
 
 ### 🟡 MEDIUM
 
@@ -39,6 +39,15 @@
 - [ ] **#15** — Header sticky nền cần solid khi cuộn — nav đã có `bg-bg-primary/80 backdrop-blur-xl`.
 - [x] **#16** — ₳ dính sát số — thêm space trước ₳ trong VoteHistoryTab. ✅
 - [x] **#17** — Register page thiếu nút Connect inline — thêm `<button onClick={openWalletModal}>`. ✅
+
+---
+
+## 🔄 Re-test lần 2 (2026-06-13)
+
+### 🆕 Lỗi phát sinh từ fix trước
+
+- [x] **N1** — Tab "Whales >1M ₳>1M ₳" bị lặp ngưỡng — xóa badge `>1M ₳` thừa (đã có trong label). ✅
+- [x] **N2** — Tab "VP Changeepoch Δ" thiếu dấu cách — merge thành label `"VP Change / epoch Δ"`. ✅
 
 ---
 
