@@ -94,6 +94,31 @@ data class ProtocolParamUpdateItem(
     val maxValSize: Long? = null,
     val collateralPercent: Int? = null,
     val maxCollateralInputs: Int? = null,
+    // Conway governance group (fields 25-33)
+    // pool_voting_thresholds — all 5 must be supplied together or omitted
+    val poolVtMotionNoConfidencePerMillion: Long? = null,
+    val poolVtCommitteeNormalPerMillion: Long? = null,
+    val poolVtCommitteeNoConfidencePerMillion: Long? = null,
+    val poolVtHardForkInitiationPerMillion: Long? = null,
+    val poolVtSecurityRelevantParamPerMillion: Long? = null,
+    // drep_voting_thresholds — all 10 must be supplied together or omitted
+    val drepVtMotionNoConfidencePerMillion: Long? = null,
+    val drepVtCommitteeNormalPerMillion: Long? = null,
+    val drepVtCommitteeNoConfidencePerMillion: Long? = null,
+    val drepVtUpdateConstitutionPerMillion: Long? = null,
+    val drepVtHardForkInitiationPerMillion: Long? = null,
+    val drepVtPpNetworkGroupPerMillion: Long? = null,
+    val drepVtPpEconomicGroupPerMillion: Long? = null,
+    val drepVtPpTechnicalGroupPerMillion: Long? = null,
+    val drepVtPpGovernanceGroupPerMillion: Long? = null,
+    val drepVtTreasuryWithdrawalPerMillion: Long? = null,
+    val committeeMinSize: Int? = null,
+    val committeeMaxTermLength: Int? = null,
+    val govActionLifetime: Int? = null,
+    val govActionDeposit: Long? = null,             // lovelace
+    val drepDeposit: Long? = null,                  // lovelace
+    val drepActivity: Int? = null,
+    val minFeeRefScriptCostPerBytePerMillion: Long? = null,
 )
 
 @Serializable

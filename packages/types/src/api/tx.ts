@@ -88,6 +88,31 @@ export const BuildTxRequestSchema = z.object({
     maxValSize: z.number().int().min(0).optional(),
     collateralPercent: z.number().int().min(0).optional(),
     maxCollateralInputs: z.number().int().min(0).optional(),
+    // Conway governance group (fields 25-33)
+    // pool_voting_thresholds — all 5 must be supplied together or omitted
+    poolVtMotionNoConfidencePerMillion: z.number().int().min(0).max(1000000).optional(),
+    poolVtCommitteeNormalPerMillion: z.number().int().min(0).max(1000000).optional(),
+    poolVtCommitteeNoConfidencePerMillion: z.number().int().min(0).max(1000000).optional(),
+    poolVtHardForkInitiationPerMillion: z.number().int().min(0).max(1000000).optional(),
+    poolVtSecurityRelevantParamPerMillion: z.number().int().min(0).max(1000000).optional(),
+    // drep_voting_thresholds — all 10 must be supplied together or omitted
+    drepVtMotionNoConfidencePerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtCommitteeNormalPerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtCommitteeNoConfidencePerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtUpdateConstitutionPerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtHardForkInitiationPerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtPpNetworkGroupPerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtPpEconomicGroupPerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtPpTechnicalGroupPerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtPpGovernanceGroupPerMillion: z.number().int().min(0).max(1000000).optional(),
+    drepVtTreasuryWithdrawalPerMillion: z.number().int().min(0).max(1000000).optional(),
+    committeeMinSize: z.number().int().min(0).optional(),
+    committeeMaxTermLength: z.number().int().min(0).optional(),
+    govActionLifetime: z.number().int().min(0).optional(),
+    govActionDeposit: z.number().int().min(0).optional(),
+    drepDeposit: z.number().int().min(0).optional(),
+    drepActivity: z.number().int().min(0).optional(),
+    minFeeRefScriptCostPerBytePerMillion: z.number().int().min(0).optional(),
   }).optional(),
 })
 export type BuildTxRequest = z.infer<typeof BuildTxRequestSchema>
