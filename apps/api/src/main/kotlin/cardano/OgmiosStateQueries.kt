@@ -190,6 +190,48 @@ class OgmiosStateQueries(private val network: Network) {
         return queryRaw("queryLedgerState/governanceProposals", buildJsonObject {})
     }
 
+    /**
+     * Resolve the last *enacted* governance action id for a chained purpose
+     * (protocolParametersUpdate, hardForkInitiation, constitutional committee, constitution).
+     *
+     * CIP-1694 requires these proposals to point to the most recently ratified action of the
+     * same purpose via `prevGovActionId`. The ledger keeps that pointer as the *root* of the
+     * proposal tree. Ogmios doesn't expose the pointer directly, but every pending proposal of
+     * the purpose carries its own `ancestor` (the prevGovActionId it was built against). The
+     * one ancestor that is NOT itself a pending proposal is the enacted root.
+     *
+     * @param actionTypes ogmios `action.type` values that share one purpose pointer
+     *   (e.g. ["constitutionalCommittee", "noConfidence"] both map to the Committee purpose).
+     * @return (txHash, index) of the last enacted action, or null when it cannot be derived
+     *   (no pending proposal of this purpose exists — caller should fall back to null/manual).
+     */
+    suspend fun getLastEnactedGovActionId(vararg actionTypes: String): Pair<String, Int>? {
+        val proposals = getGovernanceProposals() as? JsonArray ?: return null
+        val typeSet = actionTypes.toSet()
+
+        fun idOf(o: JsonObject): String {
+            val tx = o["transaction"]!!.jsonObject["id"]!!.jsonPrimitive.content
+            val ix = o["index"]!!.jsonPrimitive.int
+            return "$tx#$ix"
+        }
+
+        val pendingIds = proposals.mapNotNull { (it as? JsonObject)?.get("proposal")?.jsonObject?.let(::idOf) }.toSet()
+
+        for (p in proposals) {
+            val obj = p as? JsonObject ?: continue
+            val action = obj["action"]?.jsonObject ?: continue
+            if (action["type"]?.jsonPrimitive?.contentOrNull !in typeSet) continue
+            val ancestor = action["ancestor"]?.takeIf { it !is JsonNull }?.jsonObject ?: continue
+            val ancestorId = idOf(ancestor)
+            if (ancestorId !in pendingIds) {
+                val tx = ancestor["transaction"]!!.jsonObject["id"]!!.jsonPrimitive.content
+                val ix = ancestor["index"]!!.jsonPrimitive.int
+                return tx to ix
+            }
+        }
+        return null
+    }
+
     suspend fun getDelegateRepresentatives(): JsonElement {
         return queryRaw("queryLedgerState/delegateRepresentatives", buildJsonObject {}, HEAVY_QUERY_TIMEOUT_MS)
     }

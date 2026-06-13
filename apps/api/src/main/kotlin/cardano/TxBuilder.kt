@@ -42,6 +42,8 @@ import com.bloxbean.cardano.client.transaction.spec.governance.actions.TreasuryW
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.ParameterChangeAction
 import com.bloxbean.cardano.client.transaction.spec.governance.actions.UpdateCommittee
 import com.bloxbean.cardano.client.transaction.spec.ProtocolParamUpdate
+import com.bloxbean.cardano.client.transaction.spec.governance.DRepVotingThresholds
+import com.bloxbean.cardano.client.transaction.spec.governance.PoolVotingThresholds
 import com.bloxbean.cardano.client.spec.Rational
 import vote.tempo.routes.ProtocolParamUpdateItem
 import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
@@ -341,6 +343,17 @@ class TxBuilder(private val network: Network) {
         val ogmios = OgmiosStateQueries(network)
         val guardrailsHash = ogmios.getConstitutionGuardrailsHash()
 
+        // ParameterChange must chain to the last enacted pparam update (CIP-1694, error 3159).
+        // Honor an explicit prev from the caller; otherwise auto-resolve from on-chain state.
+        val prevId: GovActionId? = if (prevGovActionTxHash != null && prevGovActionIdx != null) {
+            GovActionId(prevGovActionTxHash, prevGovActionIdx)
+        } else {
+            ogmios.getLastEnactedGovActionId("protocolParametersUpdate")?.let { (tx, ix) ->
+                println("[TxBuilder] ParameterChange auto-resolved prevGovActionId = $tx#$ix")
+                GovActionId(tx, ix)
+            }
+        }
+
         val ppUpdate = ProtocolParamUpdate.builder().apply {
             paramUpdate.minFeeA?.let { minFeeA(BigInteger.valueOf(it)) }
             paramUpdate.minFeeB?.let { minFeeB(BigInteger.valueOf(it)) }
@@ -365,10 +378,59 @@ class TxBuilder(private val network: Network) {
             paramUpdate.treasuryGrowthRatePerMillion?.let {
                 treasuryGrowthRate(UnitInterval(BigInteger.valueOf(it), BigInteger.valueOf(1_000_000L)))
             }
+            // Conway governance group
+            val pv = paramUpdate
+            if (pv.poolVtMotionNoConfidencePerMillion != null &&
+                pv.poolVtCommitteeNormalPerMillion != null &&
+                pv.poolVtCommitteeNoConfidencePerMillion != null &&
+                pv.poolVtHardForkInitiationPerMillion != null &&
+                pv.poolVtSecurityRelevantParamPerMillion != null
+            ) {
+                poolVotingThresholds(PoolVotingThresholds.builder()
+                    .motionNoConfidence(ui(pv.poolVtMotionNoConfidencePerMillion))
+                    .committeeNormal(ui(pv.poolVtCommitteeNormalPerMillion))
+                    .committeeNoConfidence(ui(pv.poolVtCommitteeNoConfidencePerMillion))
+                    .hardForkInitiation(ui(pv.poolVtHardForkInitiationPerMillion))
+                    .securityRelevantParamVotingThreshold(ui(pv.poolVtSecurityRelevantParamPerMillion))
+                    .build())
+            }
+            if (pv.drepVtMotionNoConfidencePerMillion != null &&
+                pv.drepVtCommitteeNormalPerMillion != null &&
+                pv.drepVtCommitteeNoConfidencePerMillion != null &&
+                pv.drepVtUpdateConstitutionPerMillion != null &&
+                pv.drepVtHardForkInitiationPerMillion != null &&
+                pv.drepVtPpNetworkGroupPerMillion != null &&
+                pv.drepVtPpEconomicGroupPerMillion != null &&
+                pv.drepVtPpTechnicalGroupPerMillion != null &&
+                pv.drepVtPpGovernanceGroupPerMillion != null &&
+                pv.drepVtTreasuryWithdrawalPerMillion != null
+            ) {
+                drepVotingThresholds(DRepVotingThresholds.builder()
+                    .motionNoConfidence(ui(pv.drepVtMotionNoConfidencePerMillion))
+                    .committeeNormal(ui(pv.drepVtCommitteeNormalPerMillion))
+                    .committeeNoConfidence(ui(pv.drepVtCommitteeNoConfidencePerMillion))
+                    .updateConstitution(ui(pv.drepVtUpdateConstitutionPerMillion))
+                    .hardForkInitiation(ui(pv.drepVtHardForkInitiationPerMillion))
+                    .ppNetworkGroup(ui(pv.drepVtPpNetworkGroupPerMillion))
+                    .ppEconomicGroup(ui(pv.drepVtPpEconomicGroupPerMillion))
+                    .ppTechnicalGroup(ui(pv.drepVtPpTechnicalGroupPerMillion))
+                    .ppGovernanceGroup(ui(pv.drepVtPpGovernanceGroupPerMillion))
+                    .treasuryWithdrawal(ui(pv.drepVtTreasuryWithdrawalPerMillion))
+                    .build())
+            }
+            pv.committeeMinSize?.let { committeeMinSize(it) }
+            pv.committeeMaxTermLength?.let { committeeMaxTermLength(it) }
+            pv.govActionLifetime?.let { govActionLifetime(it) }
+            pv.govActionDeposit?.let { govActionDeposit(BigInteger.valueOf(it)) }
+            pv.drepDeposit?.let { drepDeposit(BigInteger.valueOf(it)) }
+            pv.drepActivity?.let { drepActivity(it) }
+            pv.minFeeRefScriptCostPerBytePerMillion?.let {
+                minFeeRefScriptCostPerByte(Rational(BigInteger.valueOf(it), BigInteger.valueOf(1_000_000L)))
+            }
         }.build()
 
         val action = ParameterChangeAction.builder()
-            .prevGovActionId(buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx))
+            .prevGovActionId(prevId)
             .protocolParamUpdate(ppUpdate)
             .policyHash(guardrailsHash)
             .build()
@@ -528,6 +590,8 @@ class TxBuilder(private val network: Network) {
 
     private fun buildPrevGovActionId(txHash: String?, index: Int?): GovActionId? =
         if (txHash != null && index != null) GovActionId(txHash, index) else null
+
+    private fun ui(perMillion: Long) = UnitInterval(BigInteger.valueOf(perMillion), BigInteger.valueOf(1_000_000L))
 
     /**
      * Convert a DRep ID (bech32 drep_...) or hex key hash to a Credential.

@@ -231,10 +231,23 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={() => {
-        navigator.clipboard.writeText(text).then(() => {
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          })
+        } else {
+          const el = document.createElement("textarea")
+          el.value = text
+          el.style.position = "fixed"
+          el.style.opacity = "0"
+          document.body.appendChild(el)
+          el.select()
+          document.execCommand("copy")
+          document.body.removeChild(el)
           setCopied(true)
           setTimeout(() => setCopied(false), 1500)
-        })
+        }
       }}
       className="text-text-muted hover:text-accent-light transition-colors"
       title="Copy DRep ID"
