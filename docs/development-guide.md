@@ -24,12 +24,22 @@ cp .env.example .env
 
 # 4. Khởi động Docker runtime (Colima) + tạo PostgreSQL container
 colima start
+
+# Tạo named volume để dữ liệu KHÔNG bị mất khi container bị xóa
+docker volume create tempo_pg_data
+
 docker run -d \
   --name tempo-pg \
   -e POSTGRES_DB=tempo_vote \
+  -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=password \
   -p 5432:5432 \
-  postgres:16
+  --restart unless-stopped \
+  -v tempo_pg_data:/var/lib/postgresql/data \
+  postgres:16-alpine
+
+# ⚠️  KHÔNG chạy "colima delete" — sẽ xóa toàn bộ Docker data kể cả named volumes.
+#     Nếu cần reset Colima, backup volume trước: docker run --rm -v tempo_pg_data:/data alpine tar czf - /data > backup.tar.gz
 
 # 5. Chạy API (Flyway migrations chạy tự động khi start)
 ./gradlew :apps:api:run

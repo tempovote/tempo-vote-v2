@@ -69,23 +69,37 @@ const GA_TYPES = [
 function ProposeDropdown({ poll, drepId, network }: { poll: InternalPoll; drepId: string; network: string }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [dropPos, setDropPos] = useState<{ top: number; right: number } | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
   const np = network !== "mainnet" ? `&network=${network}` : ""
+
+  function handleToggle() {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setDropPos({ top: r.bottom + 6, right: window.innerWidth - r.right })
+    }
+    setOpen((v) => !v)
+  }
 
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (
+        dropRef.current && !dropRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) setOpen(false)
     }
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [open])
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div className="relative shrink-0">
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border-default text-text-secondary hover:border-accent/50 hover:text-accent-light transition-colors"
         title="Đề xuất thành Governance Action"
       >
@@ -95,8 +109,12 @@ function ProposeDropdown({ poll, drepId, network }: { poll: InternalPoll; drepId
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 w-64 bg-bg-card border border-border-default rounded-xl shadow-2xl overflow-hidden animate-fade-in">
+      {open && dropPos && (
+        <div
+          ref={dropRef}
+          style={{ position: "fixed", top: dropPos.top, right: dropPos.right, zIndex: 9999 }}
+          className="w-64 bg-bg-card border border-border-default rounded-xl shadow-2xl overflow-hidden animate-fade-in"
+        >
           <p className="px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-b border-border-subtle">
             Chọn loại Governance Action
           </p>
@@ -191,9 +209,21 @@ function PollCard({ poll, drepId, network }: { poll: InternalPoll; drepId: strin
           Add comment
         </Link>
         <button
-          onClick={() => navigator.clipboard.writeText(
-            `${typeof window !== "undefined" ? window.location.origin : ""}/dreps/${drepId}/community/${poll.id}${networkParam}`
-          )}
+          onClick={() => {
+            const url = `${typeof window !== "undefined" ? window.location.origin : ""}/dreps/${drepId}/community/${poll.id}${networkParam}`
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(url)
+            } else {
+              const el = document.createElement("textarea")
+              el.value = url
+              el.style.position = "fixed"
+              el.style.opacity = "0"
+              document.body.appendChild(el)
+              el.select()
+              document.execCommand("copy")
+              document.body.removeChild(el)
+            }
+          }}
           className="flex items-center gap-1.5 hover:text-text-primary transition-colors"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

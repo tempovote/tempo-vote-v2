@@ -41,6 +41,7 @@ application {
 }
 
 repositories {
+    mavenLocal()   // cardano-client-transaction-spec patched locally (govActionDeposit support)
     mavenCentral()
 }
 
