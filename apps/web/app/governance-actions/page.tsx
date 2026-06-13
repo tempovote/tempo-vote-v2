@@ -9,50 +9,48 @@ import { useGovernanceActions } from "@/hooks/useGovernanceActions"
 import { govActionIdToBech32 } from "@/lib/governance"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 
-const FILTER_CHIPS = [
-  { label: "Tất cả",           value: "",             kind: "all"    },
-  { label: "Expired",          value: "expired",      kind: "status" },
-  { label: "Treasury",         value: "treasuryWithdrawals",        kind: "type" },
-  { label: "Protocol Params",  value: "protocolParametersUpdate",   kind: "type" },
-  { label: "Hard Fork",        value: "hardForkInitiation",         kind: "type" },
-  { label: "Info",             value: "infoAction",                 kind: "type" },
-  { label: "No Confidence",    value: "noConfidence",               kind: "type" },
-  { label: "Update Committee", value: "updateCommittee",            kind: "type" },
-  { label: "New Constitution", value: "newConstitution",            kind: "type" },
+const STATUS_TABS = [
+  { label: "Active",          value: "active"   },
+  { label: "Ratified",        value: "ratified" },
+  { label: "Enacted",         value: "enacted"  },
+  { label: "Expired",         value: "expired"  },
 ]
 
-// Active/ratified proposals sort before expired; within each group sort by expiry DESC.
-const STATUS_SORT_PRIORITY: Record<string, number> = { active: 0, ratified: 0 }
-const getStatusPriority = (s: string) => STATUS_SORT_PRIORITY[s] ?? 1
+const TYPE_CHIPS = [
+  { label: "Treasury",          value: "treasuryWithdrawals"      },
+  { label: "Protocol Params",   value: "protocolParametersUpdate" },
+  { label: "Hard Fork",         value: "hardForkInitiation"       },
+  { label: "Info",              value: "infoAction"               },
+  { label: "No Confidence",     value: "noConfidence"             },
+  { label: "Update Committee",  value: "updateCommittee"          },
+  { label: "New Constitution",  value: "newConstitution"          },
+]
 
 export default function GovernanceActionsPage() {
   const network = useWalletStore((s) => s.selectedNetwork)
   const { drepKey } = useWallet()
 
-  const [activeFilter, setActiveFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState("active")
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [search, setSearch] = useState("")
 
-  const activeChipKind = FILTER_CHIPS.find((c) => c.value === activeFilter)?.kind ?? "all"
+  // Always fetch ALL proposals (no type pre-filter) so the status filter has the full dataset.
+  // Both status and type are filtered client-side from the single ${network}:all cache entry.
+  const { actions, isLoading, error } = useGovernanceActions(network)
 
-  // Status filters (e.g. "expired") are applied client-side after fetching all proposals.
-  // Type filters are passed to the API to reduce payload size.
-  const typeForApi = activeChipKind === "type" ? activeFilter : undefined
-
-  const { actions, isLoading, error } = useGovernanceActions(network, typeForApi)
-
-  // Client-side status filter
-  const statusFiltered =
-    activeChipKind === "status"
-      ? actions.filter((a) => a.status === activeFilter)
-      : actions
+  // Client-side status + type filtering (order matters: status first)
+  const statusFiltered = actions.filter((a) => a.status === statusFilter)
+  const typeFiltered = typeFilter
+    ? statusFiltered.filter((a) => a.actionType === typeFilter)
+    : statusFiltered
 
   // Titles are served by the API (DB-backed). Only fall back to anchor-fetch for GAs
   // not yet in the DB (new proposals). Pass null for anchors that already have a title.
-  const titlesMap = useAnchorTitlesMap(statusFiltered.map((a) => a.title ? null : a.anchorUrl))
+  const titlesMap = useAnchorTitlesMap(typeFiltered.map((a) => a.title ? null : a.anchorUrl))
 
   const q = search.trim().toLowerCase()
   const visible = [...(q
-    ? statusFiltered.filter((a) => {
+    ? typeFiltered.filter((a) => {
         const title = a.title ?? (a.anchorUrl ? (titlesMap.get(a.anchorUrl) ?? null) : null)
         return (
           a.txHash.toLowerCase().includes(q) ||
@@ -62,13 +60,8 @@ export default function GovernanceActionsPage() {
           (title?.toLowerCase().includes(q) ?? false)
         )
       })
-    : statusFiltered
-  )].sort((a, b) => {
-    const pa = getStatusPriority(a.status)
-    const pb = getStatusPriority(b.status)
-    if (pa !== pb) return pa - pb
-    return b.expiresEpoch - a.expiresEpoch
-  })
+    : typeFiltered
+  )].sort((a, b) => b.expiresEpoch - a.expiresEpoch)
 
   return (
     <div className="page-container space-y-6">
@@ -103,24 +96,48 @@ export default function GovernanceActionsPage() {
         </div>
       </div>
 
-      {/* Filter chips — single scrollable row */}
-      <div
-        className="flex gap-2 overflow-x-auto animate-fade-in"
-        style={{ scrollbarWidth: "none" }}
-      >
-        {FILTER_CHIPS.map((chip) => (
-          <button
-            key={chip.value}
-            onClick={() => setActiveFilter(chip.value)}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap shrink-0 ${
-              activeFilter === chip.value
-                ? "bg-accent text-white border-accent"
-                : "bg-bg-card text-text-secondary border-border-subtle hover:text-text-primary hover:border-border-default"
-            }`}
+      {/* Filters */}
+      <div className="space-y-2.5 animate-fade-in">
+        {/* Status tabs — badge chip style */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-text-muted whitespace-nowrap">Trạng thái</span>
+          <div className="flex gap-2">
+            {STATUS_TABS.map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => setStatusFilter(tab.value)}
+                className={`badge badge-${tab.value} transition-opacity ${
+                  statusFilter === tab.value ? "opacity-100" : "opacity-40 hover:opacity-70"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Type chips — scrollable, single-select toggle */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-text-muted whitespace-nowrap">Loại GA</span>
+          <div
+            className="flex gap-2 overflow-x-auto"
+            style={{ scrollbarWidth: "none" }}
           >
-            {chip.label}
-          </button>
-        ))}
+            {TYPE_CHIPS.map((chip) => (
+              <button
+                key={chip.value}
+                onClick={() => setTypeFilter((f) => (f === chip.value ? null : chip.value))}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap shrink-0 ${
+                  typeFilter === chip.value
+                    ? "bg-accent text-white border-accent"
+                    : "bg-bg-card text-text-secondary border-border-subtle hover:text-text-primary hover:border-border-default"
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Propose action CTA */}
@@ -172,10 +189,10 @@ export default function GovernanceActionsPage() {
         <div className="text-center py-16 text-text-muted space-y-2">
           <p className="text-4xl">📭</p>
           <p className="font-medium">Không có governance actions phù hợp</p>
-          {(activeFilter || search) && (
+          {(typeFilter || search) && (
             <button
               className="text-sm text-accent-light underline"
-              onClick={() => { setActiveFilter(""); setSearch("") }}
+              onClick={() => { setTypeFilter(null); setSearch("") }}
             >
               Xoá bộ lọc
             </button>
