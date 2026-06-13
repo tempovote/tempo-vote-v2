@@ -58,7 +58,7 @@ export default function ProtocolTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full min-w-[700px] text-sm">
         <thead className="bg-bg-secondary border-b-2 border-border-default">
           <tr className="text-text-muted text-left">
             <th className="py-3 px-4 font-medium w-10">#</th>

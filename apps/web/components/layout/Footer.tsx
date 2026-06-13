@@ -17,7 +17,7 @@ export default function Footer() {
         </Link>
 
         {/* Center text */}
-        <p className="text-text-muted text-sm">Join our community</p>
+        <p className="text-text-muted text-sm">Tham gia cộng đồng</p>
 
         {/* Social icons */}
         <div className="flex items-center gap-4">

@@ -144,7 +144,7 @@ export default function DRepsPage() {
             </svg>
             <input
               type="text"
-              placeholder="Search by name, drep1… or 56-char credential hex"
+              placeholder="Tên, drep1… hoặc 56-char hex"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -247,10 +247,10 @@ export default function DRepsPage() {
           <div className="space-y-4 animate-slide-up">
 
             {/* Pill tab bar — same pattern as VoteHistoryTab */}
-            <div className="flex gap-1 bg-bg-secondary rounded-xl p-1 overflow-x-auto">
+            <div className="flex gap-1 bg-bg-secondary rounded-xl p-1 overflow-x-auto scrollbar-none">
               {([
                 { id: "delegators", label: "Delegators" },
-                { id: "whales",     label: "Whale Delegators" },
+                { id: "whales",     label: "Whales >1M ₳" },
                 { id: "vp",         label: "Voting Power" },
                 { id: "vpChange",   label: "VP Change" },
               ] as { id: LeaderboardTab; label: string }[]).map((t) => (

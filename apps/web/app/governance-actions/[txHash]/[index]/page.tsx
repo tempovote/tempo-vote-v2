@@ -422,13 +422,17 @@ export default function GovernanceActionDetailPage({
     <div className="page-container space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-text-muted animate-fade-in">
-        <Link href="/governance-actions" className="hover:text-text-primary transition-colors">
+        <Link href="/governance-actions" className="hover:text-text-primary transition-colors whitespace-nowrap">
           Governance Actions
         </Link>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        <span className="text-text-primary truncate max-w-[200px]">{heading}</span>
+        {loading && !action ? (
+          <div className="h-4 w-36 bg-bg-elevated rounded animate-pulse" />
+        ) : (
+          <span className="text-text-primary truncate max-w-[200px]">{heading}</span>
+        )}
       </nav>
 
       {/* Loading */}
@@ -474,14 +478,14 @@ export default function GovernanceActionDetailPage({
                 <p className="font-medium">Epoch {action.expiresEpoch}</p>
               </div>
               <div>
-                <p className="text-text-muted text-xs mb-0.5">Deposit</p>
+                <p className="text-text-muted text-xs mb-0.5">Đặt cọc</p>
                 <p className="font-medium">
                   {(action.deposit / 1_000_000).toLocaleString()} ADA
                 </p>
               </div>
               {action.anchorUrl && (
                 <div>
-                  <p className="text-text-muted text-xs mb-0.5">Anchor</p>
+                  <p className="text-text-muted text-xs mb-0.5">Tài liệu đính kèm</p>
                   <a
                     href={resolveAnchorUrl(action.anchorUrl) ?? "#"}
                     target="_blank"
@@ -498,8 +502,23 @@ export default function GovernanceActionDetailPage({
 
             {/* Anchor hash */}
             {action.anchorHash && (
-              <div className="bg-bg-secondary rounded-lg px-3 py-2 text-xs text-text-muted font-mono break-all">
-                <span className="text-text-muted/60 mr-2">hash:</span>{action.anchorHash}
+              <div className="bg-bg-secondary rounded-lg px-3 py-2 text-xs text-text-muted font-mono flex items-center justify-between gap-2">
+                <span>
+                  <span className="text-text-muted/60 mr-2">hash:</span>
+                  <span title={action.anchorHash}>
+                    {action.anchorHash.slice(0, 12)}…{action.anchorHash.slice(-8)}
+                  </span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(action.anchorHash!)}
+                  className="shrink-0 text-text-muted hover:text-text-primary transition-colors"
+                  title="Copy hash"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </button>
               </div>
             )}
           </div>

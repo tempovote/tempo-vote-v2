@@ -307,6 +307,10 @@ export default function DAppRankingPage() {
           </div>
           {loadingChart ? (
             <div className="h-48 bg-bg-card-hover rounded animate-pulse" />
+          ) : chartData.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-text-muted text-sm">
+              Không có dữ liệu biểu đồ
+            </div>
           ) : (() => {
             const isAda = chartUnit === "ada" && adaPrice > 0
             const displayData = isAda
@@ -314,16 +318,16 @@ export default function DAppRankingPage() {
               : chartData
             const sym = isAda ? "₳" : "$"
             return (
-              <div className="h-48">
+              <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={displayData} margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+                  <AreaChart data={displayData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                     <defs>
                       <linearGradient id="tvlGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#818cf8" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="#818cf8" stopOpacity={0.05} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#252d4a" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e2640" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }}
                       axisLine={false} tickLine={false} interval={14} />
                     <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false}
@@ -333,8 +337,8 @@ export default function DAppRankingPage() {
                         borderRadius: "8px", color: "#f1f5f9", fontSize: "12px" }}
                       formatter={(v: number) => [`${sym}${v.toFixed(2)}M`, "TVL"]}
                     />
-                    <Area type="monotone" dataKey="tvl" stroke="#6366f1" strokeWidth={2}
-                      fill="url(#tvlGradient)" dot={false} />
+                    <Area type="monotone" dataKey="tvl" stroke="#818cf8" strokeWidth={2.5}
+                      fill="url(#tvlGradient)" dot={false} activeDot={{ r: 4, fill: "#818cf8" }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

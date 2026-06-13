@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import Image from "next/image"
 import Link from "next/link"
 import { useWallet } from "@/hooks/useWallet"
@@ -279,9 +280,12 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
     setTimeout(() => setCopied(false), 2000)
   }, [changeAddress])
 
-  if (!isOpen) return null
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
-  return (
+  if (!isOpen || !mounted) return null
+
+  return createPortal(
     <div className="wallet-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="wallet-modal">
         {/* Header */}
@@ -508,6 +512,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

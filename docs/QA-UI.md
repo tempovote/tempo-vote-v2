@@ -13,32 +13,32 @@
 
 ### 🔴 CRITICAL
 
-- [ ] **#1** — Modal "Connect Wallet" không có nền/backdrop đặc — panel modal trong suốt, nội dung trang lộ xuyên qua, chữ chồng chữ không đọc được. Thêm backdrop opaque/blur + nền đặc cho panel modal; đảm bảo z-index cao hơn toàn bộ nội dung.
-- [ ] **#2** — Mở Connect Wallet không đóng menu mobile — menu hamburger + modal ví cùng hiển thị, chồng chéo 2 lớp. Đóng menu mobile khi mở bất kỳ modal nào (hoặc khi điều hướng).
+- [x] **#1** — Modal "Connect Wallet" không có nền/backdrop đặc — portal + z-index 9999 + hardcode bg. ✅
+- [x] **#2** — Mở Connect Wallet không đóng menu mobile — `setMobileOpen(false)` trong openModal. ✅
 
 ### 🟠 HIGH
 
-- [ ] **#3** — Trộn lẫn tiếng Anh – tiếng Việt khắp nơi — Home: "Become a DRep" (EN) cạnh "Tìm DRep phù hợp" (VI); GA detail: "Khoản rút" (VI) cạnh "Stake Address", "Anchor", "Guardrails Script Hash" (EN); Footer: "Join our community" (EN). Thống nhất 1 ngôn ngữ hoặc làm i18n toàn diện.
-- [ ] **#4** — Menu mobile: chữ xám mờ trên nền đen → contrast thấp + không có overlay làm tối nền. Tăng contrast text menu; thêm overlay nền mờ/đặc khi menu mở.
-- [ ] **#5** — Trang vote (GA detail): 2 cột YES/NO quá chật ở mobile, tên DRep bị cắt cụt, inner scroll trapping. Ở mobile stack 1 cột + tab lọc Yes / No / Abstain; bỏ inner-scroll hoặc dùng "xem thêm".
-- [ ] **#6** — DApp Ranking: cột TVL bị cắt cụt ("$25.08B" → "$25.08l"). Cho bảng cuộn ngang có chỉ báo, hoặc đổi layout card ở mobile.
-- [ ] **#7** — DApp Ranking: biểu đồ TVL trống (chỉ thấy lưới, không có đường/cột dữ liệu). Kiểm tra data series + màu line/area trên nền dark.
+- [x] **#3** — Trộn lẫn tiếng Anh – tiếng Việt — dịch Home, Footer, banner, "Stake Address", "Deposit", "Anchor". ✅
+- [x] **#4** — Menu mobile: contrast + overlay — `bg-black/60` backdrop, `bg-bg-card` solid, text-primary. ✅
+- [x] **#5** — Vote page 2 cột quá chật mobile — mobile filter tabs YES/NO/ABSTAIN + 1 cột. ✅
+- [x] **#6** — DApp Ranking TVL bị cắt — `min-w-[700px]` trên `<table>`. ✅
+- [x] **#7** — DApp Ranking biểu đồ trống — empty state + màu `#818cf8` + `strokeWidth 2.5`. ✅
 
 ### 🟡 MEDIUM
 
-- [ ] **#8** — Banner khuyến mãi trên cùng không tắt được, chiếm ~110px chiều cao trên mobile, không có nút đóng, lại là tiếng Anh. Thêm nút dismiss (lưu trạng thái), cân nhắc giảm chiều cao.
-- [ ] **#9** — DReps list: placeholder ô tìm kiếm bị cắt ("...creder"); tab "Whale Delegators >1M ₳ / Voting Power" tràn ngang, "Voting Power" bị cắt. Rút gọn placeholder cho mobile; cho tab cuộn ngang có chỉ báo.
-- [ ] **#10** — Governance Actions list: filter "Loại GA" tràn ngang, chip "No Confidence" bị cắt; card "Đề xuất" 2 cột khiến mô tả dồn cột hẹp. Ở mobile stack dọc: mô tả full-width rồi nút bên dưới.
-- [ ] **#11** — Home: card "Become a DRep" căn giữa, card "Delegate To DRep" căn trái — thiếu nhất quán thị giác. Thống nhất 1 kiểu căn lề.
-- [ ] **#12** — GA detail: chính sách truncate hash không nhất quán — một số full 64 ký tự wrap 2 dòng, số khác truncate. Thống nhất truncate (đầu…cuối) + nút copy cho mọi hash/address.
-- [ ] **#13** — GA detail: breadcrumb hiển thị "Governance Action" generic trước khi load tên đề xuất thật. Dùng skeleton cho breadcrumb.
+- [x] **#8** — Banner không tắt được — dismiss button + localStorage `tempo:banner-dismissed-v1`. ✅
+- [x] **#9** — DReps list placeholder cắt + tab tràn — placeholder rút gọn, "Whales >1M ₳". ✅
+- [x] **#10** — GA list filter tràn + card chật — `min-w-0` cho filter, `flex-col sm:flex-row` cho card. ✅
+- [x] **#11** — Home card căn lề không nhất quán — thêm `text-center` cho card Delegate. ✅
+- [x] **#12** — GA detail hash truncate không nhất quán — `slice(0,12)…slice(-8)` + copy button. ✅
+- [x] **#13** — GA detail breadcrumb generic — skeleton `animate-pulse` khi loading. ✅
 
 ### 🟢 LOW / Polish
 
-- [ ] **#14** — Next.js dev indicator ("N" tròn góc dưới-trái) che button "Khám phá DReps" và các element khác. Xác nhận không có widget cố định nào che element tương tự ở production.
-- [ ] **#15** — Header sticky cần nền đặc hoàn toàn khi cuộn — đảm bảo header có nền đặc/blur rõ để không bị nội dung "đè".
-- [ ] **#16** — Ký hiệu ₳ dính sát số: "26.91M₳", "5.8B₳". Thêm spacing trước ₳ và kiểm tra hiển thị glyph.
-- [ ] **#17** — Register page: empty state không có nút Connect Wallet inline — người dùng phải tự lên header. Thêm nút CTA inline.
+- [ ] **#14** — Next.js dev indicator che content — chỉ xuất hiện ở dev, không ảnh hưởng production.
+- [ ] **#15** — Header sticky nền cần solid khi cuộn — nav đã có `bg-bg-primary/80 backdrop-blur-xl`.
+- [x] **#16** — ₳ dính sát số — thêm space trước ₳ trong VoteHistoryTab. ✅
+- [x] **#17** — Register page thiếu nút Connect inline — thêm `<button onClick={openWalletModal}>`. ✅
 
 ---
 
