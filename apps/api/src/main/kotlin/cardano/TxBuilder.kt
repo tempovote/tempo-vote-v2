@@ -343,6 +343,17 @@ class TxBuilder(private val network: Network) {
         val ogmios = OgmiosStateQueries(network)
         val guardrailsHash = ogmios.getConstitutionGuardrailsHash()
 
+        // ParameterChange must chain to the last enacted pparam update (CIP-1694, error 3159).
+        // Honor an explicit prev from the caller; otherwise auto-resolve from on-chain state.
+        val prevId: GovActionId? = if (prevGovActionTxHash != null && prevGovActionIdx != null) {
+            GovActionId(prevGovActionTxHash, prevGovActionIdx)
+        } else {
+            ogmios.getLastEnactedGovActionId("protocolParametersUpdate")?.let { (tx, ix) ->
+                println("[TxBuilder] ParameterChange auto-resolved prevGovActionId = $tx#$ix")
+                GovActionId(tx, ix)
+            }
+        }
+
         val ppUpdate = ProtocolParamUpdate.builder().apply {
             paramUpdate.minFeeA?.let { minFeeA(BigInteger.valueOf(it)) }
             paramUpdate.minFeeB?.let { minFeeB(BigInteger.valueOf(it)) }
@@ -419,7 +430,7 @@ class TxBuilder(private val network: Network) {
         }.build()
 
         val action = ParameterChangeAction.builder()
-            .prevGovActionId(buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx))
+            .prevGovActionId(prevId)
             .protocolParamUpdate(ppUpdate)
             .policyHash(guardrailsHash)
             .build()

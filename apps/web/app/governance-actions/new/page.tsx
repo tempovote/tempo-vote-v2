@@ -862,6 +862,17 @@ function ProtocolParamChangeFields({
           })}
         </div>
       )}
+
+      {/* Previous enacted ParameterChange — required by CIP-1694 (ledger error 3159).
+          Left blank, the API auto-resolves it from on-chain state. */}
+      <div className="pt-1">
+        <PrevGovActionFields
+          params={params}
+          onChange={onChange}
+          label="Previous Parameter-Change Action"
+          hint="Bắt buộc theo CIP-1694: GA protocolParametersUpdate gần nhất đã enacted. Để trống → API tự động resolve từ on-chain. Chỉ điền nếu muốn chỉ định nhánh cụ thể."
+        />
+      </div>
     </>
   )
 }
