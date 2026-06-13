@@ -34,11 +34,24 @@ const PP_LABELS: Record<string, string> = {
   desiredNumberOfStakePools: "Desired Pool Count (k)",
   stakePoolRetirementEpochBound: "Pool Retirement Window",
   stakePoolPledgeInfluence: "Pool Pledge Influence (a₀)",
+  stakeCredentialDeposit: "Stake Key Deposit",
+  maxReferenceScriptsSize: "Max Reference Scripts Size",
   // Plutus
   plutusCostModels:      "Plutus Cost Models",
   maxExecutionUnitsPerBlock: "Max Execution Units / Block",
   maxExecutionUnitsPerTransaction: "Max Execution Units / TX",
   executionUnitPrices:   "Execution Unit Prices",
+  scriptExecutionPrices: "Execution Unit Prices",
+  // Governance Group (Conway) — keys as Ogmios names
+  governanceActionDeposit:               "Gov Action Deposit",
+  governanceActionLifetime:              "Gov Action Lifetime",
+  delegateRepresentativeDeposit:         "DRep Deposit",
+  delegateRepresentativeMaxIdleTime:     "DRep Activity",
+  constitutionalCommitteeMinSize:        "Committee Min Size",
+  constitutionalCommitteeMaxTermLength:  "Committee Max Term Length",
+  minFeeReferenceScripts:                "Min Fee RefScript Cost",
+  stakePoolVotingThresholds:             "Pool Voting Thresholds",
+  delegateRepresentativeVotingThresholds:"DRep Voting Thresholds",
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
