@@ -36,13 +36,15 @@ function ColHeader({
   children,
   active,
   align = "right",
+  className = "",
 }: {
   children: React.ReactNode
   active: boolean
   align?: "left" | "right"
+  className?: string
 }) {
   return (
-    <th className={`py-3 px-3 font-medium whitespace-nowrap text-${align} ${active ? "text-accent-light" : ""}`}>
+    <th className={`py-3 px-3 font-medium whitespace-nowrap text-${align} ${active ? "text-accent-light" : ""} ${className}`}>
       {children}
       {active && <span className="ml-1 text-accent">↓</span>}
     </th>
@@ -58,7 +60,7 @@ export default function ProtocolTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[700px] text-sm">
+      <table className="w-full md:min-w-[700px] text-sm">
         <thead className="bg-bg-secondary border-b-2 border-border-default">
           <tr className="text-text-muted text-left">
             <th className="py-3 px-4 font-medium w-10">#</th>
@@ -66,11 +68,11 @@ export default function ProtocolTable({
             <th className="py-3 px-3 font-medium">Name</th>
             <th className="py-3 px-3 font-medium">Category</th>
             <ColHeader active={sortMode === "tvl"}>TVL</ColHeader>
-            <th className="py-3 px-3 font-medium text-right whitespace-nowrap">1d %</th>
-            <th className="py-3 px-3 font-medium text-right whitespace-nowrap">7d %</th>
-            <ColHeader active={sortMode === "volume"}>Vol 24h</ColHeader>
-            <ColHeader active={sortMode === "fees"}>Fees 24h</ColHeader>
-            <ColHeader active={sortMode === "revenue"}>Revenue 24h</ColHeader>
+            <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">1d %</th>
+            <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">7d %</th>
+            <ColHeader active={sortMode === "volume"} className="hidden md:table-cell">Vol 24h</ColHeader>
+            <ColHeader active={sortMode === "fees"} className="hidden md:table-cell">Fees 24h</ColHeader>
+            <ColHeader active={sortMode === "revenue"} className="hidden md:table-cell">Revenue 24h</ColHeader>
           </tr>
         </thead>
         <tbody>
@@ -118,18 +120,18 @@ export default function ProtocolTable({
                 {fmtUsd(p.tvl)}
               </td>
 
-              <td className="py-3 px-3 text-right"><Change value={p.change1d} /></td>
-              <td className="py-3 px-3 text-right"><Change value={p.change7d} /></td>
+              <td className="py-3 px-3 text-right hidden sm:table-cell"><Change value={p.change1d} /></td>
+              <td className="py-3 px-3 text-right hidden sm:table-cell"><Change value={p.change7d} /></td>
 
-              <td className={`py-3 px-3 text-right tabular-nums ${sortMode === "volume" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
+              <td className={`py-3 px-3 text-right tabular-nums hidden md:table-cell ${sortMode === "volume" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
                 {fmtUsd(p.volume24h)}
               </td>
 
-              <td className={`py-3 px-3 text-right tabular-nums ${sortMode === "fees" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
+              <td className={`py-3 px-3 text-right tabular-nums hidden md:table-cell ${sortMode === "fees" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
                 {fmtUsd(p.fees24h)}
               </td>
 
-              <td className={`py-3 px-3 text-right tabular-nums ${sortMode === "revenue" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
+              <td className={`py-3 px-3 text-right tabular-nums hidden md:table-cell ${sortMode === "revenue" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
                 {fmtUsd(p.revenue24h)}
               </td>
             </tr>

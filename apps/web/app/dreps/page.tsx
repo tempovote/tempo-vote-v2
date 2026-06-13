@@ -252,7 +252,7 @@ export default function DRepsPage() {
                 { id: "delegators", label: "Delegators" },
                 { id: "whales",     label: "Whales >1M ₳" },
                 { id: "vp",         label: "Voting Power" },
-                { id: "vpChange",   label: "VP Change" },
+                { id: "vpChange",   label: "VP Change / epoch Δ" },
               ] as { id: LeaderboardTab; label: string }[]).map((t) => (
                 <button
                   key={t.id}
@@ -264,12 +264,6 @@ export default function DRepsPage() {
                   }`}
                 >
                   {t.label}
-                  {t.id === "whales" && (
-                    <span className="ml-1.5 text-xs text-text-muted">&gt;1M ₳</span>
-                  )}
-                  {t.id === "vpChange" && (
-                    <span className={`ml-1.5 text-xs ${activeTab === t.id ? "text-accent" : "text-text-muted"}`}>epoch Δ</span>
-                  )}
                 </button>
               ))}
             </div>
