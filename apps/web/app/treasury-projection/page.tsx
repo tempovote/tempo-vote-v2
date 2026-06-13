@@ -135,7 +135,7 @@ function ChartTooltip({ active, payload, label }: any) {
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="bg-bg-card border border-border-default rounded-2xl px-5 py-4 flex-1 min-w-0">
+    <div className="bg-bg-card border border-border-default rounded-2xl px-5 py-4 min-w-0">
       <p className="text-xs text-text-muted uppercase tracking-wider mb-1">{label}</p>
       <p className={`text-xl font-bold truncate ${color ?? "text-text-primary"}`}>{value}</p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
@@ -186,7 +186,7 @@ export default function TreasuryProjectionPage() {
       </div>
 
       {/* ── Stats row ── */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard
           label="Starting Treasury"
           value={fmt(INITIAL_TREASURY, 1)}
