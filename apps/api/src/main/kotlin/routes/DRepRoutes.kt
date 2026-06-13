@@ -687,12 +687,16 @@ fun Route.stakeRoutes() {
                     } else null
                 }
 
-                val response = if (drepCredential == null) {
+                // Convert hex credential → bech32 drep1… so the frontend can compare
+                // directly against drepKey.dRepIDCip105 (also bech32).
+                val drepIdBech32 = drepCredential?.let { credentialHexToDrepIdCip105(it) ?: it }
+
+                val response = if (drepIdBech32 == null) {
                     buildJsonObject { put("delegatedDrep", JsonNull) }
                 } else {
                     buildJsonObject {
                         putJsonObject("delegatedDrep") {
-                            put("id", drepCredential)
+                            put("id", drepIdBech32)
                             put("name", JsonNull)
                         }
                     }

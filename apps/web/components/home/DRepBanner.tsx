@@ -1,25 +1,114 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
+import { useDRepStats } from "@/hooks/useDRepStats"
 import { useTx } from "@/hooks/useTx"
 import { resolveAnchorUrl } from "@/lib/governance"
 
-function lovelaceToAda(lovelace: number | null): string {
-  if (!lovelace || lovelace === 0) return "0"
-  return (lovelace / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 })
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function hashToColors(str: string): [string, string] {
+  let h = 0
+  for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0
+  const hue1 = (h >>> 0) % 360
+  return [`hsl(${hue1},65%,55%)`, `hsl(${(hue1 + 137) % 360},65%,45%)`]
 }
+
+function shortId(id: string) {
+  return id.length <= 20 ? id : `${id.slice(0, 12)}…${id.slice(-6)}`
+}
+
+function formatAda(lovelace: number): string {
+  const ada = lovelace / 1_000_000
+  if (ada >= 1_000_000) return `${(ada / 1_000_000).toFixed(2)}M`
+  if (ada >= 1_000)     return `${(ada / 1_000).toFixed(1)}K`
+  return ada.toFixed(2)
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function Avatar({ drepId, imageUrl, name }: { drepId: string; imageUrl: string | null; name: string | null }) {
+  const [colors] = useState(() => hashToColors(drepId))
+  const [imgErr, setImgErr] = useState(false)
+  const initial = (name ?? drepId).charAt(0).toUpperCase()
+  const size = 56
+
+  if (imageUrl && !imgErr) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={imageUrl}
+        alt={name ?? drepId}
+        width={size}
+        height={size}
+        className="rounded-full object-cover shrink-0"
+        style={{ width: size, height: size }}
+        onError={() => setImgErr(true)}
+      />
+    )
+  }
+
+  return (
+    <div
+      className="rounded-full flex items-center justify-center text-white font-bold shrink-0 select-none"
+      style={{ width: size, height: size, fontSize: size * 0.4, background: `linear-gradient(135deg, ${colors[0]}, ${colors[1]})` }}
+    >
+      {initial}
+    </div>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
+      className="text-text-muted hover:text-accent-light transition-colors"
+      title="Copy DRep ID"
+    >
+      {copied ? (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-success">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
+function StatCell({ label, value, loading, highlight = false, danger = false }: {
+  label: string; value: string | null; loading: boolean; highlight?: boolean; danger?: boolean
+}) {
+  return (
+    <div className="px-3 py-2.5 space-y-0.5">
+      <p className="text-[11px] text-text-muted leading-tight">{label}</p>
+      {loading && !value ? (
+        <div className="h-5 w-20 bg-bg-elevated rounded animate-pulse mt-1" />
+      ) : (
+        <p className={`text-sm font-bold leading-tight ${danger ? "text-danger" : highlight ? "text-accent-light" : "text-text-primary"}`}>
+          {value ?? "—"}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ── Self-delegate CTA (unchanged logic) ──────────────────────────────────────
 
 function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: string | null }) {
   const { submitTx, isReady } = useTx()
-  const { refreshDRepStatus }  = useWallet()
+  const { refreshDRepStatus } = useWallet()
   const { isDrepRegistered, setDRepStatus } = useWalletStore()
   const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleSelfDelegate() {
     if (!isReady || loading) return
@@ -27,15 +116,11 @@ function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: st
     setError(null)
     try {
       await submitTx("DELEGATE", { targetDrepId: drepId, delegationType: "drep" })
-
-      // Optimistic update — persists in store across navigation so CTA won't reappear
       setDRepStatus({
         isDrepRegistered: isDrepRegistered ?? true,
         drepName: drepName ?? null,
         delegatedDrep: { id: drepId, name: drepName ?? null },
       })
-
-      // Background re-fetch after 30s to confirm on-chain (fire-and-forget)
       setTimeout(() => { refreshDRepStatus().catch(() => {}) }, 30_000)
     } catch (e) {
       setError(e instanceof Error ? e.message : "TX thất bại")
@@ -52,43 +137,23 @@ function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: st
           <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-warning leading-snug">
-            Voting Power chưa được kích hoạt
-          </p>
+          <p className="text-sm font-semibold text-warning leading-snug">Voting Power chưa được kích hoạt</p>
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-            Bạn chưa self-delegate stake của mình về DRep này.
-            Voting power sẽ bằng&nbsp;
-            <span className="font-semibold text-warning/90">0 ₳</span>
-            &nbsp;cho đến khi hoàn tất bước này.
+            Bạn chưa self-delegate stake về DRep này.
+            Voting power sẽ bằng <span className="font-semibold text-warning/90">0 ₳</span> cho đến khi hoàn tất bước này.
           </p>
         </div>
       </div>
-
-      {error && (
-        <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-1.5">{error}</p>
-      )}
-
+      {error && <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-1.5">{error}</p>}
       <button
         onClick={handleSelfDelegate}
         disabled={!isReady || loading}
-        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all
-          bg-warning text-bg-primary hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
-          flex items-center justify-center gap-2"
+        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-warning text-bg-primary hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {loading ? (
-          <>
-            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-            </svg>
-            Đang xử lý…
-          </>
+          <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Đang xử lý…</>
         ) : (
-          <>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            Self-Delegate ngay
-          </>
+          <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>Self-Delegate ngay</>
         )}
       </button>
     </div>
@@ -102,107 +167,120 @@ function PendingEpochNote() {
         <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
       </svg>
       <div>
-        <p className="text-xs font-semibold text-accent-light leading-snug">
-          Delegation đã xác nhận
-        </p>
-        <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-          Voting power sẽ được cập nhật vào đầu epoch tiếp theo.
-        </p>
+        <p className="text-xs font-semibold text-accent-light leading-snug">Delegation đã xác nhận</p>
+        <p className="text-xs text-text-muted mt-0.5 leading-relaxed">Voting power sẽ được cập nhật vào đầu epoch tiếp theo.</p>
       </div>
     </div>
   )
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function DRepBanner() {
   const { isDrepRegistered, drepKey, delegatedDrep, drepStatusLoading, selectedNetwork } = useWalletStore()
   const drepId = drepKey?.dRepIDCip105 ?? null
 
-  const { profile, isLoading } = useDRepProfile(drepId ?? "", selectedNetwork)
+  const { profile, isLoading: profileLoading } = useDRepProfile(drepId ?? "", selectedNetwork)
+  const { stats, loading: statsLoading } = useDRepStats(drepId, selectedNetwork)
 
   if (!isDrepRegistered || !drepId) return null
 
-  const name         = profile?.givenName ?? profile?.name ?? drepId.slice(0, 12) + "…"
-  const avatarUrl    = profile?.imageUrl ? resolveAnchorUrl(profile.imageUrl) : null
-  const votingPower  = profile?.votingPower ?? null
-  const hasVotingPower = votingPower !== null && votingPower > 0
+  const name       = profile?.givenName ?? profile?.name ?? null
+  const displayName = name ?? shortId(drepId)
+  const imageUrl   = profile?.imageUrl ? resolveAnchorUrl(profile.imageUrl) : null
   const networkParam = selectedNetwork !== "mainnet" ? `?network=${selectedNetwork}` : ""
 
-  const profileLoading = isLoading || drepStatusLoading
-
-  // CTA: registered but stake not delegated to own DRep
-  const needsSelfDelegate = !profileLoading && drepId && delegatedDrep?.id !== drepId
-  // Info: delegated but epoch not yet updated
-  const pendingEpoch = !needsSelfDelegate && !hasVotingPower && delegatedDrep?.id === drepId
+  const anyLoading      = profileLoading || drepStatusLoading
+  const needsSelfDelegate = !anyLoading && delegatedDrep?.id !== drepId
+  const pendingEpoch    = !needsSelfDelegate && !stats?.activeVotingPower && delegatedDrep?.id === drepId
 
   return (
-    <section className="animate-slide-up">
-      <div className="card-accent rounded-2xl p-5 space-y-4">
-        {/* Top row: avatar + name + status */}
-        <div className="flex items-center gap-4">
-          <div className="shrink-0 w-14 h-14 rounded-full overflow-hidden bg-bg-elevated border border-border-subtle flex items-center justify-center">
-            {profileLoading ? (
-              <div className="w-full h-full bg-bg-elevated animate-pulse rounded-full" />
-            ) : avatarUrl ? (
-              <Image src={avatarUrl} alt={name} width={56} height={56} className="w-full h-full object-cover" unoptimized />
-            ) : (
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-              </svg>
-            )}
-          </div>
+    <section className="card-static space-y-5 animate-slide-up">
 
-          <div className="flex-1 min-w-0">
-            {profileLoading ? (
+      {/* Header: avatar + name + ID + status */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <Avatar drepId={drepId} imageUrl={imageUrl} name={name} />
+          <div className="min-w-0 space-y-1">
+            {anyLoading && !name ? (
               <div className="space-y-1.5">
                 <div className="h-5 w-32 bg-bg-elevated rounded animate-pulse" />
-                <div className="h-3.5 w-40 bg-bg-elevated rounded animate-pulse" />
+                <div className="h-3.5 w-44 bg-bg-elevated rounded animate-pulse" />
               </div>
             ) : (
               <>
-                <p className="font-bold text-text-primary truncate">{name}</p>
-                <p className="text-xs text-text-muted font-mono truncate mt-0.5">
-                  {drepId.slice(0, 16)}…{drepId.slice(-6)}
-                </p>
+                <h2 className="text-lg font-bold leading-tight">{displayName}</h2>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-xs text-text-muted bg-bg-elevated px-2 py-0.5 rounded border border-border-subtle">
+                    {shortId(drepId)}
+                  </span>
+                  <CopyButton text={drepId} />
+                </div>
               </>
             )}
           </div>
-
-          <span className="badge badge-active shrink-0">Active</span>
         </div>
-
-        {/* Voting power row */}
-        <div className="bg-bg-elevated/60 rounded-xl px-4 py-3">
-          <p className="text-xs text-text-muted mb-0.5">Active Voting Power</p>
-          {profileLoading ? (
-            <div className="h-6 w-20 bg-bg-elevated rounded animate-pulse mt-1" />
-          ) : (
-            <p className="text-xl font-bold text-text-primary">
-              {lovelaceToAda(votingPower)} <span className="text-base font-normal text-text-muted">₳</span>
-            </p>
-          )}
-          {!profileLoading && !hasVotingPower && !needsSelfDelegate && !pendingEpoch && (
-            <p className="text-xs text-text-muted mt-0.5">chưa có delegator</p>
-          )}
-        </div>
-
-        {/* Self-delegate CTA */}
-        {needsSelfDelegate && (
-          <SelfDelegateNotice drepId={drepId} drepName={profile?.givenName ?? profile?.name ?? null} />
-        )}
-
-        {/* Pending epoch info */}
-        {pendingEpoch && <PendingEpochNote />}
-
-        {/* Community CTA */}
-        <Link
-          href={`/dreps/${encodeURIComponent(drepId)}/community${networkParam}`}
-          className="block w-full py-3 rounded-xl text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ background: "linear-gradient(90deg, #4f46e5 0%, #a855f7 100%)" }}
-        >
-          Your DRep Community
-        </Link>
+        <span className="badge badge-active shrink-0">Active</span>
       </div>
+
+      {/* Stats grid 2×3 */}
+      <div className="bg-bg-secondary rounded-xl border border-border-subtle divide-y divide-border-subtle">
+        <div className="grid grid-cols-3 divide-x divide-border-subtle">
+          <StatCell
+            label="Active Voting Power"
+            value={stats ? `${formatAda(stats.activeVotingPower)} ₳` : profile?.votingPower != null ? `${formatAda(profile.votingPower)} ₳` : null}
+            loading={statsLoading && !stats}
+          />
+          <StatCell
+            label="Live Voting Power"
+            value={stats ? `${formatAda(stats.liveVotingPower)} ₳` : null}
+            loading={statsLoading}
+          />
+          <StatCell
+            label="Delegators"
+            value={stats ? stats.delegatorCount.toLocaleString() : null}
+            loading={statsLoading}
+          />
+        </div>
+        <div className="grid grid-cols-3 divide-x divide-border-subtle">
+          <StatCell
+            label="Influence Power"
+            value={stats ? `${stats.influencePower.toFixed(2)}%` : null}
+            loading={statsLoading}
+            highlight
+          />
+          <StatCell
+            label="Voted"
+            value={stats ? `${stats.votedPercent.toFixed(2)}%` : null}
+            loading={statsLoading}
+            highlight
+          />
+          <StatCell
+            label="Not Voted"
+            value={stats ? `${stats.notVotedPercent.toFixed(2)}%` : null}
+            loading={statsLoading}
+            danger={!!stats && stats.notVotedPercent > 10}
+          />
+        </div>
+      </div>
+
+      {/* Self-delegate CTA */}
+      {needsSelfDelegate && (
+        <SelfDelegateNotice drepId={drepId} drepName={name} />
+      )}
+
+      {/* Pending epoch info */}
+      {pendingEpoch && <PendingEpochNote />}
+
+      {/* Community CTA */}
+      <Link
+        href={`/dreps/${encodeURIComponent(drepId)}/community${networkParam}`}
+        className="block w-full py-3 rounded-xl text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        style={{ background: "linear-gradient(90deg, #4f46e5 0%, #a855f7 100%)" }}
+      >
+        Your DRep Community
+      </Link>
+
     </section>
   )
 }

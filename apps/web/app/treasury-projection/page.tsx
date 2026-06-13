@@ -170,20 +170,17 @@ export default function TreasuryProjectionPage() {
     <main className="page-container py-10 space-y-6">
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round">
-                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-                <polyline points="17 6 23 6 23 12"/>
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold text-text-primary">Cardano Treasury Projection</h1>
-          </div>
-          <p className="text-text-muted text-sm max-w-xl">
-            Simulate treasury and reserve dynamics over time using Cardano&apos;s monetary policy
-            (ρ = {RHO} per epoch · τ = {TAU} treasury cut).
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round">
+            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+            <polyline points="17 6 23 6 23 12"/>
+          </svg>
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-text-primary leading-tight">Cardano Treasury Projection</h1>
+          <p className="text-text-muted text-sm mt-0.5">
+            Simulate treasury &amp; reserve dynamics · ρ = {RHO}/epoch · τ = {TAU} treasury cut
           </p>
         </div>
       </div>
@@ -201,9 +198,9 @@ export default function TreasuryProjectionPage() {
           sub="Approx. mainnet 2026"
         />
         <StatCard
-          label="Annual Inflow (year 1)"
+          label="Annual Inflow"
           value={fmt(annualInflow, 1)}
-          sub={`At ${fmtSlider(txFee)} tx fee/epoch`}
+          sub={`Yr 1 · ${fmtSlider(txFee)} tx fee/epoch`}
         />
         <StatCard
           label={yearsRemaining === null ? "Status" : "Runs out in"}
@@ -372,9 +369,14 @@ export default function TreasuryProjectionPage() {
             </ResponsiveContainer>
 
             {/* Bottom note */}
-            <p className="text-xs text-text-muted mt-2 text-center">
-              Simulation starts from current epoch · epoch rewards to stakers excluded (they don&apos;t affect treasury/reserves math)
-            </p>
+            <div className="flex items-start justify-center gap-1.5 mt-3">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-muted shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Simulation starts from current epoch · staker rewards excluded (they don&apos;t affect treasury/reserves math)
+              </p>
+            </div>
           </div>
         </div>
       </div>
