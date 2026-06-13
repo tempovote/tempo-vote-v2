@@ -16,7 +16,7 @@ export interface DRepLeaderboardEntry {
   influencePower: number
 }
 
-const LEADERBOARD_TTL = 2 * 60 * 1000
+const LEADERBOARD_TTL = 10 * 60 * 1000
 interface CacheEntry { entries: DRepLeaderboardEntry[]; ts: number }
 const leaderboardCache = new Map<string, CacheEntry>()
 
