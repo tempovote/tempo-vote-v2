@@ -8,6 +8,7 @@ import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { useDRepStats } from "@/hooks/useDRepStats"
 import { useTx } from "@/hooks/useTx"
 import { resolveAnchorUrl } from "@/lib/governance"
+import { useT } from "@/i18n/useT"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -63,12 +64,13 @@ function Avatar({ drepId, imageUrl, name }: { drepId: string; imageUrl: string |
 }
 
 function CopyButton({ text }: { text: string }) {
+  const t = useT()
   const [copied, setCopied] = useState(false)
   return (
     <button
       onClick={() => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
       className="text-text-muted hover:text-accent-light transition-colors"
-      title="Copy DRep ID"
+      title={t("home.drepBanner.copyId")}
     >
       {copied ? (
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-success">
@@ -104,6 +106,7 @@ function StatCell({ label, value, loading, highlight = false, danger = false }: 
 // ── Self-delegate CTA (unchanged logic) ──────────────────────────────────────
 
 function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: string | null }) {
+  const t = useT()
   const { submitTx, isReady } = useTx()
   const { refreshDRepStatus } = useWallet()
   const { isDrepRegistered, setDRepStatus } = useWalletStore()
@@ -123,7 +126,7 @@ function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: st
       })
       setTimeout(() => { refreshDRepStatus().catch(() => {}) }, 30_000)
     } catch (e) {
-      setError(e instanceof Error ? e.message : "TX thất bại")
+      setError(e instanceof Error ? e.message : t("home.drepBanner.selfDelegate.txFailed"))
     } finally {
       setLoading(false)
     }
@@ -137,10 +140,9 @@ function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: st
           <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-warning leading-snug">Voting Power chưa được kích hoạt</p>
+          <p className="text-sm font-semibold text-warning leading-snug">{t("home.drepBanner.selfDelegate.title")}</p>
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-            Bạn chưa self-delegate stake về DRep này.
-            Voting power sẽ bằng <span className="font-semibold text-warning/90">0 ₳</span> cho đến khi hoàn tất bước này.
+            {t("home.drepBanner.selfDelegate.desc", { amount: "0 ₳" })}
           </p>
         </div>
       </div>
@@ -151,9 +153,9 @@ function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: st
         className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-warning text-bg-primary hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {loading ? (
-          <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Đang xử lý…</>
+          <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>{t("home.drepBanner.selfDelegate.processing")}</>
         ) : (
-          <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>Self-Delegate ngay</>
+          <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>{t("home.drepBanner.selfDelegate.cta")}</>
         )}
       </button>
     </div>
@@ -161,14 +163,15 @@ function SelfDelegateNotice({ drepId, drepName }: { drepId: string; drepName: st
 }
 
 function PendingEpochNote() {
+  const t = useT()
   return (
     <div className="rounded-xl px-4 py-3 bg-accent/10 border border-accent/20 flex items-start gap-2.5">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-light shrink-0 mt-0.5">
         <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
       </svg>
       <div>
-        <p className="text-xs font-semibold text-accent-light leading-snug">Delegation đã xác nhận</p>
-        <p className="text-xs text-text-muted mt-0.5 leading-relaxed">Voting power sẽ được cập nhật vào đầu epoch tiếp theo.</p>
+        <p className="text-xs font-semibold text-accent-light leading-snug">{t("home.drepBanner.pending.title")}</p>
+        <p className="text-xs text-text-muted mt-0.5 leading-relaxed">{t("home.drepBanner.pending.desc")}</p>
       </div>
     </div>
   )
@@ -177,6 +180,7 @@ function PendingEpochNote() {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function DRepBanner() {
+  const t = useT()
   const { isDrepRegistered, drepKey, delegatedDrep, drepStatusLoading, selectedNetwork } = useWalletStore()
   const drepId = drepKey?.dRepIDCip105 ?? null
 
@@ -220,43 +224,43 @@ export function DRepBanner() {
             )}
           </div>
         </div>
-        <span className="badge badge-active shrink-0">Active</span>
+        <span className="badge badge-active shrink-0">{t("common.status.active")}</span>
       </div>
 
       {/* Stats grid 2×3 */}
       <div className="bg-bg-secondary rounded-xl border border-border-subtle divide-y divide-border-subtle">
         <div className="grid grid-cols-3 divide-x divide-border-subtle">
           <StatCell
-            label="Active Voting Power"
+            label={t("home.drepBanner.activeVotingPower")}
             value={stats ? `${formatAda(stats.activeVotingPower)} ₳` : profile?.votingPower != null ? `${formatAda(profile.votingPower)} ₳` : null}
             loading={statsLoading && !stats}
           />
           <StatCell
-            label="Live Voting Power"
+            label={t("home.drepBanner.liveVotingPower")}
             value={stats ? `${formatAda(stats.liveVotingPower)} ₳` : null}
             loading={statsLoading}
           />
           <StatCell
-            label="Delegators"
+            label={t("home.drepBanner.delegators")}
             value={stats ? stats.delegatorCount.toLocaleString() : null}
             loading={statsLoading}
           />
         </div>
         <div className="grid grid-cols-3 divide-x divide-border-subtle">
           <StatCell
-            label="Influence Power"
+            label={t("home.drepBanner.influencePower")}
             value={stats ? `${stats.influencePower.toFixed(2)}%` : null}
             loading={statsLoading}
             highlight
           />
           <StatCell
-            label="Voted"
+            label={t("home.drepBanner.voted")}
             value={stats ? `${stats.votedPercent.toFixed(2)}%` : null}
             loading={statsLoading}
             highlight
           />
           <StatCell
-            label="Not Voted"
+            label={t("home.drepBanner.notVoted")}
             value={stats ? `${stats.notVotedPercent.toFixed(2)}%` : null}
             loading={statsLoading}
             danger={!!stats && stats.notVotedPercent > 10}
@@ -278,7 +282,7 @@ export function DRepBanner() {
         className="block w-full py-3 rounded-xl text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
         style={{ background: "linear-gradient(90deg, #4f46e5 0%, #a855f7 100%)" }}
       >
-        Your DRep Community
+        {t("home.drepBanner.community")}
       </Link>
 
     </section>

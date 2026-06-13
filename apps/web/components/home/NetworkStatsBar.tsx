@@ -2,6 +2,7 @@
 
 import { useWalletStore } from "@/store/wallet"
 import { useNetworkStats } from "@/hooks/useNetworkStats"
+import { useT } from "@/i18n/useT"
 
 function formatAda(lovelace: number): string {
   if (lovelace >= 1_000_000_000) return `${(lovelace / 1_000_000_000).toFixed(1)}B`
@@ -35,6 +36,7 @@ function StatItem({ label, value, loading, suffix }: StatItemProps) {
 }
 
 export default function NetworkStatsBar() {
+  const t = useT()
   const network = useWalletStore((s) => s.selectedNetwork)
   const { stats, loading } = useNetworkStats(network)
 
@@ -42,23 +44,23 @@ export default function NetworkStatsBar() {
     <div className="card-static !p-0 overflow-hidden">
       <div className="flex divide-x divide-border-subtle">
         <StatItem
-          label="Epoch hiện tại"
+          label={t("home.stats.currentEpoch")}
           value={stats.currentEpoch}
           loading={loading}
         />
         <StatItem
-          label="DReps đang active"
+          label={t("home.stats.activeDreps")}
           value={stats.activeDRepCount?.toLocaleString()}
           loading={loading}
         />
         <StatItem
-          label="Tổng ADA được delegate"
+          label={t("home.stats.totalDelegatedAda")}
           value={stats.totalDelegatedAda !== undefined ? formatAda(stats.totalDelegatedAda) : undefined}
           suffix="₳"
           loading={loading}
         />
         <StatItem
-          label="GA đang active"
+          label={t("home.stats.activeGa")}
           value={stats.activeGACount}
           loading={loading}
         />

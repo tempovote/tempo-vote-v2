@@ -5,6 +5,7 @@ import Image from "next/image"
 import { useWalletStore } from "@/store/wallet"
 import { useDRepLeaderboard } from "@/hooks/useDRepLeaderboard"
 import { resolveAnchorUrl } from "@/lib/governance"
+import { useT } from "@/i18n/useT"
 
 function formatAda(lovelace: number): string {
   const ada = lovelace / 1_000_000
@@ -16,6 +17,7 @@ function formatAda(lovelace: number): string {
 const RANK_COLOR = ["text-[#FFD700]", "text-[#C0C0C0]", "text-[#CD7F32]"]
 
 export default function DRepLeaderboardPreview() {
+  const t = useT()
   const network = useWalletStore((s) => s.selectedNetwork)
   const { entries, loading } = useDRepLeaderboard(network, 5, "votingPower")
   const networkParam = network !== "mainnet" ? `?network=${network}` : ""
@@ -31,7 +33,7 @@ export default function DRepLeaderboardPreview() {
   }
 
   if (entries.length === 0) {
-    return <p className="text-center text-sm text-text-muted py-6">Không có dữ liệu</p>
+    return <p className="text-center text-sm text-text-muted py-6">{t("common.noData")}</p>
   }
 
   return (
@@ -73,14 +75,14 @@ export default function DRepLeaderboardPreview() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate">{name}</p>
               <p className="text-xs text-text-muted mt-0.5">
-                {entry.delegatorCount.toLocaleString()} delegators
+                {entry.delegatorCount.toLocaleString()} {t("home.delegators")}
               </p>
             </div>
 
             {/* Voting power */}
             <div className="text-right shrink-0">
               <p className="text-sm font-bold">{formatAda(entry.activeVotingPower)} ₳</p>
-              <p className="text-xs text-text-muted">Voting Power</p>
+              <p className="text-xs text-text-muted">{t("home.votingPower")}</p>
             </div>
           </Link>
         )

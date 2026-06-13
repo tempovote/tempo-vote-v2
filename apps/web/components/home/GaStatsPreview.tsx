@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
 import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
+import { useT } from "@/i18n/useT"
 
 const STATUS_CHIPS = [
   { value: "active",   cls: "badge-active"   },
@@ -12,14 +13,8 @@ const STATUS_CHIPS = [
   { value: "expired",  cls: "badge-expired"  },
 ] as const
 
-const STATUS_LABEL: Record<string, string> = {
-  active:   "Active",
-  ratified: "Ratified",
-  enacted:  "Enacted",
-  expired:  "Expired",
-}
-
 export default function GaStatsPreview() {
+  const t = useT()
   const network = useWalletStore((s) => s.selectedNetwork)
   const { actions, isLoading } = useGovernanceActions(network)
 
@@ -50,7 +45,7 @@ export default function GaStatsPreview() {
                 className={`badge ${cls} gap-1.5`}
               >
                 <span className="font-bold">{counts[value]}</span>
-                <span>{STATUS_LABEL[value]}</span>
+                <span>{t(`common.status.${value}`)}</span>
               </Link>
             ))}
       </div>
@@ -73,7 +68,7 @@ export default function GaStatsPreview() {
           ))}
         </div>
       ) : (
-        <p className="text-center text-sm text-text-muted py-6">Không có GA đang active</p>
+        <p className="text-center text-sm text-text-muted py-6">{t("home.noActiveGa")}</p>
       )}
     </div>
   )

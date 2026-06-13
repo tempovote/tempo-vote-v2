@@ -6,20 +6,22 @@ import { usePathname } from "next/navigation"
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useWalletStore } from "@/store/wallet"
 import WalletModal from "@/components/wallet/WalletModal"
+import LanguageSwitcher from "@/components/layout/LanguageSwitcher"
+import { useT } from "@/i18n/useT"
 
 const BANNER_KEY = "tempo:banner-dismissed-v1"
 
 const navLinks = [
-  { href: "/", label: "Home" },
-  { href: "/dapp-ranking", label: "DApp Ranking" },
-  { href: "/dreps", label: "DReps" },
-  { href: "/governance-actions", label: "Governance Actions" },
+  { href: "/", key: "nav.home" },
+  { href: "/dapp-ranking", key: "nav.dappRanking" },
+  { href: "/dreps", key: "nav.dreps" },
+  { href: "/governance-actions", key: "nav.governanceActions" },
 ]
 
 const othersLinks = [
-  { href: "/treasury-projection", label: "Treasury Projection" },
-  { href: "/user-guides",         label: "User Guides" },
-  { href: "/about",               label: "About" },
+  { href: "/treasury-projection", key: "nav.treasuryProjection" },
+  { href: "/user-guides",         key: "nav.userGuides" },
+  { href: "/about",               key: "nav.about" },
 ]
 
 function truncate(addr: string, chars = 6) {
@@ -28,6 +30,7 @@ function truncate(addr: string, chars = 6) {
 }
 
 export default function Navbar() {
+  const t = useT()
   const pathname = usePathname()
   const [mobileOpen,  setMobileOpen]  = useState(false)
   const [othersOpen,  setOthersOpen]  = useState(false)
@@ -80,16 +83,16 @@ export default function Navbar() {
       {bannerVisible && (
         <div className="w-full bg-gradient-to-r from-accent-dark via-accent to-accent-purple flex items-center justify-center gap-3 py-2 px-4 text-sm text-white/90 relative">
           <span>
-            Xem{" "}
-            <span className="underline font-semibold cursor-pointer">hồ sơ DRep</span>{" "}
-            trên Tempo và{" "}
-            <span className="underline font-semibold cursor-pointer">delegate</span>{" "}
-            để góp phần định hình quản trị Cardano minh bạch!
+            {t("banner.pre")}
+            <span className="underline font-semibold cursor-pointer">{t("banner.profile")}</span>
+            {t("banner.mid")}
+            <span className="underline font-semibold cursor-pointer">{t("banner.delegate")}</span>
+            {t("banner.post")}
           </span>
           <button
             onClick={dismissBanner}
             className="shrink-0 text-white/70 hover:text-white transition-colors"
-            aria-label="Đóng banner"
+            aria-label={t("banner.close")}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -121,7 +124,7 @@ export default function Navbar() {
                       : "text-text-secondary hover:text-text-primary hover:bg-white/5"
                   }`}
                 >
-                  {link.label}
+                  {t(link.key)}
                 </Link>
               )
             })}
@@ -136,7 +139,7 @@ export default function Navbar() {
                     : "text-text-secondary hover:text-text-primary hover:bg-white/5"
                 }`}
               >
-                Others
+                {t("nav.others")}
                 <svg
                   width="12" height="12" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
@@ -161,26 +164,26 @@ export default function Navbar() {
                             : "text-text-secondary hover:text-text-primary hover:bg-white/5"
                         }`}
                       >
-                        {link.label === "Treasury Projection" && (
+                        {link.href === "/treasury-projection" && (
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                             <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
                             <polyline points="17 6 23 6 23 12" />
                           </svg>
                         )}
-                        {link.label === "User Guides" && (
+                        {link.href === "/user-guides" && (
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                             <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
                             <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
                           </svg>
                         )}
-                        {link.label === "About" && (
+                        {link.href === "/about" && (
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                             <circle cx="12" cy="12" r="10" />
                             <line x1="12" y1="8" x2="12" y2="12" />
                             <line x1="12" y1="16" x2="12.01" y2="16" />
                           </svg>
                         )}
-                        {link.label}
+                        {t(link.key)}
                       </Link>
                     )
                   })}
@@ -194,7 +197,7 @@ export default function Navbar() {
             {/* Network selector */}
             <div
               className="hidden sm:flex items-center gap-0.5 p-1 rounded-lg bg-bg-card border border-border-default"
-              title={networkLocked ? "Mạng được khóa theo ví đang kết nối" : undefined}
+              title={networkLocked ? t("wallet.networkLocked") : undefined}
             >
               <button
                 onClick={() => !networkLocked && setSelectedNetwork("mainnet")}
@@ -239,6 +242,9 @@ export default function Navbar() {
               )}
             </div>
 
+            {/* Language switcher — next to wallet */}
+            <LanguageSwitcher />
+
             {/* Wallet button — 3 states: connected / hydrating / disconnected */}
             {isConnected && changeAddress ? (
               <div className="flex items-center gap-1.5">
@@ -262,8 +268,8 @@ export default function Navbar() {
                 <button
                   onClick={handleDisconnect}
                   className="w-8 h-8 flex items-center justify-center rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors shrink-0"
-                  title="Disconnect wallet"
-                  aria-label="Disconnect wallet"
+                  title={t("wallet.disconnect")}
+                  aria-label={t("wallet.disconnect")}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
@@ -278,7 +284,7 @@ export default function Navbar() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
-                Đang kết nối...
+                {t("wallet.connecting")}
               </div>
             ) : (
               <button
@@ -286,7 +292,7 @@ export default function Navbar() {
                 onClick={openModal}
                 id="wallet-connect-btn"
               >
-                Connect Wallet
+                {t("wallet.connect")}
               </button>
             )}
 
@@ -340,7 +346,7 @@ export default function Navbar() {
                         : "text-text-primary hover:text-accent-light hover:bg-white/5"
                     }`}
                   >
-                    {link.label}
+                    {t(link.key)}
                   </Link>
                 )
               })}
@@ -351,7 +357,7 @@ export default function Navbar() {
                   onClick={() => setMobileOthersOpen(o => !o)}
                   className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-text-primary hover:text-accent-light hover:bg-white/5 transition-colors"
                 >
-                  Others
+                  {t("nav.others")}
                   <svg
                     width="12" height="12" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
@@ -375,7 +381,7 @@ export default function Navbar() {
                               : "text-text-primary hover:text-accent-light hover:bg-white/5"
                           }`}
                         >
-                          {link.label}
+                          {t(link.key)}
                         </Link>
                       )
                     })}
@@ -414,9 +420,14 @@ export default function Navbar() {
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M12 1C9.24 1 7 3.24 7 6v2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6c0-2.76-2.24-5-5-5zm0 2c1.66 0 3 1.34 3 3v2H9V6c0-1.66 1.34-3 3-3zm0 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>
                     </svg>
-                    Khóa theo ví
+                    {t("wallet.lockedShort")}
                   </span>
                 )}
+              </div>
+
+              {/* Language switcher in mobile */}
+              <div className="px-3 py-2">
+                <LanguageSwitcher />
               </div>
             </div>
           </div>

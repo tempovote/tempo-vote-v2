@@ -1,7 +1,11 @@
+"use client"
+
 import Link from "next/link"
 import Image from "next/image"
+import { useT } from "@/i18n/useT"
 
 export default function Footer() {
+  const t = useT()
   return (
     <footer className="border-t border-border-default bg-bg-secondary mt-16">
       <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -17,7 +21,7 @@ export default function Footer() {
         </Link>
 
         {/* Center text */}
-        <p className="text-text-muted text-sm">Tham gia cộng đồng</p>
+        <p className="text-text-muted text-sm">{t("footer.joinCommunity")}</p>
 
         {/* Social icons */}
         <div className="flex items-center gap-4">
@@ -51,7 +55,7 @@ export default function Footer() {
 
       <div className="border-t border-border-subtle">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-4 text-center text-text-muted text-xs">
-          © {new Date().getFullYear()} Tempo. All rights reserved. Built for Cardano governance.
+          {t("footer.rights", { year: new Date().getFullYear() })}
         </div>
       </div>
     </footer>
