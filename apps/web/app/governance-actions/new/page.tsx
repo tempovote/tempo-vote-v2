@@ -82,6 +82,31 @@ type TypeParams = {
   ppMaxValSize: string
   ppCollateralPercent: string
   ppMaxCollateralInputs: string
+  // Governance Group (Conway CDDL keys 25-33)
+  ppGovActionDeposit: string
+  ppDrepDeposit: string
+  ppDrepActivity: string
+  ppCommitteeMinSize: string
+  ppCommitteeMaxTermLength: string
+  ppGovActionLifetime: string
+  ppMinFeeRefScriptCostPerByte: string
+  // pool_voting_thresholds (all 5 or omit)
+  ppPoolVtMotionNoConfidence: string
+  ppPoolVtCommitteeNormal: string
+  ppPoolVtCommitteeNoConfidence: string
+  ppPoolVtHardForkInitiation: string
+  ppPoolVtSecurityRelevantParam: string
+  // drep_voting_thresholds (all 10 or omit)
+  ppDrepVtMotionNoConfidence: string
+  ppDrepVtCommitteeNormal: string
+  ppDrepVtCommitteeNoConfidence: string
+  ppDrepVtUpdateConstitution: string
+  ppDrepVtHardForkInitiation: string
+  ppDrepVtPpNetworkGroup: string
+  ppDrepVtPpEconomicGroup: string
+  ppDrepVtPpTechnicalGroup: string
+  ppDrepVtPpGovernanceGroup: string
+  ppDrepVtTreasuryWithdrawal: string
 }
 
 const EMPTY_TYPE_PARAMS: TypeParams = {
@@ -111,6 +136,28 @@ const EMPTY_TYPE_PARAMS: TypeParams = {
   ppMaxValSize: "",
   ppCollateralPercent: "",
   ppMaxCollateralInputs: "",
+  ppGovActionDeposit: "",
+  ppDrepDeposit: "",
+  ppDrepActivity: "",
+  ppCommitteeMinSize: "",
+  ppCommitteeMaxTermLength: "",
+  ppGovActionLifetime: "",
+  ppMinFeeRefScriptCostPerByte: "",
+  ppPoolVtMotionNoConfidence: "",
+  ppPoolVtCommitteeNormal: "",
+  ppPoolVtCommitteeNoConfidence: "",
+  ppPoolVtHardForkInitiation: "",
+  ppPoolVtSecurityRelevantParam: "",
+  ppDrepVtMotionNoConfidence: "",
+  ppDrepVtCommitteeNormal: "",
+  ppDrepVtCommitteeNoConfidence: "",
+  ppDrepVtUpdateConstitution: "",
+  ppDrepVtHardForkInitiation: "",
+  ppDrepVtPpNetworkGroup: "",
+  ppDrepVtPpEconomicGroup: "",
+  ppDrepVtPpTechnicalGroup: "",
+  ppDrepVtPpGovernanceGroup: "",
+  ppDrepVtTreasuryWithdrawal: "",
 }
 
 // ─── Row types for dynamic lists ─────────────────────────────────────────────
@@ -548,7 +595,6 @@ function UpdateCommitteeFields({
 
 type PpActiveParam = { id: string; groupId: string; paramKey: keyof TypeParams }
 
-const GOVERNANCE_GROUP_META = { id: "governance", label: "Governance Group", threshold: "CC + 67% DRep" }
 
 // ─── Protocol Parameter Change — 4 CIP-1694 parameter groups ─────────────────
 
@@ -611,6 +657,36 @@ const CIP1694_GROUPS: PpCIP1694Group[] = [
       { key: "ppPoolPledgeInfluence",label: "Pool Pledge Influence (a₀)",unit: "0–2",     step: "0.001", min: 0, max: 2 },
     ],
   },
+  {
+    id: "governance",
+    label: "Governance Group",
+    threshold: "CC + 67% DRep",
+    color: "text-accent",
+    params: [
+      { key: "ppGovActionDeposit",           label: "Gov Action Deposit",              unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppDrepDeposit",                label: "DRep Deposit",                    unit: "lovelace", step: "1",     min: 0 },
+      { key: "ppDrepActivity",               label: "DRep Activity",                   unit: "epochs",   step: "1",     min: 0 },
+      { key: "ppCommitteeMinSize",           label: "Committee Min Size",              unit: "members",  step: "1",     min: 0 },
+      { key: "ppCommitteeMaxTermLength",     label: "Committee Max Term Length",       unit: "epochs",   step: "1",     min: 0 },
+      { key: "ppGovActionLifetime",          label: "Gov Action Lifetime",             unit: "epochs",   step: "1",     min: 0 },
+      { key: "ppMinFeeRefScriptCostPerByte", label: "Min Fee RefScript Cost/Byte",     unit: "0–∞",      step: "0.001", min: 0 },
+      { key: "ppPoolVtMotionNoConfidence",    label: "Pool VT: Motion No Confidence",   unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppPoolVtCommitteeNormal",       label: "Pool VT: Committee Normal",       unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppPoolVtCommitteeNoConfidence", label: "Pool VT: Committee No Confidence",unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppPoolVtHardForkInitiation",    label: "Pool VT: Hard Fork Initiation",   unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppPoolVtSecurityRelevantParam", label: "Pool VT: Security Relevant Param",unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtMotionNoConfidence",    label: "DRep VT: Motion No Confidence",   unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtCommitteeNormal",       label: "DRep VT: Committee Normal",       unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtCommitteeNoConfidence", label: "DRep VT: Committee No Confidence",unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtUpdateConstitution",    label: "DRep VT: Update Constitution",    unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtHardForkInitiation",    label: "DRep VT: Hard Fork Initiation",   unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtPpNetworkGroup",        label: "DRep VT: PP Network Group",       unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtPpEconomicGroup",       label: "DRep VT: PP Economic Group",      unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtPpTechnicalGroup",      label: "DRep VT: PP Technical Group",     unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtPpGovernanceGroup",     label: "DRep VT: PP Governance Group",    unit: "0–1",      step: "0.001", min: 0, max: 1 },
+      { key: "ppDrepVtTreasuryWithdrawal",    label: "DRep VT: Treasury Withdrawal",    unit: "0–1",      step: "0.001", min: 0, max: 1 },
+    ],
+  },
 ]
 
 function ProtocolParamChangeFields({
@@ -629,7 +705,6 @@ function ProtocolParamChangeFields({
   const addedKeys = new Set(activeParams.map((p) => p.paramKey))
   const selGroupDef = CIP1694_GROUPS.find((g) => g.id === selGroup)
   const availableForSel = (selGroupDef?.params ?? []).filter((p) => !addedKeys.has(p.key))
-  const isGovGroup = selGroup === "governance"
   const allParamDefs = CIP1694_GROUPS.flatMap((g) => g.params)
 
   const handleAdd = () => {
@@ -674,15 +749,14 @@ function ProtocolParamChangeFields({
               {CIP1694_GROUPS.map((g) => (
                 <option key={g.id} value={g.id}>{g.label}</option>
               ))}
-              <option value="governance">{GOVERNANCE_GROUP_META.label}</option>
             </select>
             <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </div>
 
-          {/* Param dropdown — only for non-governance groups */}
-          {selGroup && !isGovGroup && (
+          {/* Param dropdown */}
+          {selGroup && (
             <div className="relative flex-1 min-w-[220px]">
               <select
                 value={selParam}
@@ -704,7 +778,7 @@ function ProtocolParamChangeFields({
           )}
 
           {/* Add button */}
-          {selGroup && !isGovGroup && (
+          {selGroup && (
             <button
               type="button"
               onClick={handleAdd}
@@ -719,14 +793,11 @@ function ProtocolParamChangeFields({
           )}
         </div>
 
-        {/* Governance Group notice */}
-        {isGovGroup && (
-          <div className="px-3 py-2.5 bg-bg-elevated border border-border-subtle rounded-xl text-xs text-text-muted space-y-1">
-            <p className="font-semibold text-text-secondary">Governance Group — Chưa hỗ trợ</p>
-            <p>govActionDeposit · dRepDeposit · dRepActivity · committeeMinSize · committeeMaxTermLength · poolVotingThresholds · dRepVotingThresholds</p>
-            <p className="text-warning mt-1">
-              Các thông số này (Conway CDDL keys 25+) chưa được hỗ trợ trong Bloxbean 0.7.0-beta1. Sẽ có trong phiên bản tiếp theo.
-            </p>
+        {/* Governance Group hint: voting thresholds require full group */}
+        {selGroup === "governance" && (
+          <div className="px-3 py-2 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-muted">
+            <span className="font-semibold text-accent-light">Lưu ý: </span>
+            Pool VT (5 fields) và DRep VT (10 fields) phải điền <strong>đủ toàn bộ</strong> thì mới được đưa lên on-chain.
           </div>
         )}
       </div>
@@ -857,6 +928,15 @@ function validateTypeParams(
       "ppKeyDeposit", "ppPoolDeposit", "ppNOpt", "ppMaxEpoch", "ppMinPoolCost",
       "ppPoolPledgeInfluence", "ppAdaPerUtxoByte", "ppExpansionRate", "ppTreasuryGrowthRate",
       "ppMaxValSize", "ppCollateralPercent", "ppMaxCollateralInputs",
+      "ppGovActionDeposit", "ppDrepDeposit", "ppDrepActivity",
+      "ppCommitteeMinSize", "ppCommitteeMaxTermLength", "ppGovActionLifetime",
+      "ppMinFeeRefScriptCostPerByte",
+      "ppPoolVtMotionNoConfidence", "ppPoolVtCommitteeNormal", "ppPoolVtCommitteeNoConfidence",
+      "ppPoolVtHardForkInitiation", "ppPoolVtSecurityRelevantParam",
+      "ppDrepVtMotionNoConfidence", "ppDrepVtCommitteeNormal", "ppDrepVtCommitteeNoConfidence",
+      "ppDrepVtUpdateConstitution", "ppDrepVtHardForkInitiation",
+      "ppDrepVtPpNetworkGroup", "ppDrepVtPpEconomicGroup", "ppDrepVtPpTechnicalGroup",
+      "ppDrepVtPpGovernanceGroup", "ppDrepVtTreasuryWithdrawal",
     ]
     const filled = allPpKeys.filter((k) => params[k].trim() !== "")
     if (filled.length === 0)
@@ -874,6 +954,23 @@ function validateTypeParams(
       if (isNaN(v) || v < 0 || v > 2)
         return "Pool Pledge Influence phải là số từ 0 đến 2."
     }
+    // Voting thresholds: either all fields filled or none
+    const poolVtKeys: Array<keyof TypeParams> = [
+      "ppPoolVtMotionNoConfidence", "ppPoolVtCommitteeNormal", "ppPoolVtCommitteeNoConfidence",
+      "ppPoolVtHardForkInitiation", "ppPoolVtSecurityRelevantParam",
+    ]
+    const poolVtFilled = poolVtKeys.filter((k) => params[k].trim() !== "").length
+    if (poolVtFilled > 0 && poolVtFilled < 5)
+      return "Pool Voting Thresholds: phải điền đủ cả 5 field hoặc để trống tất cả."
+    const drepVtKeys: Array<keyof TypeParams> = [
+      "ppDrepVtMotionNoConfidence", "ppDrepVtCommitteeNormal", "ppDrepVtCommitteeNoConfidence",
+      "ppDrepVtUpdateConstitution", "ppDrepVtHardForkInitiation",
+      "ppDrepVtPpNetworkGroup", "ppDrepVtPpEconomicGroup", "ppDrepVtPpTechnicalGroup",
+      "ppDrepVtPpGovernanceGroup", "ppDrepVtTreasuryWithdrawal",
+    ]
+    const drepVtFilled = drepVtKeys.filter((k) => params[k].trim() !== "").length
+    if (drepVtFilled > 0 && drepVtFilled < 10)
+      return "DRep Voting Thresholds: phải điền đủ cả 10 field hoặc để trống tất cả."
   }
   return null
 }
@@ -957,6 +1054,29 @@ function buildTypeParams(
           poolPledgeInfluencePerMillion: toPerMillion(params.ppPoolPledgeInfluence),
           expansionRatePerMillion: toPerMillion(params.ppExpansionRate),
           treasuryGrowthRatePerMillion: toPerMillion(params.ppTreasuryGrowthRate),
+          // Governance Group
+          govActionDeposit: pi(params.ppGovActionDeposit),
+          drepDeposit: pi(params.ppDrepDeposit),
+          drepActivity: pi(params.ppDrepActivity),
+          committeeMinSize: pi(params.ppCommitteeMinSize),
+          committeeMaxTermLength: pi(params.ppCommitteeMaxTermLength),
+          govActionLifetime: pi(params.ppGovActionLifetime),
+          minFeeRefScriptCostPerBytePerMillion: toPerMillion(params.ppMinFeeRefScriptCostPerByte),
+          poolVtMotionNoConfidencePerMillion: toPerMillion(params.ppPoolVtMotionNoConfidence),
+          poolVtCommitteeNormalPerMillion: toPerMillion(params.ppPoolVtCommitteeNormal),
+          poolVtCommitteeNoConfidencePerMillion: toPerMillion(params.ppPoolVtCommitteeNoConfidence),
+          poolVtHardForkInitiationPerMillion: toPerMillion(params.ppPoolVtHardForkInitiation),
+          poolVtSecurityRelevantParamPerMillion: toPerMillion(params.ppPoolVtSecurityRelevantParam),
+          drepVtMotionNoConfidencePerMillion: toPerMillion(params.ppDrepVtMotionNoConfidence),
+          drepVtCommitteeNormalPerMillion: toPerMillion(params.ppDrepVtCommitteeNormal),
+          drepVtCommitteeNoConfidencePerMillion: toPerMillion(params.ppDrepVtCommitteeNoConfidence),
+          drepVtUpdateConstitutionPerMillion: toPerMillion(params.ppDrepVtUpdateConstitution),
+          drepVtHardForkInitiationPerMillion: toPerMillion(params.ppDrepVtHardForkInitiation),
+          drepVtPpNetworkGroupPerMillion: toPerMillion(params.ppDrepVtPpNetworkGroup),
+          drepVtPpEconomicGroupPerMillion: toPerMillion(params.ppDrepVtPpEconomicGroup),
+          drepVtPpTechnicalGroupPerMillion: toPerMillion(params.ppDrepVtPpTechnicalGroup),
+          drepVtPpGovernanceGroupPerMillion: toPerMillion(params.ppDrepVtPpGovernanceGroup),
+          drepVtTreasuryWithdrawalPerMillion: toPerMillion(params.ppDrepVtTreasuryWithdrawal),
         },
         prevGovActionTxHash,
         prevGovActionIdx,
