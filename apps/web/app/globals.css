@@ -131,18 +131,22 @@ body {
   background: var(--color-accent);
 }
 
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-default) var(--color-bg-card);
+}
 .scrollbar-thin::-webkit-scrollbar {
-  width: 2px;
+  width: 3px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--color-bg-card);
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(99, 102, 241, 0.45);
-  border-radius: 1px;
+  background: var(--color-border-default);
+  border-radius: 9999px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.85);
+  background: var(--color-accent);
 }
 
 ::selection {
