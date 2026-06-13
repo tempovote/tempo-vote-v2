@@ -110,19 +110,19 @@ object CardanoCache {
     /**
      * Delegator counts per network, pre-warmed by BackgroundPoller for the top ~200 DReps.
      * Key: credentialHex → delegatorCount. Populated sequentially to avoid Koios burst limit.
-     * TTL matches BackgroundPoller interval so stale data is replaced each poll cycle.
+     * TTL 30 min: leaderboard result is cached 1 h, so source data should outlive it.
      */
     val drepDelegatorCounts = Caffeine.newBuilder()
-        .expireAfterWrite(20, TimeUnit.MINUTES)
+        .expireAfterWrite(30, TimeUnit.MINUTES)
         .build<String, Map<String, Int>>()  // key: network.name
 
     /**
-     * Full leaderboard result — computed once, cached 15 min.
-     * Prevents re-computing and re-fetching Koios on every page load.
+     * Full leaderboard result — computed once, cached 1 h.
+     * Data is for reference only; freshness within an hour is acceptable.
      */
     val leaderboard = Caffeine.newBuilder()
-        .expireAfterWrite(15, TimeUnit.MINUTES)
-        .build<String, JsonElement>()   // key: "NETWORK:limit"
+        .expireAfterWrite(1, TimeUnit.HOURS)
+        .build<String, JsonElement>()   // key: "NETWORK:limit:sortBy"
 
     /**
      * Whale delegator leaderboard — top DReps by count of delegators with stake > 1M ADA.
@@ -130,7 +130,7 @@ object CardanoCache {
      * Long TTL: whale distribution changes very slowly, computation is Koios-intensive.
      */
     val whaleLeaders = Caffeine.newBuilder()
-        .expireAfterWrite(2, TimeUnit.HOURS)
+        .expireAfterWrite(6, TimeUnit.HOURS)
         .build<String, JsonElement>()   // key: "NETWORK:limit"
 
     /**
