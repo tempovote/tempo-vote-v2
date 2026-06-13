@@ -103,10 +103,8 @@ function TableSkeleton() {
 // ── Sort tabs ─────────────────────────────────────────────────────────────
 
 const SORT_TABS: { key: SortMode; label: string }[] = [
-  { key: "tvl",     label: "TVL"     },
-  { key: "volume",  label: "Volume"  },
-  { key: "fees",    label: "Fees"    },
-  { key: "revenue", label: "Revenue" },
+  { key: "tvl",    label: "TVL"    },
+  { key: "volume", label: "Volume" },
 ]
 
 // ── Page ──────────────────────────────────────────────────────────────────
@@ -220,16 +218,14 @@ export default function DAppRankingPage() {
   // Sort and take top 30
   const sorted = [...protocols]
     .sort((a, b) => {
-      if (sortMode === "volume")  return (b.volume24h  ?? -Infinity) - (a.volume24h  ?? -Infinity)
-      if (sortMode === "fees")    return (b.fees24h    ?? -Infinity) - (a.fees24h    ?? -Infinity)
-      if (sortMode === "revenue") return (b.revenue24h ?? -Infinity) - (a.revenue24h ?? -Infinity)
+      if (sortMode === "volume") return (b.volume24h ?? -Infinity) - (a.volume24h ?? -Infinity)
       return b.tvl - a.tvl
     })
     .slice(0, 30)
     .map((p, i) => ({ ...p, rank: i + 1 }))
 
   return (
-    <div className="page-container-wide space-y-8">
+    <div className="page-container space-y-8">
 
       {/* Header */}
       <h1 className="text-2xl font-bold animate-fade-in">DApp Ranking</h1>

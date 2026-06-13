@@ -6,6 +6,7 @@ interface Section {
   id: string
   icon: React.ReactNode
   title: string
+  shortTitle: string
   steps: { title: string; body: React.ReactNode }[]
 }
 
@@ -102,6 +103,7 @@ const SECTIONS: Section[] = [
     id: "wallet",
     icon: <WalletIcon />,
     title: "Kết nối ví Cardano",
+    shortTitle: "Kết nối ví",
     steps: [
       {
         title: "Cài đặt ví tương thích",
@@ -138,6 +140,7 @@ const SECTIONS: Section[] = [
     id: "drep",
     icon: <DRepIcon />,
     title: "DRep là gì & cách ủy quyền",
+    shortTitle: "DRep",
     steps: [
       {
         title: "Hiểu về DRep (Delegated Representative)",
@@ -181,6 +184,7 @@ const SECTIONS: Section[] = [
     id: "governance",
     icon: <GovIcon />,
     title: "Governance Actions",
+    shortTitle: "Governance",
     steps: [
       {
         title: "Các loại Governance Action",
@@ -235,6 +239,7 @@ const SECTIONS: Section[] = [
     id: "polls",
     icon: <PollIcon />,
     title: "Community Polls",
+    shortTitle: "Polls",
     steps: [
       {
         title: "Quick Poll là gì",
@@ -257,6 +262,7 @@ const SECTIONS: Section[] = [
     id: "treasury",
     icon: <ChartIcon />,
     title: "Treasury Projection Tool",
+    shortTitle: "Treasury",
     steps: [
       {
         title: "Mục đích",
@@ -284,6 +290,7 @@ const SECTIONS: Section[] = [
     id: "ranking",
     icon: <VoteIcon />,
     title: "DApp Ranking",
+    shortTitle: "DApp Ranking",
     steps: [
       {
         title: "Bảng xếp hạng DApp Cardano",
@@ -322,7 +329,7 @@ export default function UserGuidesPage() {
         </p>
       </div>
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col gap-6 md:flex-row md:items-start">
         {/* Sidebar */}
         <aside className="hidden md:flex flex-col gap-1 w-56 shrink-0 sticky top-4">
           {SECTIONS.map(s => (
@@ -341,17 +348,24 @@ export default function UserGuidesPage() {
           ))}
         </aside>
 
-        {/* Mobile selector */}
+        {/* Mobile tab bar */}
         <div className="md:hidden w-full">
-          <select
-            value={active}
-            onChange={e => setActive(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border-default text-text-primary text-sm"
-          >
+          <div className="flex gap-1 overflow-x-auto scrollbar-none bg-bg-secondary rounded-xl p-1">
             {SECTIONS.map(s => (
-              <option key={s.id} value={s.id}>{s.title}</option>
+              <button
+                key={s.id}
+                onClick={() => setActive(s.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
+                  active === s.id
+                    ? "bg-bg-card text-text-primary shadow-sm"
+                    : "text-text-muted hover:text-text-secondary"
+                }`}
+              >
+                <span className="shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">{s.icon}</span>
+                {s.shortTitle}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
         {/* Content */}

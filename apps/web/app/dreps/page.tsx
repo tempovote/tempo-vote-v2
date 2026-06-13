@@ -122,7 +122,7 @@ export default function DRepsPage() {
   const namesStillLoading = nameQ && namesLoaded < anchorWithUrl
 
   return (
-    <div className="page-container-wide space-y-10">
+    <div className="page-container space-y-10">
       <h1 className="text-2xl font-bold animate-fade-in">DReps</h1>
 
       {/* Search */}

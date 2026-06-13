@@ -1,4 +1,4 @@
-export type SortMode = "tvl" | "volume" | "fees" | "revenue"
+export type SortMode = "tvl" | "volume"
 
 export interface CardanoProtocol {
   rank: number
@@ -71,8 +71,6 @@ export default function ProtocolTable({
             <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">1d %</th>
             <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">7d %</th>
             <ColHeader active={sortMode === "volume"} className="hidden md:table-cell">Vol 24h</ColHeader>
-            <ColHeader active={sortMode === "fees"} className="hidden md:table-cell">Fees 24h</ColHeader>
-            <ColHeader active={sortMode === "revenue"} className="hidden md:table-cell">Revenue 24h</ColHeader>
           </tr>
         </thead>
         <tbody>
@@ -83,20 +81,21 @@ export default function ProtocolTable({
               <td className="py-3 px-4 text-text-muted tabular-nums text-sm">{p.rank}</td>
 
               <td className="py-3 px-4">
-                {p.logo ? (
-                  <img
-                    src={p.logo}
-                    alt={p.name}
-                    width={32}
-                    height={32}
-                    className="rounded-full object-cover w-8 h-8 shrink-0"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent-light shrink-0">
+                <div className="relative w-8 h-8 shrink-0">
+                  <div className="absolute inset-0 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent-light">
                     {p.name[0]}
                   </div>
-                )}
+                  {p.logo && (
+                    <img
+                      src={p.logo}
+                      alt={p.name}
+                      width={32}
+                      height={32}
+                      className="absolute inset-0 w-8 h-8 rounded-full object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
+                    />
+                  )}
+                </div>
               </td>
 
               <td className="py-3 px-3">
@@ -126,19 +125,11 @@ export default function ProtocolTable({
               <td className={`py-3 px-3 text-right tabular-nums hidden md:table-cell ${sortMode === "volume" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
                 {fmtUsd(p.volume24h)}
               </td>
-
-              <td className={`py-3 px-3 text-right tabular-nums hidden md:table-cell ${sortMode === "fees" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
-                {fmtUsd(p.fees24h)}
-              </td>
-
-              <td className={`py-3 px-3 text-right tabular-nums hidden md:table-cell ${sortMode === "revenue" ? "text-text-primary font-semibold" : "text-text-secondary"}`}>
-                {fmtUsd(p.revenue24h)}
-              </td>
             </tr>
           ))}
           {protocols.length === 0 && (
             <tr>
-              <td colSpan={10} className="py-16 text-center text-text-muted">
+              <td colSpan={8} className="py-16 text-center text-text-muted">
                 Không có dữ liệu.
               </td>
             </tr>
