@@ -1,24 +1,240 @@
 "use client"
 
-import { mockProtocols, mockTvlChartData } from "@/lib/mock-data"
-import ProtocolTable from "@/components/dapp-ranking/ProtocolTable"
+import { useState, useEffect } from "react"
+import ProtocolTable, { type CardanoProtocol, type SortMode } from "@/components/dapp-ranking/ProtocolTable"
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts"
 
+// ── Types ──────────────────────────────────────────────────────────────
+
+interface ChainTvlEntry { date: number; tvl: number }
+interface ChartPoint { label: string; tvl: number }
+interface CoinsResponse {
+  coins: { "coingecko:cardano"?: { price: number } }
+}
+
+type ChartUnit = "usd" | "ada"
+
+interface LlamaProtocolRaw {
+  id: string
+  name: string
+  slug: string
+  logo: string
+  url: string
+  category: string | null
+  chain: string
+  tvl: number | null
+  change_1d: number | null
+  change_7d: number | null
+}
+
+interface LlamaOverviewEntry {
+  name: string
+  slug: string
+  total24h: number | null
+  totalRevenue24h?: number | null
+}
+
+interface LlamaOverviewResponse {
+  protocols?: LlamaOverviewEntry[]
+}
+
+// ── Cache ───────────────────────────────────────────────────────────────
+
+const CACHE_TTL = 30 * 60 * 1000
+interface CacheEntry<T> { data: T; ts: number }
+const cache = new Map<string, CacheEntry<unknown>>()
+
+function getCached<T>(key: string): T | null {
+  const e = cache.get(key)
+  return e && Date.now() - e.ts < CACHE_TTL ? (e.data as T) : null
+}
+function setCached<T>(key: string, data: T): void {
+  cache.set(key, { data, ts: Date.now() })
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+const LLAMA = "https://api.llama.fi"
+
+async function safeJson<T>(url: string, fallback: T): Promise<T> {
+  try {
+    const r = await fetch(url)
+    return r.ok ? (r.json() as Promise<T>) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function formatTvlSummary(usd: number): string {
+  if (usd >= 1e9) return `$${(usd / 1e9).toFixed(2)}B`
+  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(1)}M`
+  return `$${Math.round(usd).toLocaleString()}`
+}
+
+function fmtDate(unix: number): string {
+  return new Date(unix * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+}
+
+// ── Loading skeleton ─────────────────────────────────────────────────────
+
+function TableSkeleton() {
+  return (
+    <div>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 px-4 py-3.5 border-b border-border-subtle animate-pulse">
+          <div className="w-6 h-3 bg-bg-card-hover rounded" />
+          <div className="w-8 h-8 rounded-full bg-bg-card-hover shrink-0" />
+          <div className="flex-1 h-3 bg-bg-card-hover rounded max-w-[160px]" />
+          <div className="w-16 h-3 bg-bg-card-hover rounded" />
+          <div className="ml-auto w-20 h-3 bg-bg-card-hover rounded" />
+          <div className="w-14 h-3 bg-bg-card-hover rounded" />
+          <div className="w-14 h-3 bg-bg-card-hover rounded" />
+          <div className="w-18 h-3 bg-bg-card-hover rounded" />
+          <div className="w-18 h-3 bg-bg-card-hover rounded" />
+          <div className="w-18 h-3 bg-bg-card-hover rounded" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Sort tabs ─────────────────────────────────────────────────────────────
+
+const SORT_TABS: { key: SortMode; label: string }[] = [
+  { key: "tvl",     label: "TVL"     },
+  { key: "volume",  label: "Volume"  },
+  { key: "fees",    label: "Fees"    },
+  { key: "revenue", label: "Revenue" },
+]
+
+// ── Page ──────────────────────────────────────────────────────────────────
+
 export default function DAppRankingPage() {
+  const [protocols, setProtocols] = useState<CardanoProtocol[]>([])
+  const [chartData, setChartData] = useState<ChartPoint[]>([])
+  const [loadingProtocols, setLoadingProtocols] = useState(true)
+  const [loadingChart, setLoadingChart] = useState(true)
+  const [totalTvl, setTotalTvl] = useState(0)
+  const [change24h, setChange24h] = useState(0)
+  const [sortMode, setSortMode] = useState<SortMode>("tvl")
+  const [chartUnit, setChartUnit] = useState<ChartUnit>("usd")
+  const [adaPrice, setAdaPrice] = useState(0)
+
+  // Fetch Cardano chain TVL history
+  useEffect(() => {
+    const key = "cardano-tvl-history-v2"
+    const cached = getCached<{ chart: ChartPoint[]; tvl: number; change: number }>(key)
+    if (cached) {
+      setChartData(cached.chart)
+      setTotalTvl(cached.tvl)
+      setChange24h(cached.change)
+      setLoadingChart(false)
+      return
+    }
+    safeJson<ChainTvlEntry[]>(`${LLAMA}/v2/historicalChainTvl/Cardano`, [])
+      .then(raw => {
+        const chart: ChartPoint[] = raw.slice(-90).map(e => ({
+          label: fmtDate(e.date),
+          tvl: Math.round(e.tvl / 1e4) / 100,
+        }))
+        const last = raw[raw.length - 1]
+        const prev = raw[raw.length - 2]
+        const tvl = last?.tvl ?? 0
+        const change = last && prev && prev.tvl > 0
+          ? ((last.tvl - prev.tvl) / prev.tvl) * 100
+          : 0
+        setCached(key, { chart, tvl, change })
+        setChartData(chart)
+        setTotalTvl(tvl)
+        setChange24h(change)
+      })
+      .finally(() => setLoadingChart(false))
+  }, [])
+
+  // Fetch ADA price for chart unit toggle
+  useEffect(() => {
+    const key = "ada-price"
+    const cached = getCached<number>(key)
+    if (cached) { setAdaPrice(cached); return }
+    safeJson<CoinsResponse>("https://coins.llama.fi/prices/current/coingecko:cardano", { coins: {} })
+      .then(res => {
+        const price = res.coins["coingecko:cardano"]?.price ?? 0
+        if (price > 0) { setCached(key, price); setAdaPrice(price) }
+      })
+  }, [])
+
+  // Fetch protocols + dex volumes + fees in parallel
+  useEffect(() => {
+    const key = "cardano-protocols-v3"
+    const cached = getCached<CardanoProtocol[]>(key)
+    if (cached) {
+      setProtocols(cached)
+      setLoadingProtocols(false)
+      return
+    }
+
+    const DEX_URL = `${LLAMA}/overview/dexs?chain=Cardano&excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true`
+    const FEES_URL = `${LLAMA}/overview/fees?chain=Cardano&excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true`
+
+    Promise.all([
+      safeJson<LlamaProtocolRaw[]>(`${LLAMA}/protocols`, []),
+      safeJson<LlamaOverviewResponse>(DEX_URL, {}),
+      safeJson<LlamaOverviewResponse>(FEES_URL, {}),
+    ]).then(([rawAll, dexRes, feesRes]) => {
+      const volMap = new Map<string, number>()
+      for (const p of dexRes.protocols ?? []) {
+        if (p.total24h != null) volMap.set(p.slug, p.total24h)
+      }
+      const feesMap = new Map<string, number>()
+      const revMap = new Map<string, number>()
+      for (const p of feesRes.protocols ?? []) {
+        if (p.total24h != null) feesMap.set(p.slug, p.total24h)
+        if (p.totalRevenue24h != null) revMap.set(p.slug, p.totalRevenue24h)
+      }
+
+      const cardano: CardanoProtocol[] = rawAll
+        .filter(p => p.chain === "Cardano")
+        .sort((a, b) => (b.tvl ?? 0) - (a.tvl ?? 0))
+        .map((p, i) => ({
+          rank: i + 1,
+          name: p.name,
+          slug: p.slug,
+          logo: p.logo,
+          category: p.category ?? "Unknown",
+          tvl: p.tvl ?? 0,
+          change1d: p.change_1d ?? 0,
+          change7d: p.change_7d ?? 0,
+          volume24h: volMap.get(p.slug) ?? null,
+          fees24h: feesMap.get(p.slug) ?? null,
+          revenue24h: revMap.get(p.slug) ?? null,
+          url: p.url || `https://defillama.com/protocol/${p.slug}`,
+        }))
+
+      setCached(key, cardano)
+      setProtocols(cardano)
+    }).finally(() => setLoadingProtocols(false))
+  }, [])
+
+  // Sort and take top 30
+  const sorted = [...protocols]
+    .sort((a, b) => {
+      if (sortMode === "volume")  return (b.volume24h  ?? -Infinity) - (a.volume24h  ?? -Infinity)
+      if (sortMode === "fees")    return (b.fees24h    ?? -Infinity) - (a.fees24h    ?? -Infinity)
+      if (sortMode === "revenue") return (b.revenue24h ?? -Infinity) - (a.revenue24h ?? -Infinity)
+      return b.tvl - a.tvl
+    })
+    .slice(0, 30)
+    .map((p, i) => ({ ...p, rank: i + 1 }))
+
   return (
     <div className="page-container-wide space-y-8">
+
       {/* Header */}
       <h1 className="text-2xl font-bold animate-fade-in">DApp Ranking</h1>
 
-      {/* Info notice */}
+      {/* Notice */}
       <div className="notice animate-fade-in">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-accent-light shrink-0">
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
@@ -26,121 +242,139 @@ export default function DAppRankingPage() {
           <circle cx="12" cy="16" r="1" fill="currentColor" />
         </svg>
         <span>
-          There is a one-day delay in TVL updates, and it is calculated in ADA by default.
+          Dữ liệu từ{" "}
+          <a href="https://defillama.com/chain/Cardano" target="_blank" rel="noopener noreferrer"
+            className="underline text-accent-light hover:text-accent transition-colors">
+            DefiLlama
+          </a>
+          {" "}— DApp có Cardano là chain chính, TVL tính bằng USD, cập nhật ~24h.
         </span>
       </div>
 
-      {/* Filters row */}
-      <div className="flex flex-wrap items-center gap-3 animate-fade-in">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-text-secondary font-medium">DApp</span>
-          <select className="input w-48 text-sm">
-            <option>130 Options</option>
-          </select>
-        </div>
-        <div className="flex-1" />
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-text-secondary font-medium">TVL Type</span>
-          <div className="flex rounded-lg overflow-hidden border border-border-default">
-            <button className="px-3 py-1.5 text-xs font-medium bg-accent text-white">
-              Exclude DApp Self Staking Token
-            </button>
-            <button className="px-3 py-1.5 text-xs font-medium text-text-muted hover:text-text-primary bg-bg-card transition-colors">
-              Only ADA
-            </button>
-            <button className="px-3 py-1.5 text-xs font-medium text-text-muted hover:text-text-primary bg-bg-card transition-colors">
-              All Tokens
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* Summary + Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6 animate-slide-up">
 
-      {/* Summary + Chart row */}
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 animate-slide-up">
-        {/* Summary card */}
-        <div className="card-static space-y-3">
-          <h3 className="text-sm text-text-secondary font-medium">Total Value Locked (ADA)</h3>
-          <p className="text-4xl font-bold gradient-text">479M</p>
-          <div className="space-y-1.5 text-sm">
+        <div className="card-static space-y-4">
+          <div>
+            <p className="text-xs text-text-muted mb-1">Cardano Total TVL</p>
+            {loadingChart ? (
+              <div className="space-y-2">
+                <div className="h-8 w-28 bg-bg-card-hover rounded animate-pulse" />
+                <div className="h-3 w-16 bg-bg-card-hover rounded animate-pulse" />
+              </div>
+            ) : (
+              <>
+                <p className="text-3xl font-bold gradient-text">{formatTvlSummary(totalTvl)}</p>
+                <span className={`text-xs font-medium ${change24h >= 0 ? "text-success" : "text-danger"}`}>
+                  {change24h >= 0 ? "+" : ""}{change24h.toFixed(2)}% (24h)
+                </span>
+              </>
+            )}
+          </div>
+          <div className="pt-2 border-t border-border-subtle text-sm">
             <div className="flex justify-between">
-              <span className="text-text-muted">Active Wallet (24h)</span>
-              <span className="font-medium">3.2K</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Tx Count (24h)</span>
-              <span className="font-medium">57K</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Volume (24h)</span>
-              <span className="font-medium">512M</span>
+              <span className="text-text-muted">Showing</span>
+              <span className="font-medium">{loadingProtocols ? "—" : `Top ${sorted.length}`}</span>
             </div>
           </div>
+          <a href="https://defillama.com/chain/Cardano" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs text-text-muted hover:text-accent-light transition-colors pt-1">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            View on DefiLlama
+          </a>
         </div>
 
-        {/* TVL Chart */}
         <div className="card-static">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold">TVL Daily</h3>
-            <div className="flex rounded-lg overflow-hidden border border-border-default">
-              <button className="px-3 py-1 text-xs font-medium bg-accent text-white">ADA</button>
-              <button className="px-3 py-1 text-xs font-medium text-text-muted bg-bg-card">USD</button>
+            <h3 className="text-sm font-semibold">Cardano TVL — Last 90 Days</h3>
+            <div className="flex gap-1 bg-bg-secondary rounded-xl p-1">
+              {(["usd", "ada"] as ChartUnit[]).map(u => (
+                <button key={u} onClick={() => setChartUnit(u)}
+                  disabled={u === "ada" && adaPrice === 0}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors uppercase ${
+                    chartUnit === u
+                      ? "bg-bg-card text-text-primary shadow-sm"
+                      : "text-text-muted hover:text-text-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+                  }`}>
+                  {u}
+                </button>
+              ))}
             </div>
           </div>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockTvlChartData}>
-                <defs>
-                  <linearGradient id="tvlGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#252d4a" />
-                <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}M`} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#141929",
-                    border: "1px solid #252d4a",
-                    borderRadius: "8px",
-                    color: "#f1f5f9",
-                    fontSize: "13px",
-                  }}
-                  formatter={(value: number) => [`${value}M ADA`, "TVL"]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="tvl"
-                  stroke="#6366f1"
-                  strokeWidth={2}
-                  fill="url(#tvlGradient)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          {loadingChart ? (
+            <div className="h-48 bg-bg-card-hover rounded animate-pulse" />
+          ) : (() => {
+            const isAda = chartUnit === "ada" && adaPrice > 0
+            const displayData = isAda
+              ? chartData.map(p => ({ ...p, tvl: p.tvl / adaPrice }))
+              : chartData
+            const sym = isAda ? "₳" : "$"
+            return (
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={displayData} margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="tvlGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#252d4a" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }}
+                      axisLine={false} tickLine={false} interval={14} />
+                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false}
+                      tickFormatter={(v: number) => `${sym}${v.toFixed(0)}M`} width={60} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#141929", border: "1px solid #252d4a",
+                        borderRadius: "8px", color: "#f1f5f9", fontSize: "12px" }}
+                      formatter={(v: number) => [`${sym}${v.toFixed(2)}M`, "TVL"]}
+                    />
+                    <Area type="monotone" dataKey="tvl" stroke="#6366f1" strokeWidth={2}
+                      fill="url(#tvlGradient)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )
+          })()}
         </div>
       </div>
 
-      {/* Protocol Rankings header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-in">
-        <h2 className="text-xl font-bold">Protocol Rankings</h2>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-sm text-text-secondary">
-            <input type="text" className="input w-28 text-xs" placeholder="04-May-26" readOnly />
-            <span>→</span>
-            <input type="text" className="input w-28 text-xs" placeholder="04-Jun-26" readOnly />
+      {/* Rankings */}
+      <div className="animate-fade-in">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <h2 className="text-xl font-bold">
+            Protocol Rankings
+            {!loadingProtocols && (
+              <span className="ml-2 text-sm font-normal text-text-muted">Top {sorted.length}</span>
+            )}
+          </h2>
+
+          <div className="flex gap-1 bg-bg-secondary rounded-xl p-1">
+            {SORT_TABS.map(tab => (
+              <button key={tab.key} onClick={() => setSortMode(tab.key)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  sortMode === tab.key
+                    ? "bg-bg-card text-text-primary shadow-sm"
+                    : "text-text-muted hover:text-text-secondary"
+                }`}>
+                {tab.label}
+              </button>
+            ))}
           </div>
-          <div className="flex rounded-lg overflow-hidden border border-border-default">
-            <button className="px-3 py-1 text-xs font-medium bg-accent text-white">ADA</button>
-            <button className="px-3 py-1 text-xs font-medium text-text-muted bg-bg-card">USD</button>
-          </div>
+        </div>
+
+        <div className="card-static !p-0 overflow-hidden animate-slide-up">
+          {loadingProtocols
+            ? <TableSkeleton />
+            : <ProtocolTable protocols={sorted} sortMode={sortMode} />
+          }
         </div>
       </div>
 
-      {/* Table */}
-      <div className="card-static !p-0 overflow-hidden animate-slide-up">
-        <ProtocolTable protocols={mockProtocols} />
-      </div>
     </div>
   )
 }
