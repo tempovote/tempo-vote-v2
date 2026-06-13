@@ -7,6 +7,7 @@ import vote.tempo.routes.*
 fun Application.configureRouting() {
     routing {
         healthRoutes()
+        networkRoutes()
         authRoutes()
         transactionRoutes()
         chainInfoRoutes()

@@ -28,42 +28,14 @@ export default function HomeHeroSections() {
       </section>
 
       {/* ── Section 2: Delegate To DRep ─────────────────────── */}
-      <section className="card-static space-y-4 animate-slide-up" style={{ animationDelay: "0.1s" }}>
+      <section className="card-static space-y-3 animate-slide-up" style={{ animationDelay: "0.1s" }}>
         <h2 className="text-lg font-bold">Delegate To DRep</h2>
-
-        <div className="notice notice-success">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-success shrink-0">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-            <polyline points="8,12 11,15 16,9" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="text-sm">
-            Find a DRep, review their profile, and delegate your voting power to them
-          </span>
-        </div>
-
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search by name or ID"
-              className="input pl-10"
-            />
-          </div>
-          <button className="btn-primary px-6">Search</button>
-        </div>
+        <p className="text-sm text-text-secondary">
+          Tìm DRep phù hợp, xem profile và lịch sử bỏ phiếu, sau đó delegate voting power của bạn cho họ.
+        </p>
+        <Link href="/dreps" className="btn-primary w-full justify-center">
+          Khám phá DReps
+        </Link>
       </section>
     </>
   )
