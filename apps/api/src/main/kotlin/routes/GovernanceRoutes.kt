@@ -24,6 +24,7 @@ import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.VoteEntry
 import vote.tempo.cardano.extractSPOPoolIds
 import vote.tempo.cardano.parseProposals
+import vote.tempo.cardano.fetchEnactedProposalKeys
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
 
@@ -118,21 +119,56 @@ fun Route.chainInfoRoutes() {
 
 fun Route.governanceRoutes() {
 
+    /**
+     * POST /admin/backfill-enacted?network=mainnet|preprod
+     *
+     * One-time operation: fetches all governance proposals from Blockfrost, identifies those
+     * with enacted_epoch set, and marks them in idx_governance_proposals.final_status = "enacted".
+     * This makes historically enacted proposals appear in the "Enacted" filter tab rather than
+     * being lumped in with expired proposals.
+     *
+     * Safe to call multiple times (idempotent UPDATE). Requires BLOCKFROST_{NETWORK}_PROJECT_ID.
+     * Returns { "updated": N, "enacted": N } where updated = rows changed in DB.
+     */
+    post("/admin/backfill-enacted") {
+        val network = networkFromString(call.request.queryParameters["network"] ?: "mainnet")
+        val enacted = fetchEnactedProposalKeys(network)
+        if (enacted.isEmpty()) {
+            call.respond(buildJsonObject {
+                put("error", "No enacted proposals found or Blockfrost not configured")
+                put("network", network.name)
+            })
+            return@post
+        }
+        val updated = withContext(Dispatchers.IO) {
+            GovernanceActionDao.markFinalStatus(network.name.lowercase(), enacted, "enacted")
+        }
+        // Invalidate caches so next request serves fresh data
+        CardanoCache.parsedGovActions.invalidate(network.name)
+        call.respond(buildJsonObject {
+            put("network", network.name)
+            put("enacted", enacted.size)
+            put("updated", updated)
+        })
+    }
+
     route("/governance-actions") {
 
         /**
-         * GET /governance-actions?network=preprod&type=treasuryWithdrawals
+         * GET /governance-actions?network=preprod&type=treasuryWithdrawals&status=active
          * Returns mapped GovernanceActionDto list — served from cache (refreshed every 5 min).
+         * Both `type` and `status` filters are optional; omitting both returns all proposals.
          */
         get {
-            val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
-            val typeFilter = call.request.queryParameters["type"]
+            val network      = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+            val typeFilter   = call.request.queryParameters["type"]
+            val statusFilter = call.request.queryParameters["status"]
 
             val proposals = fetchProposals(network)
 
-            val filtered = if (typeFilter != null) {
-                proposals.filter { it.actionType.equals(typeFilter, ignoreCase = true) }
-            } else proposals
+            val filtered = proposals
+                .let { list -> if (typeFilter   != null) list.filter { it.actionType.equals(typeFilter,   ignoreCase = true) } else list }
+                .let { list -> if (statusFilter != null) list.filter { it.status.equals(statusFilter, ignoreCase = true) } else list }
 
             call.respond(filtered)
         }

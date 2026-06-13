@@ -187,6 +187,9 @@ object IdxGovernanceProposals : Table("idx_governance_proposals") {
     val returnAddress  = text("return_address").nullable()
     val title          = text("title").nullable()
     val abstract       = text("abstract").nullable()
+    /** Set by backfill-enacted admin route for proposals whose real status can't be computed
+     *  from epoch alone (e.g. enacted before expiry epoch). Overrides computed status. */
+    val finalStatus    = varchar("final_status", 20).nullable()
 
     override val primaryKey = PrimaryKey(network, txHash, index)
 }

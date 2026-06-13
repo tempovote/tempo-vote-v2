@@ -6,6 +6,9 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 
@@ -167,5 +170,77 @@ suspend fun fetchDRepDelegatorsBlockfrost(
         }
     }.onFailure { e ->
         logger.warn { "Blockfrost fetchDRepDelegators failed for $drepId [$network]: ${e.message}" }
+    }.getOrDefault(emptyList())
+}
+
+/**
+ * Enumerate all governance proposals for the network and return those with enacted_epoch set.
+ * Steps:
+ *   1. Paginate /governance/proposals to collect all (tx_hash, cert_index) pairs.
+ *   2. Fetch detail for each proposal in parallel (capped at 10 concurrent requests).
+ *   3. Return pairs where enacted_epoch != null.
+ *
+ * Used by the backfill-enacted admin route to update final_status in idx_governance_proposals.
+ */
+suspend fun fetchEnactedProposalKeys(network: Network): List<Pair<String, Int>> {
+    val projectId = blockfrostProjectId(network)
+        ?: return emptyList<Pair<String, Int>>().also {
+            logger.warn { "Blockfrost not configured for $network — skipping enacted backfill" }
+        }
+    val base = blockfrostBaseUrl(network)
+
+    return runCatching {
+        withTimeout(120_000L) {
+            // ── Step 1: collect all proposal stubs (tx_hash + cert_index) ────────────
+            val stubs = mutableListOf<Pair<String, Int>>()
+            var page = 1
+            while (true) {
+                val resp = blockfrostHttp.get("$base/governance/proposals?count=100&page=$page&order=asc") {
+                    header("project_id", projectId)
+                }
+                if (!resp.status.isSuccess()) break
+                val arr = blockfrostJson.parseToJsonElement(resp.bodyAsText()).jsonArray
+                for (item in arr) {
+                    val obj   = item.jsonObject
+                    val txHash   = obj["tx_hash"]?.jsonPrimitive?.contentOrNull  ?: continue
+                    val certIdx  = obj["cert_index"]?.jsonPrimitive?.intOrNull   ?: continue
+                    stubs.add(txHash to certIdx)
+                }
+                if (arr.size < 100) break
+                page++
+            }
+            logger.info { "Blockfrost [$network] found ${stubs.size} total governance proposals" }
+
+            // ── Step 2: fetch detail for each proposal, 10 in parallel ────────────
+            val enacted = mutableListOf<Pair<String, Int>>()
+            stubs.chunked(10).forEach { chunk ->
+                coroutineScope {
+                    chunk.map { (txHash, certIdx) ->
+                        async {
+                            runCatching {
+                                val detailResp = blockfrostHttp.get(
+                                    "$base/governance/proposals/$txHash/$certIdx"
+                                ) { header("project_id", projectId) }
+                                if (!detailResp.status.isSuccess()) return@runCatching
+                                val detail = blockfrostJson.parseToJsonElement(
+                                    detailResp.bodyAsText()
+                                ).jsonObject
+                                val enactedEpoch = detail["enacted_epoch"]?.jsonPrimitive
+                                    ?.intOrNull
+                                if (enactedEpoch != null) {
+                                    synchronized(enacted) { enacted.add(txHash to certIdx) }
+                                }
+                            }.onFailure { e ->
+                                logger.debug { "Detail fetch failed for $txHash/$certIdx: ${e.message}" }
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+            logger.info { "Blockfrost [$network] identified ${enacted.size} enacted proposals" }
+            enacted
+        }
+    }.onFailure { e ->
+        logger.warn { "fetchEnactedProposalKeys [$network] failed: ${e.message}" }
     }.getOrDefault(emptyList())
 }

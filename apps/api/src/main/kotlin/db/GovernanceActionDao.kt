@@ -176,7 +176,8 @@ object GovernanceActionDao {
                 val actionType   = row[IdxGovernanceProposals.actionType]
                 val expiresEpoch = row[IdxGovernanceProposals.expiresEpoch]
                 val t = tally["$txHash:$index"] ?: VoteTally()
-                val status = if (currentEpoch > expiresEpoch) "expired" else "active"
+                val status = row[IdxGovernanceProposals.finalStatus]
+                    ?: if (currentEpoch > expiresEpoch) "expired" else "active"
 
                 GovernanceActionDto(
                     txHash       = txHash,
@@ -199,4 +200,32 @@ object GovernanceActionDao {
             }
         }
     }.getOrDefault(emptyList())
+
+    /**
+     * Set final_status for a batch of proposals in idx_governance_proposals.
+     * Used by the backfill-enacted admin route to mark proposals whose real status
+     * (enacted/dropped) differs from what epoch-based computation would produce.
+     * Returns the number of rows actually updated.
+     */
+    fun markFinalStatus(network: String, keys: List<Pair<String, Int>>, status: String): Int {
+        if (keys.isEmpty()) return 0
+        return runCatching {
+            transaction {
+                var updated = 0
+                for ((txHash, index) in keys) {
+                    updated += IdxGovernanceProposals.update({
+                        (IdxGovernanceProposals.network eq network) and
+                        (IdxGovernanceProposals.txHash  eq txHash) and
+                        (IdxGovernanceProposals.index   eq index)
+                    }) {
+                        it[IdxGovernanceProposals.finalStatus] = status
+                    }
+                }
+                updated
+            }
+        }.getOrElse { e ->
+            logger.warn { "GovernanceActionDao.markFinalStatus failed: ${e.message}" }
+            0
+        }
+    }
 }
