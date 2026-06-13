@@ -322,6 +322,7 @@ export default function RegisterDRepPage() {
   const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId, reauthenticate } = useWallet()
   const { submitTx } = useTx()
   const setDRepStatus = useWalletStore(s => s.setDRepStatus)
+  const openWalletModal = useWalletStore(s => s.openWalletModal)
 
   const [wizardStep, setWizardStep] = useState<WizardStep>("step1")
   const [formData, setFormData] = useState<DRepFormData>(EMPTY_FORM)
@@ -350,6 +351,17 @@ export default function RegisterDRepPage() {
           <p className="text-text-secondary text-sm">
             Bạn cần kết nối ví Cardano hỗ trợ CIP-95 (Eternl, Lace, Yoroi...) để đăng ký DRep.
           </p>
+          <button
+            onClick={openWalletModal}
+            className="btn-primary mx-auto gap-2"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <rect x="2" y="6" width="20" height="14" rx="2" />
+              <path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+              <path d="M22 10V8a2 2 0 0 0-2-2H4" />
+            </svg>
+            Kết nối ví
+          </button>
         </div>
       </main>
     )

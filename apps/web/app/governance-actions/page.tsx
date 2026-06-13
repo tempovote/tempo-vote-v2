@@ -117,10 +117,10 @@ export default function GovernanceActionsPage() {
         </div>
 
         {/* Type chips — scrollable, single-select toggle */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-text-muted whitespace-nowrap">Loại GA</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs text-text-muted whitespace-nowrap shrink-0">Loại GA</span>
           <div
-            className="flex gap-2 overflow-x-auto"
+            className="flex gap-2 overflow-x-auto min-w-0"
             style={{ scrollbarWidth: "none" }}
           >
             {TYPE_CHIPS.map((chip) => (
@@ -145,7 +145,7 @@ export default function GovernanceActionsPage() {
         <h3 className="text-base font-bold text-accent-light">
           Đề xuất Governance Action
         </h3>
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <p className="text-sm text-text-secondary">
             Tạo poll trong cộng đồng DRep trước để lấy ý kiến và xây dựng sự ủng hộ.
             Khi đã có đủ sự đồng thuận, bạn có thể gửi lên chain như một Governance Action.
@@ -156,7 +156,7 @@ export default function GovernanceActionsPage() {
                 ? `/dreps/${drepKey.dRepIDCip105}/community?create=true${network !== "mainnet" ? `&network=${network}` : ""}`
                 : "/dreps"
             }
-            className="btn-primary shrink-0 text-sm inline-flex items-center gap-1.5"
+            className="btn-primary sm:shrink-0 text-sm inline-flex items-center gap-1.5 justify-center"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" />

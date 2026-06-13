@@ -7,6 +7,8 @@ import { useState, useCallback, useEffect, useRef } from "react"
 import { useWalletStore } from "@/store/wallet"
 import WalletModal from "@/components/wallet/WalletModal"
 
+const BANNER_KEY = "tempo:banner-dismissed-v1"
+
 const navLinks = [
   { href: "/", label: "Home" },
   { href: "/dapp-ranking", label: "DApp Ranking" },
@@ -30,7 +32,19 @@ export default function Navbar() {
   const [mobileOpen,  setMobileOpen]  = useState(false)
   const [othersOpen,  setOthersOpen]  = useState(false)
   const [mobileOthersOpen, setMobileOthersOpen] = useState(false)
+  const [bannerVisible, setBannerVisible] = useState(false)
   const othersRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(BANNER_KEY)) setBannerVisible(true)
+    } catch { setBannerVisible(true) }
+  }, [])
+
+  const dismissBanner = useCallback(() => {
+    setBannerVisible(false)
+    try { localStorage.setItem(BANNER_KEY, "1") } catch { /* ignore */ }
+  }, [])
 
   // Close Others dropdown on outside click
   useEffect(() => {
@@ -54,7 +68,7 @@ export default function Navbar() {
   // When wallet is connected, network is locked to wallet's network
   const networkLocked = isConnected
 
-  const openModal  = useCallback(() => openWalletModal(),  [openWalletModal])
+  const openModal  = useCallback(() => { setMobileOpen(false); openWalletModal() },  [openWalletModal])
   const closeModal = useCallback(() => closeWalletModal(), [closeWalletModal])
 
   // Restore persisted network preference on first render
@@ -63,13 +77,26 @@ export default function Navbar() {
   return (
     <>
       {/* Top banner */}
-      <div className="w-full bg-gradient-to-r from-accent-dark via-accent to-accent-purple text-center py-2 px-4 text-sm text-white/90">
-        Check out{" "}
-        <span className="underline font-semibold cursor-pointer">Tempo DRep profile</span>{" "}
-        and{" "}
-        <span className="underline font-semibold cursor-pointer">delegate</span>{" "}
-        to help shape Cardano&apos;s transparent governance!
-      </div>
+      {bannerVisible && (
+        <div className="w-full bg-gradient-to-r from-accent-dark via-accent to-accent-purple flex items-center justify-center gap-3 py-2 px-4 text-sm text-white/90 relative">
+          <span>
+            Xem{" "}
+            <span className="underline font-semibold cursor-pointer">hồ sơ DRep</span>{" "}
+            trên Tempo và{" "}
+            <span className="underline font-semibold cursor-pointer">delegate</span>{" "}
+            để góp phần định hình quản trị Cardano minh bạch!
+          </span>
+          <button
+            onClick={dismissBanner}
+            className="shrink-0 text-white/70 hover:text-white transition-colors"
+            aria-label="Đóng banner"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Main navbar */}
       <nav className="sticky top-0 z-50 bg-bg-primary/80 backdrop-blur-xl border-b border-border-default">
@@ -287,9 +314,18 @@ export default function Navbar() {
           </div>
         </div>
 
+        {/* Mobile menu overlay backdrop */}
+        {mobileOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/60 z-40"
+            style={{ top: 0 }}
+            onClick={() => setMobileOpen(false)}
+          />
+        )}
+
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden border-t border-border-default bg-bg-secondary/95 backdrop-blur-xl animate-fade-in">
+          <div className="md:hidden border-t border-border-default bg-bg-card animate-fade-in relative z-50">
             <div className="px-4 py-3 space-y-1">
               {navLinks.map((link) => {
                 const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href)
@@ -301,7 +337,7 @@ export default function Navbar() {
                     className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       isActive
                         ? "text-accent-light bg-accent/10"
-                        : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+                        : "text-text-primary hover:text-accent-light hover:bg-white/5"
                     }`}
                   >
                     {link.label}
@@ -313,7 +349,7 @@ export default function Navbar() {
               <div>
                 <button
                   onClick={() => setMobileOthersOpen(o => !o)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-text-primary hover:text-accent-light hover:bg-white/5 transition-colors"
                 >
                   Others
                   <svg
@@ -336,7 +372,7 @@ export default function Navbar() {
                           className={`block px-3 py-2 rounded-lg text-sm transition-colors ${
                             isActive
                               ? "text-accent-light bg-accent/10"
-                              : "text-text-muted hover:text-text-secondary hover:bg-white/5"
+                              : "text-text-primary hover:text-accent-light hover:bg-white/5"
                           }`}
                         >
                           {link.label}

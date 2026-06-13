@@ -309,11 +309,13 @@ function VoteTable({
   role,
   side,
   namesMap,
+  hideHeader = false,
 }: {
   votes: VoteEntry[]
   role: RoleTab
   side: "yes" | "no-abstain"
   namesMap: ReadonlyMap<string, string>
+  hideHeader?: boolean
 }) {
   const filtered = votes
     .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
@@ -323,8 +325,8 @@ function VoteTable({
 
   return (
     <div className="flex-1 min-w-0">
-      {/* Column header */}
-      {side === "yes" ? (
+      {/* Column header — hidden on mobile when used with vote filter tabs */}
+      {!hideHeader && (side === "yes" ? (
         <div className="text-xs font-semibold mb-2 text-success/70">
           YES · {filtered.length}
         </div>
@@ -338,7 +340,7 @@ function VoteTable({
             ABSTAIN · {votes.filter((v) => v.vote === "abstain").length}
           </span>
         </div>
-      )}
+      ))}
 
       {filtered.length === 0 ? (
         <p className="text-xs text-text-muted py-3 text-center">{emptyLabel}</p>
@@ -349,8 +351,8 @@ function VoteTable({
             <span>ID</span>
             <span className="text-right">VP / Vote</span>
           </div>
-          {/* Scrollable rows — max ~50 visible */}
-          <div className="overflow-y-auto max-h-[500px] divide-y divide-border-subtle pr-1 scrollbar-thin">
+          {/* Scrollable rows — max ~50 visible (desktop only) */}
+          <div className="divide-y divide-border-subtle pr-1 scrollbar-thin sm:overflow-y-auto sm:max-h-[500px]">
           {filtered.map((v, i) => {
             const isNo      = v.vote === "no"
             const isAbstain = v.vote === "abstain"
@@ -388,7 +390,7 @@ function VoteTable({
                   )}
                   {v.votingPower > 0 && (
                     <span className="text-[11px] text-text-muted tabular-nums">
-                      {lovelaceToAda(v.votingPower)}₳
+                      {lovelaceToAda(v.votingPower)} ₳
                     </span>
                   )}
                   <span className={`text-[11px] font-bold ${voteCls} w-7 text-right`}>
@@ -405,8 +407,11 @@ function VoteTable({
   )
 }
 
+type MobileVoteFilter = "yes" | "no" | "abstain"
+
 export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
   const [role, setRole] = useState<RoleTab>("drep")
+  const [mobileFilter, setMobileFilter] = useState<MobileVoteFilter>("yes")
 
   const counts: Record<RoleTab, number> = {
     drep: votes.filter((v) => v.role === "drep").length,
@@ -416,11 +421,22 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
 
   const roleVotes = votes.filter((v) => v.role === role)
 
+  const mobileFiltered = roleVotes.filter((v) => v.vote === mobileFilter)
+  const yCnt = roleVotes.filter((v) => v.vote === "yes").length
+  const nCnt = roleVotes.filter((v) => v.vote === "no").length
+  const aCnt = roleVotes.filter((v) => v.vote === "abstain").length
+
   // Browser-fetch names for DReps without a server-side voterName (CORS-friendly hosts resolve fine)
   const drepAnchorUrls = votes
     .filter((v) => v.role === "drep" && v.anchorUrl && !v.voterName)
     .map((v) => v.anchorUrl!)
   const namesMap = useAnchorTitlesMap(drepAnchorUrls)
+
+  const VOTE_TABS: { key: MobileVoteFilter; label: string; cnt: number; cls: string }[] = [
+    { key: "yes",     label: "YES",     cnt: yCnt, cls: "text-success" },
+    { key: "no",      label: "NO",      cnt: nCnt, cls: "text-danger" },
+    { key: "abstain", label: "ABSTAIN", cnt: aCnt, cls: "text-text-muted" },
+  ]
 
   return (
     <div className="space-y-4">
@@ -444,17 +460,46 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
         ))}
       </div>
 
-      {/* Two-column vote tables */}
       {roleVotes.length === 0 ? (
         <p className="text-sm text-text-muted py-4 text-center">
           Chưa có phiếu nào từ {ROLE_LABELS[role]}
         </p>
       ) : (
-        <div className="flex gap-5">
-          <VoteTable votes={roleVotes} role={role} side="yes" namesMap={namesMap} />
-          <div className="w-px bg-border-subtle shrink-0" />
-          <VoteTable votes={roleVotes} role={role} side="no-abstain" namesMap={namesMap} />
-        </div>
+        <>
+          {/* ── Mobile: vote filter tabs + single column ── */}
+          <div className="sm:hidden space-y-3">
+            <div className="flex gap-1 bg-bg-secondary rounded-xl p-1">
+              {VOTE_TABS.map(({ key, label, cnt, cls }) => (
+                <button
+                  key={key}
+                  onClick={() => setMobileFilter(key)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    mobileFilter === key
+                      ? "bg-bg-card shadow-sm"
+                      : "text-text-muted hover:text-text-secondary"
+                  }`}
+                >
+                  <span className={mobileFilter === key ? cls : ""}>{label}</span>
+                  <span className="text-text-muted font-normal">{cnt}</span>
+                </button>
+              ))}
+            </div>
+            <VoteTable
+              votes={mobileFiltered}
+              role={role}
+              side={mobileFilter === "yes" ? "yes" : "no-abstain"}
+              namesMap={namesMap}
+              hideHeader
+            />
+          </div>
+
+          {/* ── Desktop: two-column layout ── */}
+          <div className="hidden sm:flex gap-5">
+            <VoteTable votes={roleVotes} role={role} side="yes" namesMap={namesMap} />
+            <div className="w-px bg-border-subtle shrink-0" />
+            <VoteTable votes={roleVotes} role={role} side="no-abstain" namesMap={namesMap} />
+          </div>
+        </>
       )}
     </div>
   )

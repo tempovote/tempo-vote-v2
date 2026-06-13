@@ -292,7 +292,7 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border-subtle bg-bg-secondary">
-              <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Stake Address</th>
+              <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Địa chỉ Stake</th>
               <th className="px-3 py-2 text-right text-xs text-text-muted font-semibold">ADA</th>
             </tr>
           </thead>
