@@ -858,10 +858,10 @@ export default function CommunityPage({
   const [alertModal, setAlertModal] = useState<{ type: "success" | "error"; title: string; message: string } | null>(null)
 
   const { profile, isLoading: profileLoading } = useDRepProfile(drepId, network)
-  const { isActive, isLoading: communityLoading } = useCommunity(drepId, network)
-  const { polls, total, limit, isLoading: pollsLoading, error: pollsError, refetch } = useCommunityPolls(drepId, network, page)
-
   const canonicalId = profile?.id ?? drepId
+  const { isActive, isLoading: communityLoading } = useCommunity(canonicalId, network)
+  const { polls, total, limit, isLoading: pollsLoading, error: pollsError, refetch } = useCommunityPolls(canonicalId, network, page)
+
   const isOwner = !!drepKey?.dRepIDCip105 && drepKey.dRepIDCip105 === canonicalId
   const networkParam = network !== "mainnet" ? `?network=${network}` : ""
 
@@ -904,27 +904,27 @@ export default function CommunityPage({
     )
   }
 
+  const displayName = profile?.givenName ?? profile?.name ?? canonicalId.slice(0, 12) + "..."
+
   if (!isActive) {
     return (
       <div className="page-container">
-        <Link href={`/dreps/${drepId}${networkParam}`} className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors mb-6">
+        <Link href={`/dreps/${canonicalId}${networkParam}`} className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors mb-6">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          DRep Profile
+          {displayName}
         </Link>
         <div className="notice-warning rounded-xl p-8 text-center space-y-3">
           <p className="font-semibold">{t("community.notActivatedTitle")}</p>
           <p className="text-sm text-text-muted">{t("community.notActivatedDesc")}</p>
-          <Link href={`/dreps/${drepId}${networkParam}`} className="text-sm text-accent-light underline">
+          <Link href={`/dreps/${canonicalId}${networkParam}`} className="text-sm text-accent-light underline">
             {t("community.backToProfile")}
           </Link>
         </div>
       </div>
     )
   }
-
-  const displayName = profile?.givenName ?? profile?.name ?? drepId.slice(0, 12) + "..."
 
   return (
     <div className="page-container space-y-6 animate-fade-in">
