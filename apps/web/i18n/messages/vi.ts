@@ -182,6 +182,9 @@ const vi: Messages = {
       proposeTitle: "Đề xuất Governance Action",
       proposeDesc: "Tạo poll trong cộng đồng DRep trước để lấy ý kiến và xây dựng sự ủng hộ. Khi đã có đủ sự đồng thuận, bạn có thể gửi lên chain như một Governance Action.",
       internalPoll: "Internal Poll",
+      activateCommunity: "Kích hoạt Community",
+      becomeDrep: "Trở thành DRep",
+      drepCommunity: "Community của DRep bạn delegate",
       loadError: "Không thể tải danh sách governance actions",
       empty: "Không có governance actions phù hợp",
       clearFilters: "Xoá bộ lọc",
@@ -812,6 +815,7 @@ const vi: Messages = {
   community: {
     notActivatedTitle: "Community chưa được kích hoạt",
     notActivatedDesc: "DRep này chưa kích hoạt DRep Community.",
+    notActivatedDelegatorDesc: "DRep bạn đã delegate chưa kích hoạt community. Khi họ kích hoạt, bạn sẽ xem và vote poll được ở đây.",
     backToProfile: "Quay lại profile",
     searchPlaceholder: "Tìm kiếm...",
     pollLoadError: "Không thể tải danh sách poll",
