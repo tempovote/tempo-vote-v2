@@ -1,3 +1,7 @@
+"use client"
+
+import { useT } from "@/i18n/useT"
+
 interface Props {
   txHash: string
   drepName: string
@@ -10,9 +14,12 @@ export default function RegisterDRepSuccess({
   txHash,
   drepName,
   networkId,
-  successMessage = "Đăng ký thành công!",
+  successMessage,
   selfDelegated = false,
 }: Props) {
+  const t = useT()
+  const message = successMessage ?? t("drepWizard.successDefaultMsg")
+
   const explorerBase =
     networkId === 1
       ? "https://cardanoscan.io/transaction"
@@ -31,13 +38,14 @@ export default function RegisterDRepSuccess({
       </div>
 
       <div>
-        <h2 className="text-xl font-bold text-text-primary">{successMessage}</h2>
+        <h2 className="text-xl font-bold text-text-primary">{message}</h2>
         <p className="text-text-secondary text-sm mt-1">
-          <span className="text-accent font-semibold">{drepName}</span> đã được gửi lên Cardano blockchain.
+          <span className="text-accent font-semibold">{drepName}</span>{" "}
+          {t("drepWizard.successSubmitted")}
         </p>
         {selfDelegated && (
           <p className="text-text-muted text-xs mt-1">
-            Giao dịch bao gồm cả đăng ký DRep + ủy quyền voting power (atomic).
+            {t("drepWizard.successSelfDelegatedNote")}
           </p>
         )}
       </div>
@@ -61,15 +69,14 @@ export default function RegisterDRepSuccess({
           <svg className="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
           </svg>
-          <p className="font-semibold text-sm text-text-primary">Chờ xác nhận on-chain</p>
+          <p className="font-semibold text-sm text-text-primary">{t("drepWizard.successWaitTitle")}</p>
         </div>
         <p className="text-text-secondary text-xs leading-relaxed">
-          Transaction cần khoảng 20–60 giây để được confirm. Sau khi confirm, DRep ID của bạn sẽ
-          xuất hiện trong danh sách DRep trên chain và ví sẽ hiển thị trạng thái đã đăng ký.
+          {t("drepWizard.successWaitDesc")}
         </p>
         {selfDelegated && (
           <p className="text-text-secondary text-xs leading-relaxed">
-            Voting power sẽ được cập nhật tại <span className="text-text-primary font-medium">epoch boundary tiếp theo</span> (~1–5 ngày tùy mạng).
+            {t("drepWizard.successVpNote")}
           </p>
         )}
       </div>
@@ -82,10 +89,10 @@ export default function RegisterDRepSuccess({
           rel="noopener noreferrer"
           className="btn-outline flex-1 text-center"
         >
-          Xem trên CardanoScan ↗
+          {t("drepWizard.successViewCardanoscan")}
         </a>
         <a href="/dreps" className="btn-primary flex-1 text-center">
-          Danh sách DRep
+          {t("drepWizard.successDrepListBtn")}
         </a>
       </div>
     </div>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { useT } from "@/i18n/useT"
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -145,6 +146,7 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function TreasuryProjectionPage() {
+  const t = useT()
   const [txFee,    setTxFee]    = useState(TX_FEE_MIN)
   const [withdraw, setWithdraw] = useState(300_000_000)
 
@@ -188,24 +190,24 @@ export default function TreasuryProjectionPage() {
       {/* ── Stats row ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard
-          label="Starting Treasury"
+          label={t("treasury.statStartTreasury")}
           value={fmt(INITIAL_TREASURY, 1)}
-          sub="Approx. mainnet 2026"
+          sub={t("treasury.approxMainnet")}
         />
         <StatCard
-          label="Starting Reserves"
+          label={t("treasury.statStartReserves")}
           value={fmt(INITIAL_RESERVES, 1)}
-          sub="Approx. mainnet 2026"
+          sub={t("treasury.approxMainnet")}
         />
         <StatCard
-          label="Annual Inflow"
+          label={t("treasury.statAnnualInflow")}
           value={fmt(annualInflow, 1)}
-          sub={`Yr 1 · ${fmtSlider(txFee)} tx fee/epoch`}
+          sub={t("treasury.yr1Label").replace("{fee}", fmtSlider(txFee))}
         />
         <StatCard
-          label={yearsRemaining === null ? "Status" : "Runs out in"}
-          value={yearsRemaining === null ? "Sustainable" : `~${yearsRemaining} yr`}
-          sub={yearsRemaining === null ? "Inflow > withdrawals" : `Year ${runOutYear}`}
+          label={yearsRemaining === null ? t("treasury.statStatus") : t("treasury.statRunsOut")}
+          value={yearsRemaining === null ? t("treasury.statSustainable") : `~${yearsRemaining} yr`}
+          sub={yearsRemaining === null ? t("treasury.statInflowExceeds") : `Year ${runOutYear}`}
           color={runOutColor}
         />
       </div>
@@ -218,8 +220,8 @@ export default function TreasuryProjectionPage() {
           <div className="lg:w-72 xl:w-80 shrink-0 bg-bg-secondary border-b lg:border-b-0 lg:border-r border-border-default p-6 flex flex-col gap-7">
 
             <Slider
-              label="Transaction Fee / Per Epoch"
-              hint="current mainnet ≈ 31K ₳"
+              label={t("treasury.txFeeLabel")}
+              hint={t("treasury.txFeeHint")}
               min={TX_FEE_MIN} max={TX_FEE_MAX} step={1_000}
               value={txFee} onChange={setTxFee}
             />
@@ -227,8 +229,8 @@ export default function TreasuryProjectionPage() {
             <div className="border-t border-border-subtle" />
 
             <Slider
-              label="Treasury Withdraw / Per Year"
-              hint="governance spending"
+              label={t("treasury.withdrawLabel")}
+              hint={t("treasury.withdrawHint")}
               min={0} max={WITHDRAW_MAX} step={10_000_000}
               value={withdraw} onChange={setWithdraw}
               accent
@@ -244,9 +246,9 @@ export default function TreasuryProjectionPage() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <p className="text-sm font-semibold text-[#22c55e]">Treasury is self-sustaining</p>
+                    <p className="text-sm font-semibold text-[#22c55e]">{t("treasury.statusSelfSustaining")}</p>
                   </div>
-                  <p className="text-xs text-text-muted">Annual inflow exceeds withdrawals by {fmt(netPerYear, 1)}</p>
+                  <p className="text-xs text-text-muted">{t("treasury.statusAnnualInflow").replace("{amount}", fmt(netPerYear, 1))}</p>
                 </>
               ) : (
                 <>
@@ -256,11 +258,14 @@ export default function TreasuryProjectionPage() {
                       <line x1="12" y1="9" x2="12" y2="13"/>
                       <line x1="12" y1="17" x2="12.01" y2="17"/>
                     </svg>
-                    <p className={`text-sm font-semibold ${runOutColor}`}>Treasury will run out</p>
+                    <p className={`text-sm font-semibold ${runOutColor}`}>{t("treasury.statusWillRunOut")}</p>
                   </div>
                   <p className="text-2xl font-bold text-text-primary mt-1">~{runOutYear}</p>
                   <p className="text-xs text-text-muted mt-0.5">
-                    {yearsRemaining} year{yearsRemaining !== 1 ? "s" : ""} from now · deficit {fmt(Math.abs(netPerYear), 1)}/yr
+                    {t("treasury.statusYearsFromNow")
+                      .replace("{n}", String(yearsRemaining))
+                      .replace("{s}", yearsRemaining !== 1 ? "s" : "")
+                      .replace("{amount}", fmt(Math.abs(netPerYear), 1))}
                   </p>
                 </>
               )}
@@ -268,7 +273,7 @@ export default function TreasuryProjectionPage() {
 
             {/* Protocol params */}
             <div className="space-y-1.5">
-              <p className="text-xs font-medium text-text-muted uppercase tracking-wider">Protocol params</p>
+              <p className="text-xs font-medium text-text-muted uppercase tracking-wider">{t("treasury.protocolParams")}</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-text-muted">
                 <span>ρ (expansion)</span><span className="text-text-secondary font-mono">{RHO}</span>
                 <span>τ (treasury cut)</span><span className="text-text-secondary font-mono">{TAU}</span>
@@ -281,20 +286,20 @@ export default function TreasuryProjectionPage() {
           {/* Chart area */}
           <div className="flex-1 p-6 min-h-[420px]">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-text-secondary">ADA Over Time</p>
+              <p className="text-sm font-semibold text-text-secondary">{t("treasury.adaOverTime")}</p>
               <div className="flex items-center gap-4 text-xs text-text-muted">
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-0.5 rounded-full bg-[#60a5fa] inline-block"/>
-                  Reserves
+                  {t("treasury.legendReserves")}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-0.5 rounded-full bg-[#f87171] inline-block"/>
-                  Treasury Balance
+                  {t("treasury.legendTreasury")}
                 </span>
                 {runOutYear && (
                   <span className="flex items-center gap-1.5">
                     <span className="w-0.5 h-3 rounded-full bg-[#f97316]/60 inline-block"/>
-                    Run-out
+                    {t("treasury.legendRunOut")}
                   </span>
                 )}
               </div>
@@ -348,7 +353,7 @@ export default function TreasuryProjectionPage() {
                 <Area
                   type="monotone"
                   dataKey="reserves"
-                  name="Reserves"
+                  name={t("treasury.legendReserves")}
                   stroke="#60a5fa"
                   strokeWidth={2}
                   fill="url(#gReserves)"
@@ -358,7 +363,7 @@ export default function TreasuryProjectionPage() {
                 <Area
                   type="monotone"
                   dataKey="treasury"
-                  name="Treasury Balance"
+                  name={t("treasury.legendTreasury")}
                   stroke="#f87171"
                   strokeWidth={2}
                   fill="url(#gTreasury)"
@@ -374,7 +379,7 @@ export default function TreasuryProjectionPage() {
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
               <p className="text-xs text-text-muted leading-relaxed">
-                Simulation starts from current epoch · staker rewards excluded (they don&apos;t affect treasury/reserves math)
+                {t("treasury.simNote")}
               </p>
             </div>
           </div>

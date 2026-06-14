@@ -8,12 +8,13 @@ import RegisterDRepForm, { type DRepFormData } from "@/components/drep/RegisterD
 import RegisterDRepSuccess from "@/components/drep/RegisterDRepSuccess"
 import { authHeader, getJwt } from "@/lib/api"
 import { resolveAnchorUrl } from "@/lib/governance"
+import { useT } from "@/i18n/useT"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
+type TFunc = ReturnType<typeof useT>
 type WizardStep = "loading" | "step1" | "step2" | "confirm" | "uploading" | "signing" | "success" | "error"
 
-const STEP_LABELS = ["Thông tin", "Hồ sơ", "Xác nhận", "Hoàn tất"]
 const STEP_INDEX: Record<WizardStep, number> = {
   loading: 0, step1: 0, step2: 1, confirm: 2,
   uploading: 3, signing: 3, success: 3, error: 3,
@@ -31,10 +32,10 @@ const EMPTY_FORM: DRepFormData = {
   references: [],
 }
 
-function StepIndicator({ current }: { current: number }) {
+function StepIndicator({ current, stepLabels }: { current: number; stepLabels: string[] }) {
   return (
     <div className="flex items-center justify-center gap-0 mb-8">
-      {STEP_LABELS.map((label, i) => (
+      {stepLabels.map((label, i) => (
         <div key={i} className="flex items-center">
           <div className="flex flex-col items-center gap-1">
             <div
@@ -58,7 +59,7 @@ function StepIndicator({ current }: { current: number }) {
               {label}
             </span>
           </div>
-          {i < STEP_LABELS.length - 1 && (
+          {i < stepLabels.length - 1 && (
             <div className={`w-10 sm:w-16 h-0.5 mx-1 mb-4 transition-colors ${i < current ? "bg-accent" : "bg-border-default"}`} />
           )}
         </div>
@@ -82,12 +83,13 @@ function ConfirmUpdateStep({
   isLoading: boolean
   statusLabel: string | null
 }) {
+  const t = useT()
   const displayImageUrl = data.imagePreviewUrl || (data.imageUrl ? (resolveAnchorUrl(data.imageUrl) ?? data.imageUrl) : null)
 
   const profileSections = [
-    data.motivations && { label: "Động lực", text: data.motivations },
-    data.objectives && { label: "Mục tiêu", text: data.objectives },
-    data.qualifications && { label: "Kinh nghiệm & Năng lực", text: data.qualifications },
+    data.motivations && { label: t("drepWizard.formMotivationsLabel"), text: data.motivations },
+    data.objectives && { label: t("drepWizard.formObjectivesLabel"), text: data.objectives },
+    data.qualifications && { label: t("drepWizard.formQualificationsLabel"), text: data.qualifications },
   ].filter(Boolean) as { label: string; text: string }[]
 
   return (
@@ -105,14 +107,14 @@ function ConfirmUpdateStep({
           <div className="min-w-0 flex-1">
             <p className="text-text-primary font-bold">{data.givenName}</p>
             <div className="flex flex-wrap gap-1.5 mt-1">
-              {data.doNotList && <span className="badge text-xs">Ẩn khỏi danh sách</span>}
-              {data.paymentAddress && <span className="badge text-xs">Địa chỉ nhận phí</span>}
+              {data.doNotList && <span className="badge text-xs">{t("drepWizard.confirmBadgeDoNotList")}</span>}
+              {data.paymentAddress && <span className="badge text-xs">{t("drepWizard.confirmBadgePayment")}</span>}
             </div>
           </div>
         </div>
         {drepId && (
           <div className="border-t border-border-subtle pt-3">
-            <p className="text-text-muted text-xs font-medium mb-1">DRep ID (on-chain)</p>
+            <p className="text-text-muted text-xs font-medium mb-1">{t("drepWizard.confirmDrepIdLabel")}</p>
             <p className="font-mono text-xs text-text-secondary break-all">{drepId}</p>
           </div>
         )}
@@ -128,7 +130,7 @@ function ConfirmUpdateStep({
           ))}
           {data.references.length > 0 && (
             <div>
-              <p className="text-text-secondary text-sm font-semibold mb-1">Liên kết tham chiếu</p>
+              <p className="text-text-secondary text-sm font-semibold mb-1">{t("drepWizard.confirmRefsLabel")}</p>
               <ul className="space-y-1">
                 {data.references.filter(r => r.label || r.uri).map((r, i) => (
                   <li key={i} className="text-xs">
@@ -143,19 +145,19 @@ function ConfirmUpdateStep({
       )}
 
       <div className="card-static space-y-2">
-        <p className="text-text-primary text-sm font-semibold">Phí cập nhật</p>
+        <p className="text-text-primary text-sm font-semibold">{t("drepWizard.confirmFeeUpdate")}</p>
         <div className="space-y-1.5 text-xs">
           <div className="flex justify-between items-center">
-            <span className="text-text-muted">Network fee</span>
+            <span className="text-text-muted">{t("drepWizard.confirmFeeNetworkFee")}</span>
             <span className="text-text-primary font-medium">~0.2 ADA</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-text-muted">Metadata upload (Pinata)</span>
-            <span className="text-text-primary font-medium">miễn phí</span>
+            <span className="text-text-muted">{t("drepWizard.confirmFeeMetadata")}</span>
+            <span className="text-text-primary font-medium">{t("drepWizard.confirmFeeMetadataFree")}</span>
           </div>
         </div>
         <p className="text-text-muted text-xs border-t border-border-subtle pt-2">
-          Số tiền chính xác sẽ hiển thị trong ví khi ký.
+          {t("drepWizard.confirmFeeNote")}
         </p>
       </div>
 
@@ -171,37 +173,37 @@ function ConfirmUpdateStep({
 
       <div className="flex gap-3 pt-1">
         <button className="btn-outline flex-1" onClick={onBack} disabled={isLoading}>
-          ← Sửa lại
+          {t("drepWizard.confirmBackBtn")}
         </button>
         <button className="btn-primary flex-1" onClick={onConfirm} disabled={isLoading}>
-          {isLoading ? "Đang xử lý..." : "Xác nhận & Cập nhật"}
+          {isLoading ? t("drepWizard.confirmProcessingBtn") : t("drepWizard.confirmUpdateBtn")}
         </button>
       </div>
     </div>
   )
 }
 
-function friendlyError(msg: string): { title: string; detail: string; requiresReload?: boolean } {
+function friendlyError(msg: string, t: TFunc): { title: string; detail: string; requiresReload?: boolean } {
   const m = msg.toLowerCase()
   if (m.includes("no account found") || m.includes("reconnect")) {
-    return { title: "Kết nối ví bị mất", detail: "Phiên kết nối với dApp đã hết hạn. Tải lại trang và kết nối lại ví.", requiresReload: true }
+    return { title: t("drepWizard.errConnLost"), detail: t("drepWizard.errConnLostDetail"), requiresReload: true }
   }
   if (m.includes("locked")) {
-    return { title: "Ví đang bị khóa", detail: "Mở ví, nhập mật khẩu để mở khóa, sau đó nhấn \"Thử lại\"." }
+    return { title: t("drepWizard.errWalletLocked"), detail: t("drepWizard.errWalletLockedDetail") }
   }
   if (m.includes("declined") || m.includes("refuse") || m.includes("cancel")) {
-    return { title: "Giao dịch bị từ chối", detail: "Bạn đã huỷ ký trong ví. Nhấn \"Thử lại\" để tiếp tục." }
+    return { title: t("drepWizard.errDeclined"), detail: t("drepWizard.errDeclinedDetail") }
   }
   if (m.includes("insufficient funds") || m.includes("insufficient balance")) {
-    return { title: "Số dư không đủ", detail: "Cần ít nhất ~0.2 ADA để trả phí mạng." }
+    return { title: t("drepWizard.errInsufficientFunds"), detail: t("drepWizard.errInsufficientFundsUpdate") }
   }
   if (m.includes("timeout") || m.includes("timed out")) {
-    return { title: "Hết thời gian chờ", detail: "Yêu cầu mất quá nhiều thời gian. Kiểm tra kết nối và thử lại." }
+    return { title: t("drepWizard.errTimeout"), detail: t("drepWizard.errTimeoutDetail") }
   }
   if (m.includes("pinata") || m.includes("ipfs") || m.includes("upload")) {
-    return { title: "Upload metadata thất bại", detail: "Không thể tải metadata lên IPFS. Kiểm tra cấu hình Pinata JWT và thử lại." }
+    return { title: t("drepWizard.errUploadFailed"), detail: t("drepWizard.errUploadFailedDetail") }
   }
-  return { title: "Cập nhật thất bại", detail: msg }
+  return { title: t("drepWizard.errUpdateFailed"), detail: msg }
 }
 
 export default function UpdateDRepPage() {
@@ -225,6 +227,7 @@ export default function UpdateDRepPage() {
   const [anchorCache, setAnchorCache] = useState<{ anchorUrl: string; anchorDataHash: string } | null>(null)
 
   const isSubmitting = wizardStep === "uploading" || wizardStep === "signing"
+  const t = useT()
 
   // Pre-fill form once IPFS metadata arrives
   useEffect(() => {
@@ -265,7 +268,7 @@ export default function UpdateDRepPage() {
       <main className="page-container py-16 flex justify-center">
         <div className="flex items-center gap-3 text-text-muted text-sm">
           <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
-          Đang khôi phục kết nối ví...
+          {t("drepWizard.hydrating")}
         </div>
       </main>
     )
@@ -280,8 +283,8 @@ export default function UpdateDRepPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18-3a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6m18 3H3" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold">Kết nối ví để tiếp tục</h1>
-          <p className="text-text-secondary text-sm">Bạn cần kết nối ví Cardano để cập nhật hồ sơ DRep.</p>
+          <h1 className="text-xl font-bold">{t("drepWizard.connectTitle")}</h1>
+          <p className="text-text-secondary text-sm">{t("drepWizard.connectDescUpdate")}</p>
         </div>
       </main>
     )
@@ -296,8 +299,8 @@ export default function UpdateDRepPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold">Ví không hỗ trợ CIP-95</h1>
-          <p className="text-text-secondary text-sm">Vui lòng dùng Eternl hoặc Lace.</p>
+          <h1 className="text-xl font-bold">{t("drepWizard.noCip95Title")}</h1>
+          <p className="text-text-secondary text-sm">{t("drepWizard.noCip95Desc")}</p>
         </div>
       </main>
     )
@@ -312,9 +315,9 @@ export default function UpdateDRepPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9.303 3.376c.866 1.5-.217 3.374-1.948 3.374H2.645c-1.73 0-2.813-1.874-1.948-3.374L10.051 3.378c.866-1.5 3.032-1.5 3.898 0l8.354 14.748z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold">Bạn chưa phải DRep</h1>
-          <p className="text-text-secondary text-sm">Chỉ DRep đã đăng ký mới có thể cập nhật hồ sơ.</p>
-          <a href="/dreps/register" className="btn-primary inline-block">Đăng ký DRep</a>
+          <h1 className="text-xl font-bold">{t("drepWizard.notDrepTitle")}</h1>
+          <p className="text-text-secondary text-sm">{t("drepWizard.notDrepDesc")}</p>
+          <a href="/dreps/register" className="btn-primary inline-block">{t("drepWizard.registerDrepBtn")}</a>
         </div>
       </main>
     )
@@ -330,13 +333,13 @@ export default function UpdateDRepPage() {
 
       if (!anchor) {
         setWizardStep("uploading")
-        setStatusLabel("Đang xác thực ví...")
+        setStatusLabel(t("drepWizard.statusAuthenticating"))
 
         let jwt = getJwt()
         if (!jwt) jwt = await reauthenticate()
-        if (!jwt) throw new Error("Xác thực thất bại — không thể lấy JWT")
+        if (!jwt) throw new Error(t("drepWizard.statusAuthenticating"))
 
-        setStatusLabel("Đang upload metadata lên IPFS...")
+        setStatusLabel(t("drepWizard.statusUploadingMeta"))
 
         const uploadRes = await fetch(`${API_URL}/metadata/upload`, {
           method: "POST",
@@ -356,7 +359,7 @@ export default function UpdateDRepPage() {
 
         if (!uploadRes.ok) {
           const err = await uploadRes.json().catch(() => ({}))
-          throw new Error((err as { error?: string }).error ?? "Upload metadata thất bại")
+          throw new Error((err as { error?: string }).error ?? t("drepWizard.errUploadFailed"))
         }
 
         const { anchorUrl, anchorDataHash } = await uploadRes.json() as { anchorUrl: string; anchorDataHash: string }
@@ -365,7 +368,7 @@ export default function UpdateDRepPage() {
       }
 
       setWizardStep("signing")
-      setStatusLabel("Đang yêu cầu ký giao dịch trong ví...")
+      setStatusLabel(t("drepWizard.statusSigning"))
 
       const hash = await submitTx("DREP_UPDATE", {
         drepId,
@@ -378,7 +381,7 @@ export default function UpdateDRepPage() {
       setWizardStep("success")
     } catch (err: unknown) {
       setStatusLabel(null)
-      const msg = err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định"
+      const msg = err instanceof Error ? err.message : t("drepWizard.errUnknown")
       setError(msg)
       setWizardStep("error")
     }
@@ -390,22 +393,22 @@ export default function UpdateDRepPage() {
       <div className="max-w-lg mx-auto">
         {wizardStep !== "success" && (
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-text-primary">Cập nhật hồ sơ DRep</h1>
+            <h1 className="text-2xl font-bold text-text-primary">{t("drepWizard.updateTitle")}</h1>
             <p className="text-text-secondary text-sm mt-1">
-              Chỉnh sửa thông tin và cập nhật metadata on-chain.
+              {t("drepWizard.updateSubtitle")}
             </p>
           </div>
         )}
 
         {wizardStep !== "success" && wizardStep !== "loading" && (
-          <StepIndicator current={STEP_INDEX[wizardStep]} />
+          <StepIndicator current={STEP_INDEX[wizardStep]} stepLabels={[t("drepWizard.stepInfo"), t("drepWizard.stepProfile"), t("drepWizard.stepConfirm"), t("drepWizard.stepDone")]} />
         )}
 
         <div className="card-static">
           {wizardStep === "loading" && (
             <div className="flex items-center gap-3 py-4 text-sm text-text-muted">
               <div className="spinner shrink-0" style={{ width: 16, height: 16, borderWidth: 2 }} />
-              {isLoadingMeta ? "Đang tải metadata từ IPFS..." : "Đang tải thông tin DRep..."}
+              {isLoadingMeta ? t("drepWizard.updateLoadingMeta") : t("drepWizard.updateLoadingProfile")}
             </div>
           )}
 
@@ -441,8 +444,8 @@ export default function UpdateDRepPage() {
           )}
 
           {wizardStep === "error" && (() => {
-            const rawError = error ?? "Đã xảy ra lỗi không xác định"
-            const { title, detail, requiresReload } = friendlyError(rawError)
+            const rawError = error ?? t("drepWizard.errUnknown")
+            const { title, detail, requiresReload } = friendlyError(rawError, t)
             const showRaw = detail === rawError
             return (
               <div className="space-y-5">
@@ -466,15 +469,15 @@ export default function UpdateDRepPage() {
                 </div>
                 {requiresReload ? (
                   <button className="btn-primary w-full" onClick={() => window.location.reload()}>
-                    Tải lại trang ↺
+                    {t("drepWizard.reloadBtn")}
                   </button>
                 ) : (
                   <div className="flex gap-3">
                     <button className="btn-outline flex-1" onClick={() => setWizardStep("confirm")}>
-                      ← Thử lại
+                      {t("drepWizard.retryBtn")}
                     </button>
                     <button className="btn-outline flex-1" onClick={() => { setAnchorCache(null); setWizardStep("step1") }}>
-                      Sửa lại từ đầu
+                      {t("drepWizard.editFromStartBtn")}
                     </button>
                   </div>
                 )}
@@ -487,7 +490,7 @@ export default function UpdateDRepPage() {
               txHash={txHash}
               drepName={formData.givenName}
               networkId={networkId}
-              successMessage="Hồ sơ DRep đã được cập nhật thành công!"
+              successMessage={t("drepWizard.updateSuccessMsg")}
             />
           )}
         </div>

@@ -1,5 +1,8 @@
+"use client"
+
 import React from "react"
 import Link from "next/link"
+import { useT } from "@/i18n/useT"
 
 const ExternalLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
   <a href={href} target="_blank" rel="noopener noreferrer"
@@ -49,31 +52,27 @@ const TECH_STACK = [
 ]
 
 const GOV_ROLES = [
-  {
-    role: "DRep",
-    icon: "🏛️",
-    desc: "Delegated Representative — đại diện bỏ phiếu được cộng đồng Ada holder ủy quyền. DRep bỏ phiếu on-chain cho Governance Action thay mặt những người đã delegate voting power.",
-  },
-  {
-    role: "SPO",
-    icon: "⛏️",
-    desc: "Stake Pool Operator — vận hành pool, đại diện cho cả sức mạnh kỹ thuật lẫn kinh tế. SPO có voting weight riêng trong một số loại GA (đặc biệt HardForkInitiation).",
-  },
-  {
-    role: "Constitutional Committee",
-    icon: "⚖️",
-    desc: "Ủy ban Hiến pháp — kiểm tra tính hợp hiến của Governance Action. Nếu CC phủ quyết, GA không được thông qua dù DRep + SPO đồng thuận.",
-  },
+  { role: "DRep", icon: "🏛️", descKey: "about.role1Desc" },
+  { role: "SPO", icon: "⛏️", descKey: "about.role2Desc" },
+  { role: "Constitutional Committee", icon: "⚖️", descKey: "about.role3Desc" },
 ]
 
 const LINKS = [
-  { label: "Cardano Forum", href: "https://forum.cardano.org", desc: "Thảo luận quản trị cộng đồng" },
-  { label: "Gov Tool", href: "https://gov.tools", desc: "Công cụ quản trị chính thức của IOG" },
-  { label: "Cardano Constitution", href: "https://constitution.gov.tools", desc: "Hiến pháp Cardano on-chain" },
-  { label: "CIP-1694", href: "https://github.com/cardano-foundation/CIPs/blob/master/CIP-1694/README.md", desc: "Đặc tả kỹ thuật Conway governance" },
+  { label: "Cardano Forum", href: "https://forum.cardano.org", descKey: "about.link1Desc" },
+  { label: "Gov Tool", href: "https://gov.tools", descKey: "about.link2Desc" },
+  { label: "Cardano Constitution", href: "https://constitution.gov.tools", descKey: "about.link3Desc" },
+  { label: "CIP-1694", href: "https://github.com/cardano-foundation/CIPs/blob/master/CIP-1694/README.md", descKey: "about.link4Desc" },
 ]
 
 export default function AboutPage() {
+  const t = useT()
+
+  const MISSION_ITEMS = [
+    { icon: "🗳️", titleKey: "about.mission1Title", descKey: "about.mission1Desc" },
+    { icon: "🤝", titleKey: "about.mission2Title", descKey: "about.mission2Desc" },
+    { icon: "🔒", titleKey: "about.mission3Title", descKey: "about.mission3Desc" },
+  ]
+
   return (
     <div className="page-container space-y-10 animate-fade-in">
 
@@ -85,12 +84,11 @@ export default function AboutPage() {
         </div>
         <h1 className="text-3xl font-bold gradient-text">Tempo.Vote</h1>
         <p className="text-text-secondary max-w-xl mx-auto leading-relaxed text-sm">
-          Nền tảng quản trị Cardano thế hệ mới — giúp DRep, cộng đồng và Ada holder
-          tham gia hiệu quả vào quá trình ra quyết định on-chain của Cardano.
+          {t("about.heroDesc")}
         </p>
         <div className="flex justify-center gap-3 flex-wrap pt-2">
           <Link href="/dreps" className="btn-primary text-sm px-4 py-2 rounded-lg">
-            Khám phá DReps
+            {t("about.exploreDrepsBtn")}
           </Link>
           <Link href="/governance-actions" className="px-4 py-2 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:border-accent/40 transition-colors text-sm">
             Governance Actions
@@ -100,29 +98,13 @@ export default function AboutPage() {
 
       {/* Mission */}
       <section className="animate-slide-up">
-        <SectionTitle>Sứ mệnh</SectionTitle>
+        <SectionTitle>{t("about.missionTitle")}</SectionTitle>
         <div className="grid md:grid-cols-3 gap-4">
-          {[
-            {
-              icon: "🗳️",
-              title: "Minh bạch",
-              desc: "Mọi dữ liệu đều lấy trực tiếp từ on-chain qua Ogmios và Kupo — không qua Blockfrost, không trung gian tập trung.",
-            },
-            {
-              icon: "🤝",
-              title: "Tiếp cận",
-              desc: "Giúp Ada holder dễ dàng tìm DRep phù hợp và hiểu tác động của từng Governance Action trước khi ủy quyền.",
-            },
-            {
-              icon: "🔒",
-              title: "An toàn",
-              desc: "Private key không bao giờ rời khỏi ví. Mọi transaction đều được build server-side và ký hoàn toàn client-side bởi ví người dùng.",
-            },
-          ].map(item => (
-            <div key={item.title} className="card-static space-y-2">
+          {MISSION_ITEMS.map(item => (
+            <div key={item.titleKey} className="card-static space-y-2">
               <div className="text-2xl">{item.icon}</div>
-              <h3 className="font-semibold">{item.title}</h3>
-              <p className="text-text-secondary text-sm leading-relaxed">{item.desc}</p>
+              <h3 className="font-semibold">{t(item.titleKey)}</h3>
+              <p className="text-text-secondary text-sm leading-relaxed">{t(item.descKey)}</p>
             </div>
           ))}
         </div>
@@ -130,18 +112,18 @@ export default function AboutPage() {
 
       {/* Cardano Governance */}
       <section className="animate-slide-up" style={{ animationDelay: "0.1s" }}>
-        <SectionTitle>Quản trị Cardano (Conway Era)</SectionTitle>
+        <SectionTitle>{t("about.govTitle")}</SectionTitle>
         <p className="text-text-secondary text-sm mb-4 leading-relaxed">
-          Từ hard fork Chang (2024), Cardano chuyển sang mô hình quản trị phi tập trung theo{" "}
+          {t("about.govDesc")}{" "}
           <ExternalLink href="https://github.com/cardano-foundation/CIPs/blob/master/CIP-1694/README.md">CIP-1694</ExternalLink>.
-          Ba lực lượng quyết định cùng nhau:
+          {" "}{t("about.govDesc2")}
         </p>
         <div className="grid md:grid-cols-3 gap-4">
           {GOV_ROLES.map(item => (
             <div key={item.role} className="card-static space-y-2">
               <div className="text-2xl">{item.icon}</div>
               <h3 className="font-semibold">{item.role}</h3>
-              <p className="text-text-secondary text-sm leading-relaxed">{item.desc}</p>
+              <p className="text-text-secondary text-sm leading-relaxed">{t(item.descKey)}</p>
             </div>
           ))}
         </div>
@@ -154,14 +136,14 @@ export default function AboutPage() {
             </svg>
           </div>
           <p className="text-sm text-text-secondary leading-relaxed">
-            Để một Governance Action được thông qua, cần đạt ngưỡng đồng thuận từ cả DRep <strong className="text-text-primary">và</strong> SPO (tùy loại GA). Constitutional Committee có quyền phủ quyết nếu GA vi hiến.
+            {t("about.govThreshold")}
           </p>
         </div>
       </section>
 
       {/* Tech Stack */}
       <section className="animate-slide-up" style={{ animationDelay: "0.15s" }}>
-        <SectionTitle>Kiến trúc kỹ thuật</SectionTitle>
+        <SectionTitle>{t("about.techTitle")}</SectionTitle>
         <div className="grid sm:grid-cols-2 gap-4">
           {TECH_STACK.map(layer => (
             <div key={layer.layer} className={`card-static border ${layer.border}`}>
@@ -185,15 +167,15 @@ export default function AboutPage() {
 
       {/* Transaction Flow */}
       <section className="animate-slide-up" style={{ animationDelay: "0.2s" }}>
-        <SectionTitle>Luồng Transaction</SectionTitle>
+        <SectionTitle>{t("about.txFlowTitle")}</SectionTitle>
         <div className="card-static">
           <div className="flex flex-col sm:flex-row items-stretch gap-2 text-sm">
             {[
-              { label: "Ví", sub: "getUtxos + getDRepKey", color: "bg-accent/15 border-accent/30 text-accent-light" },
+              { label: "Wallet", sub: "getUtxos + getDRepKey", color: "bg-accent/15 border-accent/30 text-accent-light" },
               { label: "API", sub: "POST /tx/build → CBOR", color: "bg-accent-cyan/15 border-accent-cyan/30 text-accent-cyan" },
-              { label: "Ví", sub: "wallet.signTx(cbor)", color: "bg-accent/15 border-accent/30 text-accent-light" },
+              { label: "Wallet", sub: "wallet.signTx(cbor)", color: "bg-accent/15 border-accent/30 text-accent-light" },
               { label: "API", sub: "POST /tx/submit → txHash", color: "bg-success/15 border-success/30 text-success" },
-              { label: "Chain", sub: "Xác nhận on-chain", color: "bg-accent-purple/15 border-accent-purple/30 text-accent-purple" },
+              { label: "Chain", sub: t("about.txStep5Sub"), color: "bg-accent-purple/15 border-accent-purple/30 text-accent-purple" },
             ].map((step, i, arr) => (
               <React.Fragment key={i}>
                 <div className={`flex-1 flex flex-col items-center justify-center px-3 py-3 rounded-lg border text-center ${step.color}`}>
@@ -210,14 +192,14 @@ export default function AboutPage() {
             ))}
           </div>
           <p className="text-xs text-text-muted mt-4">
-            Private key không bao giờ rời ví — API chỉ nhận UTxO công khai và trả về unsigned CBOR.
+            {t("about.txNote")}
           </p>
         </div>
       </section>
 
       {/* Links */}
       <section className="animate-slide-up" style={{ animationDelay: "0.25s" }}>
-        <SectionTitle>Tài nguyên hữu ích</SectionTitle>
+        <SectionTitle>{t("about.linksTitle")}</SectionTitle>
         <div className="grid sm:grid-cols-2 gap-3">
           {LINKS.map(link => (
             <a
@@ -234,7 +216,7 @@ export default function AboutPage() {
               </svg>
               <div>
                 <div className="font-semibold text-sm group-hover:text-accent-light transition-colors">{link.label}</div>
-                <div className="text-xs text-text-muted mt-0.5">{link.desc}</div>
+                <div className="text-xs text-text-muted mt-0.5">{t(link.descKey)}</div>
               </div>
             </a>
           ))}
@@ -243,9 +225,9 @@ export default function AboutPage() {
 
       {/* Footer note */}
       <section className="text-center text-text-muted text-xs pb-4 space-y-1">
-        <p>Tempo.Vote v2 — Xây dựng trên Cardano Mainnet &amp; Preprod</p>
+        <p>{t("about.footer1")}</p>
         <p>
-          Dữ liệu on-chain từ{" "}
+          {t("about.footer2")}{" "}
           <ExternalLink href="https://ogmios.dev">Ogmios</ExternalLink> +{" "}
           <ExternalLink href="https://github.com/CardanoSolutions/kupo">Kupo</ExternalLink>.
         </p>

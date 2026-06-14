@@ -8,12 +8,13 @@ import RegisterDRepForm, { type DRepFormData } from "@/components/drep/RegisterD
 import RegisterDRepSuccess from "@/components/drep/RegisterDRepSuccess"
 import { authHeader, getJwt } from "@/lib/api"
 import { resolveAnchorUrl } from "@/lib/governance"
+import { useT } from "@/i18n/useT"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
+type TFunc = ReturnType<typeof useT>
 type WizardStep = "step1" | "step2" | "confirm" | "uploading" | "signing" | "success" | "error"
 
-const STEP_LABELS = ["Thông tin", "Hồ sơ", "Xác nhận", "Hoàn tất"]
 const STEP_INDEX: Record<WizardStep, number> = {
   step1: 0, step2: 1, confirm: 2,
   uploading: 3, signing: 3, success: 3, error: 3,
@@ -32,10 +33,10 @@ const EMPTY_FORM: DRepFormData = {
 }
 
 // ─── Step indicator ─────────────────────────────────────────────────────────
-function StepIndicator({ current }: { current: number }) {
+function StepIndicator({ current, stepLabels }: { current: number; stepLabels: string[] }) {
   return (
     <div className="flex items-center justify-center gap-0 mb-8">
-      {STEP_LABELS.map((label, i) => (
+      {stepLabels.map((label, i) => (
         <div key={i} className="flex items-center">
           <div className="flex flex-col items-center gap-1">
             <div
@@ -59,7 +60,7 @@ function StepIndicator({ current }: { current: number }) {
               {label}
             </span>
           </div>
-          {i < STEP_LABELS.length - 1 && (
+          {i < stepLabels.length - 1 && (
             <div className={`w-10 sm:w-16 h-0.5 mx-1 mb-4 transition-colors ${i < current ? "bg-accent" : "bg-border-default"}`} />
           )}
         </div>
@@ -97,10 +98,11 @@ function ConfirmStep({
   enableCommunity: boolean
   onToggleCommunity: () => void
 }) {
+  const t = useT()
   const profileSections = [
-    data.motivations && { label: "Động lực", text: data.motivations },
-    data.objectives && { label: "Mục tiêu", text: data.objectives },
-    data.qualifications && { label: "Kinh nghiệm & Năng lực", text: data.qualifications },
+    data.motivations && { label: t("drepWizard.formMotivationsLabel"), text: data.motivations },
+    data.objectives && { label: t("drepWizard.formObjectivesLabel"), text: data.objectives },
+    data.qualifications && { label: t("drepWizard.formQualificationsLabel"), text: data.qualifications },
   ].filter(Boolean) as { label: string; text: string }[]
 
   return (
@@ -123,14 +125,14 @@ function ConfirmStep({
           <div className="min-w-0 flex-1">
             <p className="text-text-primary font-bold">{data.givenName}</p>
             <div className="flex flex-wrap gap-1.5 mt-1">
-              {data.doNotList && <span className="badge text-xs">Ẩn khỏi danh sách</span>}
-              {data.paymentAddress && <span className="badge text-xs">Địa chỉ nhận phí</span>}
+              {data.doNotList && <span className="badge text-xs">{t("drepWizard.confirmBadgeDoNotList")}</span>}
+              {data.paymentAddress && <span className="badge text-xs">{t("drepWizard.confirmBadgePayment")}</span>}
             </div>
           </div>
         </div>
         {drepId && (
           <div className="border-t border-border-subtle pt-3">
-            <p className="text-text-muted text-xs font-medium mb-1">DRep ID (on-chain)</p>
+            <p className="text-text-muted text-xs font-medium mb-1">{t("drepWizard.confirmDrepIdLabel")}</p>
             <p className="font-mono text-xs text-text-secondary break-all">{drepId}</p>
           </div>
         )}
@@ -147,7 +149,7 @@ function ConfirmStep({
           ))}
           {data.references.length > 0 && (
             <div>
-              <p className="text-text-secondary text-sm font-semibold mb-1">Liên kết tham chiếu</p>
+              <p className="text-text-secondary text-sm font-semibold mb-1">{t("drepWizard.confirmRefsLabel")}</p>
               <ul className="space-y-1">
                 {data.references.filter(r => r.label || r.uri).map((r, i) => (
                   <li key={i} className="text-xs">
@@ -163,35 +165,35 @@ function ConfirmStep({
 
       {/* Fee breakdown */}
       <div className="card-static space-y-2">
-        <p className="text-text-primary text-sm font-semibold">Phí đăng ký</p>
+        <p className="text-text-primary text-sm font-semibold">{t("drepWizard.confirmFeeRegistration")}</p>
         <div className="space-y-1.5 text-xs">
           <div className="flex justify-between items-center">
-            <span className="text-text-muted">Deposit (hoàn lại khi retire)</span>
+            <span className="text-text-muted">{t("drepWizard.confirmFeeDeposit")}</span>
             <span className="text-text-primary font-medium">500 ADA</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-text-muted">Network fee (TX 1 — đăng ký DRep)</span>
+            <span className="text-text-muted">{t("drepWizard.confirmFeeRegTx")}</span>
             <span className="text-text-primary font-medium">~0.2 ADA</span>
           </div>
           {enableSelfDelegate && (
             <div className="flex justify-between items-center">
-              <span className="text-text-muted">Network fee (TX 2 — ủy quyền voting power)</span>
+              <span className="text-text-muted">{t("drepWizard.confirmFeeSelfDelegateTx")}</span>
               <span className="text-text-primary font-medium">~0.2 ADA</span>
             </div>
           )}
           <div className="flex justify-between items-center">
-            <span className="text-text-muted">Metadata upload (Pinata)</span>
-            <span className="text-text-primary font-medium">miễn phí</span>
+            <span className="text-text-muted">{t("drepWizard.confirmFeeMetadata")}</span>
+            <span className="text-text-primary font-medium">{t("drepWizard.confirmFeeMetadataFree")}</span>
           </div>
           {enableCommunity && (
             <div className="flex justify-between items-center">
-              <span className="text-text-muted">DRep Community (phí nền tảng)</span>
+              <span className="text-text-muted">{t("drepWizard.confirmFeeCommunity")}</span>
               <span className="text-accent font-medium">2 ADA</span>
             </div>
           )}
         </div>
         <p className="text-text-muted text-xs border-t border-border-subtle pt-2">
-          Số tiền chính xác sẽ hiển thị trong ví khi ký.
+          {t("drepWizard.confirmFeeNote")}
         </p>
       </div>
 
@@ -217,10 +219,10 @@ function ConfirmStep({
           </div>
           <div>
             <p className={`text-sm font-medium ${enableSelfDelegate ? "text-accent-light" : "text-text-secondary"}`}>
-              Ủy quyền voting power cho chính mình
+              {t("drepWizard.confirmSelfDelegateTitle")}
             </p>
             <p className="text-xs text-text-muted mt-0.5">
-              Bắt buộc để có voting power — ký thêm 1 TX (~0.2 ADA). Không bật = voting power = 0.
+              {t("drepWizard.confirmSelfDelegateDesc")}
             </p>
           </div>
         </div>
@@ -257,10 +259,10 @@ function ConfirmStep({
           </div>
           <div>
             <p className={`text-sm font-medium ${enableCommunity ? "text-accent-light" : "text-text-secondary"}`}>
-              Kích hoạt DRep Community
+              {t("drepWizard.confirmCommunityTitle")}
             </p>
             <p className="text-xs text-text-muted mt-0.5">
-              Tạo không gian thảo luận và đề xuất cho cộng đồng của bạn (2 ADA)
+              {t("drepWizard.confirmCommunityDesc")}
             </p>
           </div>
         </div>
@@ -286,10 +288,10 @@ function ConfirmStep({
 
       <div className="flex gap-3 pt-1">
         <button className="btn-outline flex-1" onClick={onBack} disabled={isLoading}>
-          ← Sửa lại
+          {t("drepWizard.confirmBackBtn")}
         </button>
         <button className="btn-primary flex-1" onClick={onConfirm} disabled={isLoading}>
-          {isLoading ? "Đang xử lý..." : "Xác nhận & Đăng ký"}
+          {isLoading ? t("drepWizard.confirmProcessingBtn") : t("drepWizard.confirmRegisterBtn")}
         </button>
       </div>
     </div>
@@ -297,28 +299,29 @@ function ConfirmStep({
 }
 
 // ─── Error helpers ───────────────────────────────────────────────────────────
-function friendlyError(msg: string): { title: string; detail: string } {
+function friendlyError(msg: string, t: TFunc): { title: string; detail: string } {
   const m = msg.toLowerCase()
   if (m.includes("declined") || m.includes("refuse") || m.includes("cancel")) {
-    return { title: "Giao dịch bị từ chối", detail: "Bạn đã huỷ ký trong ví. Nhấn \"Thử lại\" để đăng ký lại." }
+    return { title: t("drepWizard.errDeclined"), detail: t("drepWizard.errDeclinedDetailRegister") }
   }
   if (m.includes("insufficient funds") || m.includes("insufficient balance") || m.includes("not enough ada")) {
-    return { title: "Số dư không đủ", detail: "Cần ít nhất ~500.2 ADA (500 ADA deposit + phí mạng ~0.2 ADA)." }
+    return { title: t("drepWizard.errInsufficientFunds"), detail: t("drepWizard.errInsufficientFundsRegister") }
   }
   if (m.includes("timeout") || m.includes("timed out")) {
-    return { title: "Hết thời gian chờ", detail: "Yêu cầu mất quá nhiều thời gian. Vui lòng kiểm tra kết nối và thử lại." }
+    return { title: t("drepWizard.errTimeout"), detail: t("drepWizard.errTimeoutDetail") }
   }
   if (m.includes("already registered") || m.includes("already exists")) {
-    return { title: "Đã đăng ký trước đó", detail: "DRep ID này đã được đăng ký on-chain." }
+    return { title: t("drepWizard.errAlreadyRegistered"), detail: t("drepWizard.errAlreadyRegisteredDetail") }
   }
   if (m.includes("pinata") || m.includes("ipfs") || m.includes("upload")) {
-    return { title: "Upload metadata thất bại", detail: "Không thể tải metadata lên IPFS. Kiểm tra cấu hình Pinata JWT và thử lại." }
+    return { title: t("drepWizard.errUploadFailed"), detail: t("drepWizard.errUploadFailedDetail") }
   }
-  return { title: "Đăng ký thất bại", detail: msg }
+  return { title: t("drepWizard.errRegisterFailed"), detail: msg }
 }
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 export default function RegisterDRepPage() {
+  const t = useT()
   const { isConnected, hasCip95, isDrepRegistered, drepKey, networkId, reauthenticate } = useWallet()
   const { submitTx } = useTx()
   const setDRepStatus = useWalletStore(s => s.setDRepStatus)
@@ -347,9 +350,9 @@ export default function RegisterDRepPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18-3a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6m18 3H3" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold">Kết nối ví để tiếp tục</h1>
+          <h1 className="text-xl font-bold">{t("drepWizard.connectTitle")}</h1>
           <p className="text-text-secondary text-sm">
-            Bạn cần kết nối ví Cardano hỗ trợ CIP-95 (Eternl, Lace, Yoroi...) để đăng ký DRep.
+            {t("drepWizard.connectDescRegister")}
           </p>
           <button
             onClick={openWalletModal}
@@ -360,7 +363,7 @@ export default function RegisterDRepPage() {
               <path d="M16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
               <path d="M22 10V8a2 2 0 0 0-2-2H4" />
             </svg>
-            Kết nối ví
+            {t("drepWizard.connectBtn")}
           </button>
         </div>
       </main>
@@ -376,11 +379,9 @@ export default function RegisterDRepPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold">Ví không hỗ trợ CIP-95</h1>
+          <h1 className="text-xl font-bold">{t("drepWizard.noCip95Title")}</h1>
           <p className="text-text-secondary text-sm">
-            Ví hiện tại không hỗ trợ Cardano Governance (CIP-95). Vui lòng dùng{" "}
-            <span className="text-text-primary font-medium">Eternl</span> hoặc{" "}
-            <span className="text-text-primary font-medium">Lace</span>.
+            {t("drepWizard.noCip95DescFull")}
           </p>
         </div>
       </main>
@@ -396,12 +397,12 @@ export default function RegisterDRepPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold">Bạn đã là DRep</h1>
+          <h1 className="text-xl font-bold">{t("drepWizard.alreadyDrepTitle")}</h1>
           <p className="text-text-secondary text-sm">
-            Ví này đã được đăng ký làm DRep trên Cardano blockchain.
+            {t("drepWizard.alreadyDrepDesc")}
           </p>
           <a href="/dreps" className="btn-primary inline-block">
-            Xem danh sách DRep
+            {t("drepWizard.viewDrepListBtn")}
           </a>
         </div>
       </main>
@@ -419,13 +420,13 @@ export default function RegisterDRepPage() {
       if (!anchor) {
         // Upload metadata to IPFS only if not already done (first attempt or form changed)
         setWizardStep("uploading")
-        setStatusLabel("Đang xác thực ví...")
+        setStatusLabel(t("drepWizard.statusAuthenticating"))
 
         let jwt = getJwt()
         if (!jwt) jwt = await reauthenticate()
-        if (!jwt) throw new Error("Xác thực thất bại — không thể lấy JWT")
+        if (!jwt) throw new Error("auth failed — cannot get JWT")
 
-        setStatusLabel("Đang upload metadata lên IPFS...")
+        setStatusLabel(t("drepWizard.statusUploadingMeta"))
 
         const uploadRes = await fetch(`${API_URL}/metadata/upload`, {
           method: "POST",
@@ -445,7 +446,7 @@ export default function RegisterDRepPage() {
 
         if (!uploadRes.ok) {
           const err = await uploadRes.json().catch(() => ({}))
-          throw new Error(err.error ?? "Upload metadata thất bại")
+          throw new Error(err.error ?? t("drepWizard.errUploadFailed"))
         }
 
         const { anchorUrl, anchorDataHash } = await uploadRes.json()
@@ -458,8 +459,8 @@ export default function RegisterDRepPage() {
       setWizardStep("signing")
       setStatusLabel(
         selfDelegateEnabled
-          ? "Ký giao dịch — Đăng ký DRep + Ủy quyền voting power..."
-          : "Đang yêu cầu ký giao dịch trong ví...",
+          ? t("drepWizard.statusSigningWithDelegate")
+          : t("drepWizard.statusSigning"),
       )
 
       const hash = await submitTx("DREP_REGISTER", {
@@ -478,7 +479,7 @@ export default function RegisterDRepPage() {
 
       // Optional: activate DRep Community (2 ADA fee)
       if (communityEnabled) {
-        setStatusLabel("Kích hoạt DRep Community (2 ADA)...")
+        setStatusLabel(t("drepWizard.statusActivatingCommunity"))
         try {
           const communityTxHash = await submitTx("ACTIVATE_COMMUNITY", {})
           await fetch(`${API_URL}/communities/${drepId}/activate`, {
@@ -500,7 +501,7 @@ export default function RegisterDRepPage() {
       setWizardStep("success")
     } catch (err: unknown) {
       setStatusLabel(null)
-      const msg = err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định"
+      const msg = err instanceof Error ? err.message : t("drepWizard.errUnknown")
       console.error("[DRep Register] error:", msg, err)
       setError(msg)
       setWizardStep("error")
@@ -514,16 +515,16 @@ export default function RegisterDRepPage() {
         {/* Header */}
         {wizardStep !== "success" && (
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-text-primary">Đăng ký DRep</h1>
+            <h1 className="text-2xl font-bold text-text-primary">{t("drepWizard.registerTitle")}</h1>
             <p className="text-text-secondary text-sm mt-1">
-              Trở thành Đại diện Ủy quyền (DRep) trên Cardano blockchain.
+              {t("drepWizard.registerSubtitle")}
             </p>
           </div>
         )}
 
         {/* Step indicator */}
         {wizardStep !== "success" && (
-          <StepIndicator current={STEP_INDEX[wizardStep]} />
+          <StepIndicator current={STEP_INDEX[wizardStep]} stepLabels={[t("drepWizard.stepInfo"), t("drepWizard.stepProfile"), t("drepWizard.stepConfirm"), t("drepWizard.stepDone")]} />
         )}
 
         {/* Card */}
@@ -564,8 +565,8 @@ export default function RegisterDRepPage() {
           )}
 
           {wizardStep === "error" && (() => {
-            const rawError = error ?? "Đã xảy ra lỗi không xác định"
-            const { title, detail } = friendlyError(rawError)
+            const rawError = error ?? t("drepWizard.errUnknown")
+            const { title, detail } = friendlyError(rawError, t)
             const showRaw = detail === rawError // only show raw block for unrecognised errors
             return (
               <div className="space-y-5">
@@ -589,7 +590,7 @@ export default function RegisterDRepPage() {
                 </div>
                 <div className="flex gap-3">
                   <button className="btn-outline flex-1" onClick={() => setWizardStep("confirm")}>
-                    ← Thử lại
+                    {t("drepWizard.retryBtn")}
                   </button>
                   <button className="btn-outline flex-1" onClick={() => {
                     if (formData.imageUrl.startsWith("ipfs://")) {
@@ -598,7 +599,7 @@ export default function RegisterDRepPage() {
                     setFormData(EMPTY_FORM)
                     setWizardStep("step1")
                   }}>
-                    Bắt đầu lại
+                    {t("drepWizard.restartBtn")}
                   </button>
                 </div>
               </div>

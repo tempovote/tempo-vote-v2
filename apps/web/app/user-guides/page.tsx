@@ -1,14 +1,7 @@
 "use client"
 
 import { useState } from "react"
-
-interface Section {
-  id: string
-  icon: React.ReactNode
-  title: string
-  shortTitle: string
-  steps: { title: string; body: React.ReactNode }[]
-}
+import { useT } from "@/i18n/useT"
 
 const CheckIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0 text-success mt-0.5">
@@ -98,224 +91,218 @@ function Step({ num, title, children }: { num: number; title: string; children: 
   )
 }
 
-const SECTIONS: Section[] = [
-  {
-    id: "wallet",
-    icon: <WalletIcon />,
-    title: "Kết nối ví Cardano",
-    shortTitle: "Kết nối ví",
-    steps: [
-      {
-        title: "Cài đặt ví tương thích",
-        body: (
-          <>
-            <p>Tempo.Vote hỗ trợ mọi ví tuân thủ chuẩn CIP-30 và CIP-95:</p>
-            <ul className="mt-2 space-y-1">
-              {["Eternl", "Lace", "Yoroi", "Flint", "NuFi", "GeroWallet"].map(w => (
-                <li key={w} className="flex items-center gap-2"><CheckIcon />{w}</li>
-              ))}
-            </ul>
-            <Tip>Đảm bảo ví của bạn đang ở đúng mạng (Mainnet / Preprod) trước khi kết nối. Tempo.Vote tự động nhận diện mạng từ ví.</Tip>
-          </>
-        ),
-      },
-      {
-        title: "Kết nối ví",
-        body: (
-          <>
-            <p>Nhấn nút <strong className="text-text-primary">Connect Wallet</strong> ở góc trên phải Navbar. Chọn ví bạn đang dùng từ danh sách. Phê duyệt yêu cầu kết nối trong extension ví.</p>
-            <Tip>Private key không bao giờ rời khỏi ví. Tempo.Vote chỉ đọc địa chỉ và UTxO công khai qua CIP-30.</Tip>
-          </>
-        ),
-      },
-      {
-        title: "Kiểm tra trạng thái",
-        body: (
-          <p>Sau khi kết nối thành công, địa chỉ stake của bạn sẽ hiển thị ở Navbar. DRep key và voting power sẽ được tự động load từ ví.</p>
-        ),
-      },
-    ],
-  },
-  {
-    id: "drep",
-    icon: <DRepIcon />,
-    title: "DRep là gì & cách ủy quyền",
-    shortTitle: "DRep",
-    steps: [
-      {
-        title: "Hiểu về DRep (Delegated Representative)",
-        body: (
-          <>
-            <p>DRep là đại diện bỏ phiếu trong hệ thống quản trị Cardano (Conway era). Ada holder ủy thác voting power cho DRep để DRep bỏ phiếu thay mặt trong các Governance Action.</p>
-            <ul className="mt-2 space-y-1">
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Voting Power</strong>: tổng ADA ủy quyền cho DRep đó</span></li>
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Delegators</strong>: số ví đang ủy quyền cho DRep</span></li>
-              <li className="flex gap-2"><CheckIcon /><span>Bạn có thể đổi DRep bất kỳ lúc nào, không mất phí đặc biệt</span></li>
-            </ul>
-          </>
-        ),
-      },
-      {
-        title: "Tìm DRep phù hợp",
-        body: (
-          <>
-            <p>Truy cập trang <strong className="text-text-primary">DReps</strong> từ Navbar. Xem 4 bảng xếp hạng:</p>
-            <ul className="mt-2 space-y-1">
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Delegators</strong>: DRep có nhiều người ủy quyền nhất</span></li>
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Voting Power</strong>: DRep nắm nhiều ADA nhất</span></li>
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Whale Delegators</strong>: DRep có nhiều cá voi (≥ 1M ADA) nhất</span></li>
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">VP Change</strong>: DRep có voting power thay đổi nhiều nhất gần đây</span></li>
-            </ul>
-          </>
-        ),
-      },
-      {
-        title: "Ủy quyền cho DRep",
-        body: (
-          <>
-            <p>Nhấn nút <strong className="text-text-primary">Delegate</strong> trên profile DRep. Transaction sẽ được build tự động, bạn chỉ cần ký bằng ví. Sau khi confirm on-chain (~20 giây), voting power của bạn được chuyển sang DRep đó.</p>
-            <Tip>Phí ủy quyền nhỏ (~0.17-0.2 ADA) do mạng Cardano thu, không phải Tempo.Vote.</Tip>
-          </>
-        ),
-      },
-    ],
-  },
-  {
-    id: "governance",
-    icon: <GovIcon />,
-    title: "Governance Actions",
-    shortTitle: "Governance",
-    steps: [
-      {
-        title: "Các loại Governance Action",
-        body: (
-          <>
-            <p>Cardano Conway era có 7 loại Governance Action (GA):</p>
-            <div className="mt-2 grid grid-cols-1 gap-1.5">
-              {[
-                ["ParameterChange", "Thay đổi protocol parameters"],
-                ["HardForkInitiation", "Nâng cấp protocol (hard fork)"],
-                ["TreasuryWithdrawals", "Rút ADA từ Cardano Treasury"],
-                ["NoConfidence", "Bất tín nhiệm Constitutional Committee"],
-                ["UpdateCommittee", "Cập nhật thành viên CC"],
-                ["NewConstitution", "Sửa đổi Hiến pháp Cardano"],
-                ["InfoAction", "Thông báo on-chain (không binding)"],
-              ].map(([name, desc]) => (
-                <div key={name} className="flex gap-2 text-sm">
-                  <CheckIcon />
-                  <span><strong className="text-text-primary">{name}</strong>: {desc}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        ),
-      },
-      {
-        title: "Đọc thông tin GA",
-        body: (
-          <>
-            <p>Truy cập trang <strong className="text-text-primary">Governance Actions</strong>. Mỗi GA card hiển thị:</p>
-            <ul className="mt-2 space-y-1">
-              <li className="flex gap-2"><CheckIcon /><span>Loại GA và trạng thái (Active / Ratified / Expired)</span></li>
-              <li className="flex gap-2"><CheckIcon /><span>Tỉ lệ Yes/No/Abstain từ DRep + SPO + CC</span></li>
-              <li className="flex gap-2"><CheckIcon /><span>Anchor URL dẫn đến tài liệu giải thích đầy đủ</span></li>
-              <li className="flex gap-2"><CheckIcon /><span>Epoch hết hạn</span></li>
-            </ul>
-          </>
-        ),
-      },
-      {
-        title: "Bỏ phiếu (dành cho DRep đã đăng ký)",
-        body: (
-          <>
-            <p>Nếu bạn là DRep đã đăng ký, nút <strong className="text-text-primary">Vote</strong> sẽ xuất hiện trên mỗi GA. Chọn Yes / No / Abstain, thêm rationale URL (tùy chọn), ký và submit.</p>
-            <Tip>Rationale là URL dẫn đến tài liệu giải thích lý do bỏ phiếu của bạn — rất quan trọng để xây dựng uy tín DRep.</Tip>
-          </>
-        ),
-      },
-    ],
-  },
-  {
-    id: "polls",
-    icon: <PollIcon />,
-    title: "Community Polls",
-    shortTitle: "Polls",
-    steps: [
-      {
-        title: "Quick Poll là gì",
-        body: (
-          <p>Community Quick Poll là công cụ thăm dò ý kiến cộng đồng on-chain nhẹ — không cần ký transaction. Kết quả được tính theo voting power (ADA) của ví kết nối, phản ánh trọng số ý kiến thực tế của cộng đồng Cardano.</p>
-        ),
-      },
-      {
-        title: "Tham gia poll",
-        body: (
-          <>
-            <p>Kết nối ví ở Navbar, sau đó chọn lựa chọn trong mỗi poll ở trang chủ. Voting power của bạn được ghi nhận tức thì, không tốn phí gas, không cần ký.</p>
-            <Tip>Poll không có giá trị pháp lý on-chain — đây là công cụ thăm dò ý kiến, không phải Governance Action.</Tip>
-          </>
-        ),
-      },
-    ],
-  },
-  {
-    id: "treasury",
-    icon: <ChartIcon />,
-    title: "Treasury Projection Tool",
-    shortTitle: "Treasury",
-    steps: [
-      {
-        title: "Mục đích",
-        body: (
-          <p>Tool mô phỏng diễn biến Cardano Treasury và Reserves theo thời gian dựa trên monetary policy hiện tại (ρ = 0.3%/epoch, τ = 20%). Dùng để ước tính khả năng sustain của Treasury khi funding DApps, public goods, và các dự án Cardano.</p>
-        ),
-      },
-      {
-        title: "Cách dùng",
-        body: (
-          <>
-            <p>Truy cập <strong className="text-text-primary">Others → Treasury Projection</strong>. Điều chỉnh 2 tham số:</p>
-            <ul className="mt-2 space-y-1">
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Avg TX Fees / Epoch</strong>: phí giao dịch mạng đóng góp vào Treasury mỗi epoch</span></li>
-              <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Treasury Withdrawal / Year</strong>: lượng ADA rút từ Treasury mỗi năm (funding dự án)</span></li>
-            </ul>
-            <p className="mt-2">Biểu đồ hiển thị 15 năm dự báo. Dòng cam đánh dấu năm Treasury cạn (nếu có).</p>
-            <Tip>Số liệu ban đầu lấy từ mainnet 2026: Reserves ~6.5B ₳, Treasury ~1.6B ₳. Chỉ mang tính minh họa, không phải dự báo chính thức.</Tip>
-          </>
-        ),
-      },
-    ],
-  },
-  {
-    id: "ranking",
-    icon: <VoteIcon />,
-    title: "DApp Ranking",
-    shortTitle: "DApp Ranking",
-    steps: [
-      {
-        title: "Bảng xếp hạng DApp Cardano",
-        body: (
-          <p>Trang <strong className="text-text-primary">DApp Ranking</strong> tổng hợp dữ liệu protocol Cardano: Total Value Locked (TVL), khối lượng giao dịch, phí thu được. Dùng để theo dõi sức khỏe hệ sinh thái DeFi Cardano.</p>
-        ),
-      },
-      {
-        title: "Đọc Protocol Table",
-        body: (
-          <>
-            <p>Mỗi hàng là một protocol DeFi, hiển thị:</p>
-            <ul className="mt-2 space-y-1">
-              <li className="flex gap-2"><CheckIcon /><span>TVL và thay đổi 24h / 7d</span></li>
-              <li className="flex gap-2"><CheckIcon /><span>Volume giao dịch</span></li>
-              <li className="flex gap-2"><CheckIcon /><span>Mức độ rủi ro (Minor / Medium / Major / Critical)</span></li>
-            </ul>
-          </>
-        ),
-      },
-    ],
-  },
-]
-
 export default function UserGuidesPage() {
+  const t = useT()
+
+  const SECTIONS = [
+    {
+      id: "wallet",
+      icon: <WalletIcon />,
+      title: t("userGuides.s1Title"),
+      shortTitle: t("userGuides.s1Short"),
+      steps: [
+        {
+          title: t("userGuides.s1s1Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s1s1Body")}</p>
+              <ul className="mt-2 space-y-1">
+                {["Eternl", "Lace", "Yoroi", "Flint", "NuFi", "GeroWallet"].map(w => (
+                  <li key={w} className="flex items-center gap-2"><CheckIcon />{w}</li>
+                ))}
+              </ul>
+              <Tip>{t("userGuides.s1s1Tip")}</Tip>
+            </>
+          ),
+        },
+        {
+          title: t("userGuides.s1s2Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s1s2Body")}</p>
+              <Tip>{t("userGuides.s1s2Tip")}</Tip>
+            </>
+          ),
+        },
+        {
+          title: t("userGuides.s1s3Title"),
+          body: <p>{t("userGuides.s1s3Body")}</p>,
+        },
+      ],
+    },
+    {
+      id: "drep",
+      icon: <DRepIcon />,
+      title: t("userGuides.s2Title"),
+      shortTitle: t("userGuides.s2Short"),
+      steps: [
+        {
+          title: t("userGuides.s2s1Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s2s1Body")}</p>
+              <ul className="mt-2 space-y-1">
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Voting Power</strong>: {t("userGuides.s2s1Item1")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Delegators</strong>: {t("userGuides.s2s1Item2")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s2s1Item3")}</span></li>
+              </ul>
+            </>
+          ),
+        },
+        {
+          title: t("userGuides.s2s2Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s2s2Body")}</p>
+              <ul className="mt-2 space-y-1">
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Delegators</strong>: {t("userGuides.s2s2Item1")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Voting Power</strong>: {t("userGuides.s2s2Item2")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Whale Delegators</strong>: {t("userGuides.s2s2Item3")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">VP Change</strong>: {t("userGuides.s2s2Item4")}</span></li>
+              </ul>
+            </>
+          ),
+        },
+        {
+          title: t("userGuides.s2s3Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s2s3Body")}</p>
+              <Tip>{t("userGuides.s2s3Tip")}</Tip>
+            </>
+          ),
+        },
+      ],
+    },
+    {
+      id: "governance",
+      icon: <GovIcon />,
+      title: t("userGuides.s3Title"),
+      shortTitle: t("userGuides.s3Short"),
+      steps: [
+        {
+          title: t("userGuides.s3s1Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s3s1Body")}</p>
+              <div className="mt-2 grid grid-cols-1 gap-1.5">
+                {[
+                  ["ParameterChange", t("userGuides.s3s1GA1")],
+                  ["HardForkInitiation", t("userGuides.s3s1GA2")],
+                  ["TreasuryWithdrawals", t("userGuides.s3s1GA3")],
+                  ["NoConfidence", t("userGuides.s3s1GA4")],
+                  ["UpdateCommittee", t("userGuides.s3s1GA5")],
+                  ["NewConstitution", t("userGuides.s3s1GA6")],
+                  ["InfoAction", t("userGuides.s3s1GA7")],
+                ].map(([name, desc]) => (
+                  <div key={name} className="flex gap-2 text-sm">
+                    <CheckIcon />
+                    <span><strong className="text-text-primary">{name}</strong>: {desc}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ),
+        },
+        {
+          title: t("userGuides.s3s2Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s3s2Body")}</p>
+              <ul className="mt-2 space-y-1">
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s3s2Item1")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s3s2Item2")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s3s2Item3")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s3s2Item4")}</span></li>
+              </ul>
+            </>
+          ),
+        },
+        {
+          title: t("userGuides.s3s3Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s3s3Body")}</p>
+              <Tip>{t("userGuides.s3s3Tip")}</Tip>
+            </>
+          ),
+        },
+      ],
+    },
+    {
+      id: "polls",
+      icon: <PollIcon />,
+      title: t("userGuides.s4Title"),
+      shortTitle: t("userGuides.s4Short"),
+      steps: [
+        {
+          title: t("userGuides.s4s1Title"),
+          body: <p>{t("userGuides.s4s1Body")}</p>,
+        },
+        {
+          title: t("userGuides.s4s2Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s4s2Body")}</p>
+              <Tip>{t("userGuides.s4s2Tip")}</Tip>
+            </>
+          ),
+        },
+      ],
+    },
+    {
+      id: "treasury",
+      icon: <ChartIcon />,
+      title: t("userGuides.s5Title"),
+      shortTitle: t("userGuides.s5Short"),
+      steps: [
+        {
+          title: t("userGuides.s5s1Title"),
+          body: <p>{t("userGuides.s5s1Body")}</p>,
+        },
+        {
+          title: t("userGuides.s5s2Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s5s2Body")}</p>
+              <ul className="mt-2 space-y-1">
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Avg TX Fees / Epoch</strong>: {t("userGuides.s5s2Item1")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span><strong className="text-text-primary">Treasury Withdrawal / Year</strong>: {t("userGuides.s5s2Item2")}</span></li>
+              </ul>
+              <p className="mt-2">{t("userGuides.s5s2Desc")}</p>
+              <Tip>{t("userGuides.s5s2Tip")}</Tip>
+            </>
+          ),
+        },
+      ],
+    },
+    {
+      id: "ranking",
+      icon: <VoteIcon />,
+      title: t("userGuides.s6Title"),
+      shortTitle: t("userGuides.s6Short"),
+      steps: [
+        {
+          title: t("userGuides.s6s1Title"),
+          body: <p>{t("userGuides.s6s1Body")}</p>,
+        },
+        {
+          title: t("userGuides.s6s2Title"),
+          body: (
+            <>
+              <p>{t("userGuides.s6s2Body")}</p>
+              <ul className="mt-2 space-y-1">
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s6s2Item1")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s6s2Item2")}</span></li>
+                <li className="flex gap-2"><CheckIcon /><span>{t("userGuides.s6s2Item3")}</span></li>
+              </ul>
+            </>
+          ),
+        },
+      ],
+    },
+  ]
+
   const [active, setActive] = useState(SECTIONS[0]!.id)
   const section = SECTIONS.find(s => s.id === active)!
 
@@ -323,9 +310,9 @@ export default function UserGuidesPage() {
     <div className="page-container space-y-6 animate-fade-in">
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold gradient-text">User Guides</h1>
+        <h1 className="text-2xl font-bold gradient-text">{t("userGuides.title")}</h1>
         <p className="text-text-secondary text-sm">
-          Hướng dẫn sử dụng Tempo.Vote — nền tảng quản trị Cardano cho DRep và cộng đồng.
+          {t("userGuides.subtitle")}
         </p>
       </div>
 
@@ -401,7 +388,7 @@ export default function UserGuidesPage() {
                       className="flex items-center gap-1.5 text-text-secondary hover:text-accent-light transition-colors"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-                      Trước
+                      {t("userGuides.navPrev")}
                     </button>
                   )}
                   {next && (
@@ -409,7 +396,7 @@ export default function UserGuidesPage() {
                       onClick={() => setActive(next.id)}
                       className="ml-auto flex items-center gap-1.5 text-text-secondary hover:text-accent-light transition-colors"
                     >
-                      Tiếp
+                      {t("userGuides.navNext")}
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
                     </button>
                   )}
