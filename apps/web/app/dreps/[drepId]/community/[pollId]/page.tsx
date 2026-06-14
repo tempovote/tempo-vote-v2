@@ -10,46 +10,48 @@ import { usePollDetail, usePollComments } from "@/hooks/useCommunity"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { authHeader, getJwt } from "@/lib/api"
 import { resolveAnchorUrl } from "@/lib/governance"
+import { useT } from "@/i18n/useT"
+import type { TFunc } from "@/i18n/useT"
 import type { PollOptionWithCount, PollComment } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: TFunc): string {
   const ms = Date.now() - new Date(iso).getTime()
   const s = Math.floor(ms / 1000)
-  if (s < 60) return "vừa xong"
+  if (s < 60) return t("community.poll.justNow")
   const m = Math.floor(s / 60)
-  if (m < 60) return `${m} phút trước`
+  if (m < 60) return t("community.poll.minutesAgo", { m })
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h} giờ trước`
+  if (h < 24) return t("community.poll.hoursAgo", { h })
   const d = Math.floor(h / 24)
-  return `${d} ngày trước`
+  return t("community.poll.daysAgo", { d })
+}
+
+function timeLabel(status: string, endsAt: string, startsAt: string, t: TFunc): string {
+  if (status === "pending") {
+    const ms = new Date(startsAt).getTime() - Date.now()
+    if (ms <= 0) return t("community.poll.startingSoon")
+    const d = Math.floor(ms / 86400000)
+    const h = Math.floor((ms % 86400000) / 3600000)
+    return d > 0 ? t("community.poll.startsIn", { d, h }) : t("community.poll.startsInHours", { h })
+  }
+  if (status === "closed") {
+    const d = Math.floor((Date.now() - new Date(endsAt).getTime()) / 86400000)
+    return t("community.poll.endedDaysAgo", { d })
+  }
+  const ms = new Date(endsAt).getTime() - Date.now()
+  if (ms <= 0) return t("community.poll.ending")
+  const d = Math.floor(ms / 86400000)
+  const h = Math.floor((ms % 86400000) / 3600000)
+  return d > 0 ? t("community.poll.endsIn", { d, h }) : t("community.poll.endsInHours", { h })
 }
 
 function shortAddress(addr: string): string {
   if (addr.length <= 20) return addr
   return `${addr.slice(0, 10)}…${addr.slice(-8)}`
-}
-
-function timeLabel(status: string, endsAt: string, startsAt: string): string {
-  if (status === "pending") {
-    const ms = new Date(startsAt).getTime() - Date.now()
-    if (ms <= 0) return "Sắp bắt đầu"
-    const d = Math.floor(ms / 86400000)
-    const h = Math.floor((ms % 86400000) / 3600000)
-    return d > 0 ? `Bắt đầu sau ${d}d ${h}h` : `Bắt đầu sau ${h}h`
-  }
-  if (status === "closed") {
-    const d = Math.floor((Date.now() - new Date(endsAt).getTime()) / 86400000)
-    return `Đã kết thúc ${d} ngày trước`
-  }
-  const ms = new Date(endsAt).getTime() - Date.now()
-  if (ms <= 0) return "Đang kết thúc..."
-  const d = Math.floor(ms / 86400000)
-  const h = Math.floor((ms % 86400000) / 3600000)
-  return d > 0 ? `Còn ${d}d ${h}h` : `Còn ${h}h`
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -87,6 +89,7 @@ function OptionButton({
   isConnected: boolean
   onClick: () => void
 }) {
+  const t = useT()
   const pct = total > 0 ? Math.round((option.voteCount / total) * 100) : 0
   const showResults = hasVoted || !isActive
 
@@ -117,7 +120,6 @@ function OptionButton({
           : "border-border-subtle bg-bg-elevated",
       ].join(" ")}
     >
-      {/* Result bar */}
       {showResults && total > 0 && (
         <div
           className={`absolute inset-y-0 left-0 rounded-xl transition-all duration-500 ${barColorMap[option.text] ?? "bg-accent/20"}`}
@@ -129,7 +131,7 @@ function OptionButton({
         <span className="font-semibold text-sm text-text-primary">{option.text}</span>
         {showResults && (
           <span className="text-xs text-text-muted shrink-0">
-            {option.voteCount} phiếu · {pct}%
+            {t("community.poll.voteCountDisplay", { count: option.voteCount, pct })}
           </span>
         )}
         {selected && (
@@ -165,6 +167,7 @@ function VotingSection({
   reauthenticate: () => Promise<string | null>
   onVoted: () => void
 }) {
+  const t = useT()
   const [pending, setPending] = useState<string | null>(null)
   const [voteError, setVoteError] = useState<string | null>(null)
 
@@ -178,7 +181,7 @@ function VotingSection({
     try {
       let jwt = getJwt()
       if (!jwt) jwt = await reauthenticate()
-      if (!jwt) throw new Error("Cần xác thực ví trước khi bỏ phiếu.")
+      if (!jwt) throw new Error(t("community.poll.authError"))
       const doVote = (token: string) =>
         fetch(`${API_URL}/communities/polls/${pollId}/vote`, {
           method: "POST",
@@ -188,16 +191,16 @@ function VotingSection({
       let res = await doVote(jwt)
       if (res.status === 401) {
         const newJwt = await reauthenticate()
-        if (!newJwt) throw new Error("Xác thực thất bại.")
+        if (!newJwt) throw new Error(t("community.poll.authFailed"))
         res = await doVote(newJwt)
       }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error((err as Record<string, string>).error ?? "Bỏ phiếu thất bại")
+        throw new Error((err as Record<string, string>).error ?? t("community.poll.voteFailed"))
       }
       onVoted()
     } catch (err: unknown) {
-      setVoteError(err instanceof Error ? err.message : "Đã xảy ra lỗi")
+      setVoteError(err instanceof Error ? err.message : t("community.poll.unknownError"))
     } finally {
       setPending(null)
     }
@@ -206,11 +209,11 @@ function VotingSection({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-xs text-text-muted">
-        <span>{totalVotes} phiếu đã bỏ</span>
-        {hasVoted && <span className="text-success font-medium">✓ Bạn đã bỏ phiếu</span>}
-        {!isConnected && isActive && <span>Kết nối ví để bỏ phiếu</span>}
-        {isConnected && !isActive && status === "closed" && <span>Poll đã kết thúc</span>}
-        {isConnected && !isActive && status === "pending" && <span>Poll chưa bắt đầu</span>}
+        <span>{t("community.poll.voteCount", { count: totalVotes })}</span>
+        {hasVoted && <span className="text-success font-medium">{t("community.poll.alreadyVoted")}</span>}
+        {!isConnected && isActive && <span>{t("community.poll.connectToVote")}</span>}
+        {isConnected && !isActive && status === "closed" && <span>{t("community.poll.pollEnded")}</span>}
+        {isConnected && !isActive && status === "pending" && <span>{t("community.poll.pollPending")}</span>}
       </div>
 
       <div className="space-y-2">
@@ -229,7 +232,7 @@ function VotingSection({
       </div>
 
       {pending && (
-        <p className="text-xs text-text-muted text-center animate-pulse">Đang bỏ phiếu...</p>
+        <p className="text-xs text-text-muted text-center animate-pulse">{t("community.poll.voting")}</p>
       )}
       {voteError && (
         <p className="text-xs text-danger text-center">{voteError}</p>
@@ -288,6 +291,7 @@ function CommentItem({ comment, network, myStakeAddress, pollId, onDeleted }: {
   pollId: string
   onDeleted: () => void
 }) {
+  const t = useT()
   const { reauthenticate } = useWallet()
   const [deleting, setDeleting] = useState(false)
   const isDRep = !!comment.drepId
@@ -353,13 +357,13 @@ function CommentItem({ comment, network, myStakeAddress, pollId, onDeleted }: {
         <div className="flex items-center gap-2">
           {nameEl}
           <span className="text-xs text-text-muted">·</span>
-          <span className="text-xs text-text-muted">{relativeTime(comment.createdAt)}</span>
+          <span className="text-xs text-text-muted">{relativeTime(comment.createdAt, t)}</span>
           {isOwn && (
             <button
               onClick={handleDelete}
               disabled={deleting}
               className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity p-1 text-text-muted hover:text-danger disabled:opacity-30"
-              title="Xóa comment"
+              title={t("community.poll.deleteComment")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" />
@@ -376,21 +380,22 @@ function CommentItem({ comment, network, myStakeAddress, pollId, onDeleted }: {
   )
 }
 
-// ─── GA type list (mirrors community page) ───────────────────────────────────
+// ─── GA type list ─────────────────────────────────────────────────────────────
 
 const GA_TYPES = [
-  { value: "infoAction",               label: "Info Action",               desc: "Đề xuất tư vấn, không ràng buộc" },
-  { value: "treasuryWithdrawals",      label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury" },
-  { value: "protocolParametersUpdate", label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức" },
-  { value: "hardForkInitiation",       label: "Hard Fork Initiation",      desc: "Nâng cấp phiên bản giao thức" },
-  { value: "noConfidence",             label: "No Confidence",             desc: "Bất tín nhiệm Constitutional Committee" },
-  { value: "updateCommittee",          label: "Update Committee",          desc: "Thêm/xóa thành viên CC" },
-  { value: "newConstitution",          label: "New Constitution",          desc: "Thay đổi Hiến pháp Cardano" },
+  { value: "infoAction",               label: "Info Action",               desc: "Advisory proposal, non-binding" },
+  { value: "treasuryWithdrawals",      label: "Treasury Withdrawals",      desc: "Withdraw ADA from Cardano treasury" },
+  { value: "protocolParametersUpdate", label: "Protocol Parameter Change", desc: "Change protocol parameters" },
+  { value: "hardForkInitiation",       label: "Hard Fork Initiation",      desc: "Upgrade protocol version" },
+  { value: "noConfidence",             label: "No Confidence",             desc: "No confidence in Constitutional Committee" },
+  { value: "updateCommittee",          label: "Update Committee",          desc: "Add/remove CC members" },
+  { value: "newConstitution",          label: "New Constitution",          desc: "Change Cardano Constitution" },
 ]
 
 // ─── Propose Action dropdown ──────────────────────────────────────────────────
 
 function ProposeDropdown({ pollId, network }: { pollId: string; network: string }) {
+  const t = useT()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -411,7 +416,6 @@ function ProposeDropdown({ pollId, network }: { pollId: string; network: string 
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border-default text-text-secondary hover:border-accent/50 hover:text-accent-light transition-colors"
-        title="Đề xuất thành Governance Action"
       >
         Propose Action
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -422,20 +426,20 @@ function ProposeDropdown({ pollId, network }: { pollId: string; network: string 
       {open && (
         <div className="absolute right-0 top-full mt-1.5 z-50 w-64 bg-bg-card border border-border-default rounded-xl shadow-2xl overflow-hidden animate-fade-in">
           <p className="px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-b border-border-subtle">
-            Chọn loại Governance Action
+            {t("community.proposeDropdownTitle")}
           </p>
-          {GA_TYPES.map((t) => (
+          {GA_TYPES.map((gt) => (
             <button
-              key={t.value}
+              key={gt.value}
               type="button"
               onClick={() => {
                 setOpen(false)
-                router.push(`/governance-actions/new?source=${pollId}&type=${t.value}${np}`)
+                router.push(`/governance-actions/new?source=${pollId}&type=${gt.value}${np}`)
               }}
               className="w-full text-left px-3 py-2.5 hover:bg-bg-elevated transition-colors border-b border-border-subtle last:border-0"
             >
-              <p className="text-sm font-medium text-text-primary leading-tight">{t.label}</p>
-              <p className="text-[11px] text-text-muted mt-0.5 leading-tight">{t.desc}</p>
+              <p className="text-sm font-medium text-text-primary leading-tight">{gt.label}</p>
+              <p className="text-[11px] text-text-muted mt-0.5 leading-tight">{gt.desc}</p>
             </button>
           ))}
         </div>
@@ -464,6 +468,7 @@ export default function PollDetailPage({
 }: {
   params: Promise<{ drepId: string; pollId: string }>
 }) {
+  const t = useT()
   const { drepId, pollId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
   const connectedDrepId = useWalletStore((s) => s.drepKey?.dRepIDCip105 ?? null)
@@ -493,7 +498,7 @@ export default function PollDetailPage({
     try {
       let jwt = getJwt()
       if (!jwt) jwt = await reauthenticate()
-      if (!jwt) throw new Error("Cần xác thực ví trước khi bình luận.")
+      if (!jwt) throw new Error(t("community.poll.commentAuthError"))
       const doPost = (token: string) =>
         fetch(`${API_URL}/communities/polls/${pollId}/comments`, {
           method: "POST",
@@ -503,17 +508,17 @@ export default function PollDetailPage({
       let res = await doPost(jwt)
       if (res.status === 401) {
         const newJwt = await reauthenticate()
-        if (!newJwt) throw new Error("Xác thực thất bại.")
+        if (!newJwt) throw new Error(t("community.poll.commentAuthFailed"))
         res = await doPost(newJwt)
       }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error((err as Record<string, string>).error ?? "Gửi comment thất bại")
+        throw new Error((err as Record<string, string>).error ?? t("community.poll.commentFailed"))
       }
       setContent("")
       refetchComments()
     } catch (err: unknown) {
-      setSubmitError(err instanceof Error ? err.message : "Đã xảy ra lỗi")
+      setSubmitError(err instanceof Error ? err.message : t("community.poll.commentUnknownError"))
     } finally {
       setSubmitting(false)
     }
@@ -545,7 +550,7 @@ export default function PollDetailPage({
           DRep Community
         </Link>
         <div className="notice-warning rounded-xl p-8 text-center">
-          <p className="font-semibold">Không tìm thấy poll</p>
+          <p className="font-semibold">{t("community.poll.notFound")}</p>
         </div>
       </div>
     )
@@ -554,7 +559,6 @@ export default function PollDetailPage({
   return (
     <div className="page-container space-y-6 animate-fade-in">
 
-      {/* Back */}
       <Link
         href={`/dreps/${drepId}/community${networkParam}`}
         className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
@@ -572,7 +576,7 @@ export default function PollDetailPage({
         <div className="space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={poll.status} />
-            <span className="text-xs text-text-muted">{timeLabel(poll.status, poll.endsAt, poll.startsAt)}</span>
+            <span className="text-xs text-text-muted">{timeLabel(poll.status, poll.endsAt, poll.startsAt, t)}</span>
             <div className="ml-auto">
               <ProposeDropdown pollId={poll.id} network={network} />
             </div>
@@ -592,34 +596,30 @@ export default function PollDetailPage({
           </div>
         )}
 
-        {/* Abstract */}
         {poll.abstract && (
           <div className="space-y-1">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tóm tắt</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{t("community.poll.sectionAbstract")}</h3>
             <MarkdownBody value={poll.abstract} />
           </div>
         )}
 
-        {/* Motivation */}
         {poll.motivation && (
           <div className="space-y-1">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Động lực</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{t("community.poll.sectionMotivation")}</h3>
             <MarkdownBody value={poll.motivation} />
           </div>
         )}
 
-        {/* Rationale */}
         {poll.rationale && (
           <div className="space-y-1">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Cơ sở lý luận</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{t("community.poll.sectionRationale")}</h3>
             <MarkdownBody value={poll.rationale} />
           </div>
         )}
 
-        {/* Support links */}
         {poll.supportLinks && poll.supportLinks.length > 0 && (
           <div className="space-y-1.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tài liệu tham khảo</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{t("community.poll.sectionReferences")}</h3>
             <ul className="space-y-1">
               {poll.supportLinks.map((link, i) => (
                 <li key={i}>
@@ -637,10 +637,8 @@ export default function PollDetailPage({
           </div>
         )}
 
-        {/* Divider */}
         <hr className="border-border-subtle" />
 
-        {/* Voting */}
         <VotingSection
           pollId={pollId}
           options={poll.options}
@@ -658,7 +656,7 @@ export default function PollDetailPage({
       <div id="comment" ref={commentRef} className="card-static space-y-0 !p-0 overflow-hidden">
         <div className="px-5 py-4 border-b border-border-subtle">
           <h2 className="text-base font-bold">
-            Thảo luận
+            {t("community.poll.discussion")}
             {commentTotal > 0 && <span className="ml-2 text-sm font-normal text-text-muted">({commentTotal})</span>}
           </h2>
         </div>
@@ -669,7 +667,7 @@ export default function PollDetailPage({
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Viết bình luận của bạn..."
+              placeholder={t("community.poll.commentPlaceholder")}
               rows={3}
               className="w-full bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-muted outline-none focus:border-accent/50 transition-colors resize-none"
             />
@@ -680,17 +678,16 @@ export default function PollDetailPage({
                 disabled={submitting || !content.trim()}
                 className="btn-primary text-sm px-5"
               >
-                {submitting ? "Đang gửi..." : "Gửi"}
+                {submitting ? t("community.poll.submittingComment") : t("community.poll.sendCommentBtn")}
               </button>
             </div>
           </form>
         ) : (
           <div className="px-5 py-4 border-b border-border-subtle text-center text-sm text-text-muted">
-            Kết nối ví để tham gia thảo luận
+            {t("community.poll.connectToComment")}
           </div>
         )}
 
-        {/* Comments list */}
         {commentsLoading && (
           <div className="divide-y divide-border-subtle px-5">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -707,13 +704,13 @@ export default function PollDetailPage({
         )}
 
         {!commentsLoading && commentsError && (
-          <div className="px-5 py-8 text-center text-sm text-text-muted">Không thể tải bình luận</div>
+          <div className="px-5 py-8 text-center text-sm text-text-muted">{t("community.poll.commentLoadError")}</div>
         )}
 
         {!commentsLoading && !commentsError && comments.length === 0 && (
           <div className="px-5 py-10 text-center space-y-2">
             <p className="text-3xl">💬</p>
-            <p className="text-sm text-text-muted">Chưa có bình luận nào</p>
+            <p className="text-sm text-text-muted">{t("community.poll.noComments")}</p>
           </div>
         )}
 
