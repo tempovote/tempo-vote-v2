@@ -10,6 +10,7 @@ import { useTx } from "@/hooks/useTx"
 import { RationaleEditor } from "@/components/governance/RationaleEditor"
 import { AlertModal } from "@/components/ui/AlertModal"
 import { authHeader, getJwt } from "@/lib/api"
+import { useT } from "@/i18n/useT"
 import type { BuildTxRequest } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -18,18 +19,17 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
 type GaTypeMeta = {
   label: string
-  desc: string
   txType: BuildTxRequest["txType"] | null
 }
 
 const GA_TYPES: Record<string, GaTypeMeta> = {
-  infoAction:               { label: "Info Action",               desc: "Đề xuất tư vấn, không ràng buộc on-chain",           txType: "PROPOSE_INFO_ACTION" },
-  noConfidence:             { label: "No Confidence",             desc: "Bất tín nhiệm Constitutional Committee hiện tại",    txType: "PROPOSE_NO_CONFIDENCE" },
-  hardForkInitiation:       { label: "Hard Fork Initiation",      desc: "Đề xuất nâng cấp phiên bản giao thức Cardano",      txType: "PROPOSE_HARD_FORK" },
-  newConstitution:          { label: "New Constitution",          desc: "Đề xuất thay đổi Hiến pháp Cardano on-chain",       txType: "PROPOSE_NEW_CONSTITUTION" },
-  treasuryWithdrawals:      { label: "Treasury Withdrawals",      desc: "Rút ADA từ quỹ Cardano treasury",                   txType: "PROPOSE_TREASURY_WITHDRAWAL" },
-  updateCommittee:          { label: "Update Committee",          desc: "Thêm/xóa thành viên Constitutional Committee",      txType: "PROPOSE_UPDATE_COMMITTEE" },
-  protocolParametersUpdate: { label: "Protocol Parameter Change", desc: "Thay đổi thông số giao thức Cardano on-chain",      txType: "PROPOSE_PROTOCOL_PARAM_CHANGE" },
+  infoAction:               { label: "Info Action",               txType: "PROPOSE_INFO_ACTION" },
+  noConfidence:             { label: "No Confidence",             txType: "PROPOSE_NO_CONFIDENCE" },
+  hardForkInitiation:       { label: "Hard Fork Initiation",      txType: "PROPOSE_HARD_FORK" },
+  newConstitution:          { label: "New Constitution",          txType: "PROPOSE_NEW_CONSTITUTION" },
+  treasuryWithdrawals:      { label: "Treasury Withdrawals",      txType: "PROPOSE_TREASURY_WITHDRAWAL" },
+  updateCommittee:          { label: "Update Committee",          txType: "PROPOSE_UPDATE_COMMITTEE" },
+  protocolParametersUpdate: { label: "Protocol Parameter Change", txType: "PROPOSE_PROTOCOL_PARAM_CHANGE" },
 }
 
 // ─── Shared style constants ──────────────────────────────────────────────────
@@ -173,29 +173,33 @@ const EMPTY_COMMITTEE_ADD_ROW: CommitteeAddRow = { credential: "", termEpoch: ""
 function PrevGovActionFields({
   params,
   onChange,
-  label = "Previous Governance Action",
-  hint = "ID của GA cùng loại đã được enacted trước đó. Để trống nếu đây là lần đầu.",
+  label,
+  hint,
 }: {
   params: TypeParams
   onChange: (patch: Partial<TypeParams>) => void
   label?: string
   hint?: string
 }) {
+  const t = useT()
+  const displayLabel = label ?? t("governance.new.prevAction.label")
+  const displayHint  = hint  ?? t("governance.new.prevAction.hint")
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className={LABEL}>
-          {label}
-          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+          {displayLabel}
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">{t("common.optional")}</span>
         </label>
       </div>
-      <p className="text-xs text-text-muted">{hint}</p>
+      <p className="text-xs text-text-muted">{displayHint}</p>
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <input
           type="text"
           value={params.prevGovActionTxHash}
           onChange={(e) => onChange({ prevGovActionTxHash: e.target.value })}
-          placeholder="TX Hash (64 hex chars)..."
+          placeholder={t("governance.new.prevAction.txHashPlaceholder")}
           className={INPUT_SM + " font-mono text-xs"}
         />
         <input
@@ -203,7 +207,7 @@ function PrevGovActionFields({
           min={0}
           value={params.prevGovActionIdx}
           onChange={(e) => onChange({ prevGovActionIdx: e.target.value })}
-          placeholder="Idx"
+          placeholder={t("governance.new.prevAction.idxPlaceholder")}
           className={INPUT_SM + " w-20 text-center"}
         />
       </div>
@@ -212,31 +216,33 @@ function PrevGovActionFields({
 }
 
 function NoConfidenceFields({ params, onChange }: { params: TypeParams; onChange: (p: Partial<TypeParams>) => void }) {
+  const t = useT()
   return (
     <>
       <div className="p-3 bg-warning/8 border border-warning/20 rounded-xl text-xs text-text-secondary space-y-1">
-        <p className="font-semibold text-warning">No Confidence — Lưu ý</p>
-        <p>Đề xuất này yêu cầu DRep threshold 60% + SPO threshold 51% để được ratified.</p>
-        <p>Khi được enacted, Constitutional Committee hiện tại sẽ bị giải tán.</p>
+        <p className="font-semibold text-warning">{t("governance.new.noConfidence.noteTitle")}</p>
+        <p>{t("governance.new.noConfidence.warning1")}</p>
+        <p>{t("governance.new.noConfidence.warning2")}</p>
       </div>
       <PrevGovActionFields
         params={params}
         onChange={onChange}
-        label="Previous Committee Action"
-        hint="GA committee action cuối cùng đã được enacted (UpdateCommittee hoặc NoConfidence trước đó)."
+        label={t("governance.new.noConfidence.prevLabel")}
+        hint={t("governance.new.noConfidence.prevHint")}
       />
     </>
   )
 }
 
 function HardForkFields({ params, onChange }: { params: TypeParams; onChange: (p: Partial<TypeParams>) => void }) {
+  const t = useT()
   return (
     <>
       <div className="space-y-1.5">
         <div className="flex items-center gap-1">
-          <label className={LABEL}>Target Protocol Version <span className="text-danger font-normal normal-case">*</span></label>
+          <label className={LABEL}>{t("governance.new.hardFork.versionLabel")} <span className="text-danger font-normal normal-case">*</span></label>
         </div>
-        <p className="text-xs text-text-muted">Phiên bản giao thức sau khi hard fork (Conway era hiện tại: 9.x).</p>
+        <p className="text-xs text-text-muted">{t("governance.new.hardFork.versionDesc")}</p>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 flex-1">
             <span className="text-xs text-text-muted w-12 shrink-0">Major</span>
@@ -268,40 +274,41 @@ function HardForkFields({ params, onChange }: { params: TypeParams; onChange: (p
       <PrevGovActionFields
         params={params}
         onChange={onChange}
-        label="Previous Hard Fork Action"
-        hint="GA hard fork cuối cùng đã được enacted. Để trống nếu không có."
+        label={t("governance.new.hardFork.prevLabel")}
+        hint={t("governance.new.hardFork.prevHint")}
       />
     </>
   )
 }
 
 function NewConstitutionFields({ params, onChange }: { params: TypeParams; onChange: (p: Partial<TypeParams>) => void }) {
+  const t = useT()
   return (
     <>
       <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
-        <p className="font-semibold text-accent-light">Constitution Anchor — Tài liệu Hiến pháp</p>
-        <p>URL và hash dưới đây trỏ đến <strong>nội dung Hiến pháp mới</strong>, khác với metadata của proposal này.</p>
-        <p>Hash phải là blake2b-256 hex của file tại URL đó.</p>
+        <p className="font-semibold text-accent-light">{t("governance.new.constitution.noteTitle")}</p>
+        <p>{t("governance.new.constitution.noteDesc1")}</p>
+        <p>{t("governance.new.constitution.noteDesc2")}</p>
       </div>
 
       <div className="space-y-1.5">
-        <label className={LABEL}>Constitution URL <span className="text-danger font-normal normal-case">*</span></label>
+        <label className={LABEL}>{t("governance.new.constitution.urlLabel")} <span className="text-danger font-normal normal-case">*</span></label>
         <input
           type="url"
           value={params.constitutionAnchorUrl}
           onChange={(e) => onChange({ constitutionAnchorUrl: e.target.value })}
-          placeholder="https://ipfs.io/ipfs/... hoặc https://..."
+          placeholder={t("governance.new.constitution.urlPlaceholder")}
           className={INPUT}
         />
       </div>
 
       <div className="space-y-1.5">
-        <label className={LABEL}>Constitution Hash (blake2b-256 hex) <span className="text-danger font-normal normal-case">*</span></label>
+        <label className={LABEL}>{t("governance.new.constitution.hashLabel")} <span className="text-danger font-normal normal-case">*</span></label>
         <input
           type="text"
           value={params.constitutionAnchorHash}
           onChange={(e) => onChange({ constitutionAnchorHash: e.target.value })}
-          placeholder="64 hex chars..."
+          placeholder={t("governance.new.constitution.hashPlaceholder")}
           className={INPUT + " font-mono text-xs"}
           maxLength={64}
         />
@@ -309,14 +316,14 @@ function NewConstitutionFields({ params, onChange }: { params: TypeParams; onCha
 
       <div className="space-y-1.5">
         <label className={LABEL}>
-          Guardrails Script Hash
-          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+          {t("governance.new.constitution.scriptHashLabel")}
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">{t("common.optional")}</span>
         </label>
         <input
           type="text"
           value={params.constitutionScriptHash}
           onChange={(e) => onChange({ constitutionScriptHash: e.target.value })}
-          placeholder="56 hex chars (28 bytes)..."
+          placeholder={t("governance.new.constitution.scriptHashPlaceholder")}
           className={INPUT + " font-mono text-xs"}
           maxLength={56}
         />
@@ -325,8 +332,8 @@ function NewConstitutionFields({ params, onChange }: { params: TypeParams; onCha
       <PrevGovActionFields
         params={params}
         onChange={onChange}
-        label="Previous Constitution Action"
-        hint="GA NewConstitution cuối cùng đã được enacted. Để trống nếu đây là lần đầu."
+        label={t("governance.new.constitution.prevLabel")}
+        hint={t("governance.new.constitution.prevHint")}
       />
     </>
   )
@@ -343,6 +350,7 @@ function TreasuryWithdrawalFields({
   onChange: (rows: WithdrawalRow[]) => void
   network: string
 }) {
+  const t = useT()
   const totalAda = rows.reduce((sum, r) => sum + (parseFloat(r.adaAmount) || 0), 0)
   const stakeHint = network === "mainnet" ? "stake1..." : "stake_test1..."
 
@@ -353,13 +361,13 @@ function TreasuryWithdrawalFields({
   return (
     <>
       <div className="p-3 bg-warning/8 border border-warning/20 rounded-xl text-xs text-text-secondary space-y-1">
-        <p className="font-semibold text-warning">Treasury Withdrawals — Lưu ý</p>
-        <p>Yêu cầu DRep threshold <strong>67%</strong> + CC threshold <strong>60%</strong> để được ratified.</p>
-        <p>ADA được rút trực tiếp từ Cardano treasury vào reward address của recipient.</p>
+        <p className="font-semibold text-warning">{t("governance.new.treasury.noteTitle")}</p>
+        <p>{t("governance.new.treasury.warning1")}</p>
+        <p>{t("governance.new.treasury.warning2")}</p>
       </div>
 
       <div className="space-y-1.5">
-        <label className={LABEL}>Recipients <span className="text-danger font-normal normal-case">*</span></label>
+        <label className={LABEL}>{t("governance.new.treasury.recipientsLabel")} <span className="text-danger font-normal normal-case">*</span></label>
         <div className="space-y-2">
           {rows.map((row, i) => (
             <div key={i} className="flex gap-2 items-center">
@@ -404,13 +412,13 @@ function TreasuryWithdrawalFields({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Add Recipient
+          {t("governance.new.treasury.addRecipient")}
         </button>
       </div>
 
       {totalAda > 0 && (
         <div className="flex items-center justify-between px-4 py-3 bg-bg-elevated rounded-xl border border-border-subtle">
-          <span className="text-xs text-text-muted uppercase tracking-wider">Total Withdrawal</span>
+          <span className="text-xs text-text-muted uppercase tracking-wider">{t("governance.new.treasury.totalWithdrawal")}</span>
           <span className="font-bold text-text-primary tabular-nums">
             {totalAda.toLocaleString("en-US", { maximumFractionDigits: 6 })} <span className="text-text-muted font-normal">₳</span>
           </span>
@@ -437,6 +445,7 @@ function UpdateCommitteeFields({
   addRows: CommitteeAddRow[]
   onAddChange: (rows: CommitteeAddRow[]) => void
 }) {
+  const t = useT()
   const num = parseInt(params.quorumNumerator)
   const den = parseInt(params.quorumDenominator)
   const quorumPct = num > 0 && den > 0 ? ((num / den) * 100).toFixed(1) : null
@@ -448,18 +457,18 @@ function UpdateCommitteeFields({
   return (
     <>
       <div className="p-3 bg-warning/8 border border-warning/20 rounded-xl text-xs text-text-secondary space-y-1">
-        <p className="font-semibold text-warning">Update Committee — Lưu ý</p>
-        <p>Yêu cầu DRep 60% + SPO 51% để ratified (hoặc CC 51% nếu chỉ thay quorum).</p>
-        <p>Cold credential: bech32 <span className="font-mono">cc_cold1...</span> (mainnet) / <span className="font-mono">cc_cold_test1...</span> (testnet).</p>
+        <p className="font-semibold text-warning">{t("governance.new.committee.noteTitle")}</p>
+        <p>{t("governance.new.committee.warning1")}</p>
+        <p>{t("governance.new.committee.warning2")}</p>
       </div>
 
       {/* Remove Members */}
       <div className="space-y-1.5">
         <label className={LABEL}>
-          Members to Remove
-          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+          {t("governance.new.committee.removeLabel")}
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">{t("common.optional")}</span>
         </label>
-        <p className="text-xs text-text-muted">Cold credentials của CC members cần xóa khỏi committee.</p>
+        <p className="text-xs text-text-muted">{t("governance.new.committee.removeDesc")}</p>
         <div className="space-y-2">
           {removeRows.map((cred, i) => (
             <div key={i} className="flex gap-2">
@@ -496,17 +505,17 @@ function UpdateCommitteeFields({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Add Credential
+          {t("governance.new.committee.addCredential")}
         </button>
       </div>
 
       {/* Add Members */}
       <div className="space-y-1.5">
         <label className={LABEL}>
-          Members to Add
-          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+          {t("governance.new.committee.addLabel")}
+          <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">{t("common.optional")}</span>
         </label>
-        <p className="text-xs text-text-muted">Cold credential và epoch (cuối nhiệm kỳ) của CC members mới.</p>
+        <p className="text-xs text-text-muted">{t("governance.new.committee.addDesc")}</p>
         <div className="space-y-2">
           {addRows.map((row, i) => (
             <div key={i} className="flex gap-2 items-start">
@@ -549,14 +558,14 @@ function UpdateCommitteeFields({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Add Member
+          {t("governance.new.committee.addMember")}
         </button>
       </div>
 
       {/* Quorum Threshold */}
       <div className="space-y-1.5">
-        <label className={LABEL}>Quorum Threshold <span className="text-danger font-normal normal-case">*</span></label>
-        <p className="text-xs text-text-muted">Tỷ lệ tối thiểu CC members phải đồng ý để vote passed (e.g. 2/3 = 66.7%).</p>
+        <label className={LABEL}>{t("governance.new.committee.quorumLabel")} <span className="text-danger font-normal normal-case">*</span></label>
+        <p className="text-xs text-text-muted">{t("governance.new.committee.quorumDesc")}</p>
         <div className="flex items-center gap-3">
           <input
             type="number"
@@ -584,8 +593,8 @@ function UpdateCommitteeFields({
       <PrevGovActionFields
         params={params}
         onChange={onParamChange}
-        label="Previous Committee Action"
-        hint="GA UpdateCommittee hoặc NoConfidence cuối cùng đã được enacted. Để trống nếu đây là lần đầu."
+        label={t("governance.new.committee.prevLabel")}
+        hint={t("governance.new.committee.prevHint")}
       />
     </>
   )
@@ -698,6 +707,7 @@ function ProtocolParamChangeFields({
   onChange: (patch: Partial<TypeParams>) => void
   network: string
 }) {
+  const t = useT()
   const [activeParams, setActiveParams] = useState<PpActiveParam[]>([])
   const [selGroup, setSelGroup] = useState("")
   const [selParam, setSelParam] = useState("")
@@ -727,16 +737,13 @@ function ProtocolParamChangeFields({
     <>
       {/* Intro */}
       <div className="p-3 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-secondary space-y-1">
-        <p className="font-semibold text-accent-light">Hướng dẫn</p>
-        <p>
-          Chọn Group, thêm từng thông số muốn <strong>thay đổi</strong> và điền giá trị đề xuất.
-          Thông số không được chọn sẽ giữ nguyên giá trị on-chain.
-        </p>
+        <p className="font-semibold text-accent-light">{t("governance.new.pp.guideTitle")}</p>
+        <p>{t("governance.new.pp.guideDesc")}</p>
       </div>
 
       {/* Selector */}
       <div className="space-y-2">
-        <label className={LABEL}>Thêm thông số</label>
+        <label className={LABEL}>{t("governance.new.pp.addParamLabel")}</label>
         <div className="flex gap-2 flex-wrap items-center">
           {/* Group dropdown */}
           <div className="relative flex-1 min-w-[150px]">
@@ -745,7 +752,7 @@ function ProtocolParamChangeFields({
               onChange={(e) => { setSelGroup(e.target.value); setSelParam("") }}
               className={`${INPUT_SM} w-full pr-8 appearance-none cursor-pointer`}
             >
-              <option value="">── Chọn Group ──</option>
+              <option value="">{t("governance.new.pp.selectGroup")}</option>
               {CIP1694_GROUPS.map((g) => (
                 <option key={g.id} value={g.id}>{g.label}</option>
               ))}
@@ -765,7 +772,7 @@ function ProtocolParamChangeFields({
                 disabled={availableForSel.length === 0}
               >
                 <option value="">
-                  {availableForSel.length === 0 ? "Tất cả đã được thêm" : "── Chọn Tham số ──"}
+                  {availableForSel.length === 0 ? t("governance.new.pp.allAdded") : t("governance.new.pp.selectParam")}
                 </option>
                 {availableForSel.map((p) => (
                   <option key={p.key} value={p.key}>{p.label} ({p.unit})</option>
@@ -788,16 +795,15 @@ function ProtocolParamChangeFields({
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
-              Thêm
+              {t("governance.new.pp.addBtn")}
             </button>
           )}
         </div>
 
-        {/* Governance Group hint: voting thresholds require full group */}
+        {/* Governance Group hint */}
         {selGroup === "governance" && (
           <div className="px-3 py-2 bg-accent/8 border border-accent/20 rounded-xl text-xs text-text-muted">
-            <span className="font-semibold text-accent-light">Lưu ý: </span>
-            Pool VT (5 fields) và DRep VT (10 fields) phải điền <strong>đủ toàn bộ</strong> thì mới được đưa lên on-chain.
+            {t("governance.new.pp.governanceHint")}
           </div>
         )}
       </div>
@@ -805,13 +811,13 @@ function ProtocolParamChangeFields({
       {/* Active params list */}
       {activeParams.length === 0 ? (
         <div className="text-center py-6 text-sm text-text-muted border border-dashed border-border-subtle rounded-xl">
-          Chưa có thông số nào. Dùng selector bên trên để thêm.
+          {t("governance.new.pp.noParams")}
         </div>
       ) : (
         <div className="space-y-2">
           {filledCount > 0 && (
             <p className="text-xs text-success font-semibold">
-              {filledCount} / {activeParams.length} thông số đã có giá trị đề xuất
+              {t("governance.new.pp.filledCount", { filled: filledCount, total: activeParams.length })}
             </p>
           )}
           {activeParams.map((entry) => {
@@ -841,7 +847,7 @@ function ProtocolParamChangeFields({
                   step={paramDef.step}
                   value={params[entry.paramKey]}
                   onChange={(e) => onChange({ [entry.paramKey]: e.target.value } as Partial<TypeParams>)}
-                  placeholder="Giá trị đề xuất..."
+                  placeholder={t("governance.new.pp.proposedValuePlaceholder")}
                   className={`w-40 text-right tabular-nums text-sm rounded-xl px-3 py-2 bg-bg-secondary placeholder-text-muted focus:outline-none transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
                     hasValue
                       ? "border border-accent/60 text-text-primary focus:border-accent"
@@ -863,14 +869,13 @@ function ProtocolParamChangeFields({
         </div>
       )}
 
-      {/* Previous enacted ParameterChange — required by CIP-1694 (ledger error 3159).
-          Left blank, the API auto-resolves it from on-chain state. */}
+      {/* Previous enacted ParameterChange */}
       <div className="pt-1">
         <PrevGovActionFields
           params={params}
           onChange={onChange}
-          label="Previous Parameter-Change Action"
-          hint="Bắt buộc theo CIP-1694: GA protocolParametersUpdate gần nhất đã enacted. Để trống → API tự động resolve từ on-chain. Chỉ điền nếu muốn chỉ định nhánh cụ thể."
+          label={t("governance.new.pp.prevLabel")}
+          hint={t("governance.new.pp.prevHint")}
         />
       </div>
     </>
@@ -879,59 +884,62 @@ function ProtocolParamChangeFields({
 
 // ─── Validation per type ─────────────────────────────────────────────────────
 
+type TFunc = ReturnType<typeof useT>
+
 function validateTypeParams(
   gaType: string,
   params: TypeParams,
   withdrawalRows: WithdrawalRow[],
   committeeRemoveRows: string[],
   committeeAddRows: CommitteeAddRow[],
+  t: TFunc,
 ): string | null {
   if (gaType === "hardForkInitiation") {
     const major = parseInt(params.protocolVersionMajor)
     if (!params.protocolVersionMajor || isNaN(major) || major < 0)
-      return "Vui lòng nhập target protocol version (Major)."
+      return t("governance.new.err.hardForkMajor")
   }
   if (gaType === "newConstitution") {
     if (!params.constitutionAnchorUrl.trim())
-      return "Vui lòng nhập Constitution URL."
+      return t("governance.new.err.constitutionUrl")
     if (!params.constitutionAnchorHash.trim() || params.constitutionAnchorHash.length !== 64)
-      return "Constitution Hash phải là 64 hex chars (blake2b-256)."
+      return t("governance.new.err.constitutionHash")
   }
   if (gaType === "treasuryWithdrawals") {
     const valid = withdrawalRows.filter(
       (r) => r.stakeAddress.trim().startsWith("stake") && parseFloat(r.adaAmount) > 0,
     )
     if (valid.length === 0)
-      return "Cần ít nhất 1 recipient hợp lệ (stake address + ADA > 0)."
+      return t("governance.new.err.treasuryRecipient")
     const bad = withdrawalRows.find(
       (r) => r.stakeAddress.trim() && !r.stakeAddress.trim().startsWith("stake"),
     )
-    if (bad) return `Stake address không hợp lệ: "${bad.stakeAddress}". Phải bắt đầu bằng "stake".`
+    if (bad) return t("governance.new.err.treasuryInvalidStake", { addr: bad.stakeAddress })
   }
   if (gaType === "updateCommittee") {
     const num = parseInt(params.quorumNumerator)
     const den = parseInt(params.quorumDenominator)
     if (!params.quorumNumerator || !params.quorumDenominator || isNaN(num) || isNaN(den))
-      return "Vui lòng nhập Quorum Threshold (numerator/denominator)."
+      return t("governance.new.err.quorumRequired")
     if (num <= 0 || den <= 0)
-      return "Numerator và denominator phải > 0."
+      return t("governance.new.err.quorumPositive")
     if (num > den)
-      return "Numerator không được lớn hơn denominator (quorum ≤ 100%)."
+      return t("governance.new.err.quorumExceeded")
     const badRemove = committeeRemoveRows.find(
       (c) => c.trim() && !c.trim().startsWith("cc_cold"),
     )
     if (badRemove)
-      return `Credential không hợp lệ: "${badRemove}". Phải là bech32 cc_cold1... hoặc cc_cold_test1...`
+      return t("governance.new.err.committeeInvalidRemove", { cred: badRemove })
     const badAdd = committeeAddRows.find(
       (r) => r.credential.trim() && !r.credential.trim().startsWith("cc_cold"),
     )
     if (badAdd)
-      return `Credential không hợp lệ: "${badAdd.credential}". Phải là bech32 cc_cold1...`
+      return t("governance.new.err.committeeInvalidAdd", { cred: badAdd.credential })
     const badEpoch = committeeAddRows.find(
       (r) => r.credential.trim() && (!r.termEpoch || parseInt(r.termEpoch) <= 0),
     )
     if (badEpoch)
-      return `Vui lòng nhập term epoch cho credential "${badEpoch.credential}".`
+      return t("governance.new.err.committeeEpoch", { cred: badEpoch.credential })
   }
   if (gaType === "protocolParametersUpdate") {
     const allPpKeys: Array<keyof TypeParams> = [
@@ -951,28 +959,27 @@ function validateTypeParams(
     ]
     const filled = allPpKeys.filter((k) => params[k].trim() !== "")
     if (filled.length === 0)
-      return "Vui lòng điền ít nhất một thông số muốn thay đổi."
+      return t("governance.new.err.ppNoParams")
     const decimalKeys: Array<keyof TypeParams> = ["ppExpansionRate", "ppTreasuryGrowthRate"]
     for (const k of decimalKeys) {
       if (params[k].trim() !== "") {
         const v = parseFloat(params[k])
         if (isNaN(v) || v < 0 || v > 1)
-          return `Giá trị "${k.replace("pp", "")}" phải là số từ 0 đến 1.`
+          return t("governance.new.err.ppDecimalRange")
       }
     }
     if (params.ppPoolPledgeInfluence.trim() !== "") {
       const v = parseFloat(params.ppPoolPledgeInfluence)
       if (isNaN(v) || v < 0 || v > 2)
-        return "Pool Pledge Influence phải là số từ 0 đến 2."
+        return t("governance.new.err.ppPledgeInfluence")
     }
-    // Voting thresholds: either all fields filled or none
     const poolVtKeys: Array<keyof TypeParams> = [
       "ppPoolVtMotionNoConfidence", "ppPoolVtCommitteeNormal", "ppPoolVtCommitteeNoConfidence",
       "ppPoolVtHardForkInitiation", "ppPoolVtSecurityRelevantParam",
     ]
     const poolVtFilled = poolVtKeys.filter((k) => params[k].trim() !== "").length
     if (poolVtFilled > 0 && poolVtFilled < 5)
-      return "Pool Voting Thresholds: phải điền đủ cả 5 field hoặc để trống tất cả."
+      return t("governance.new.err.ppPoolVtIncomplete")
     const drepVtKeys: Array<keyof TypeParams> = [
       "ppDrepVtMotionNoConfidence", "ppDrepVtCommitteeNormal", "ppDrepVtCommitteeNoConfidence",
       "ppDrepVtUpdateConstitution", "ppDrepVtHardForkInitiation",
@@ -981,7 +988,7 @@ function validateTypeParams(
     ]
     const drepVtFilled = drepVtKeys.filter((k) => params[k].trim() !== "").length
     if (drepVtFilled > 0 && drepVtFilled < 10)
-      return "DRep Voting Thresholds: phải điền đủ cả 10 field hoặc để trống tất cả."
+      return t("governance.new.err.ppDrepVtIncomplete")
   }
   return null
 }
@@ -1040,9 +1047,7 @@ function buildTypeParams(
         prevGovActionIdx,
       }
     case "protocolParametersUpdate": {
-      // Helper: parse optional integer field
       const pi = (v: string) => (v.trim() !== "" ? parseInt(v) : undefined)
-      // Helper: convert decimal string (e.g. "0.003") to parts-per-million integer (e.g. 3000)
       const toPerMillion = (v: string) =>
         v.trim() !== "" ? Math.round(parseFloat(v) * 1_000_000) : undefined
 
@@ -1112,6 +1117,7 @@ export default function NewGovernanceActionPage({
   const networkParam = network !== "mainnet" ? `?network=${network}` : ""
   const gaInfo = GA_TYPES[gaType] ?? GA_TYPES["infoAction"]!
 
+  const t = useT()
   const router = useRouter()
   const { isConnected, reauthenticate } = useWallet()
   const drepKey = useWalletStore((s) => s.drepKey)
@@ -1172,14 +1178,14 @@ export default function NewGovernanceActionPage({
       setAlert({
         type: "error",
         title: `${gaInfo.label} — Coming Soon`,
-        message: `Loại "${gaInfo.label}" yêu cầu tham số on-chain bổ sung. Tính năng này sẽ được hỗ trợ trong phiên bản tiếp theo.`,
+        message: t("governance.new.unsupportedNotice", { label: gaInfo.label }),
       })
       return
     }
 
-    const typeError = validateTypeParams(gaType, typeParams, withdrawalRows, committeeRemoveRows, committeeAddRows)
+    const typeError = validateTypeParams(gaType, typeParams, withdrawalRows, committeeRemoveRows, committeeAddRows, t)
     if (typeError) {
-      setAlert({ type: "error", title: "Thiếu thông tin", message: typeError })
+      setAlert({ type: "error", title: t("governance.new.missingInfo"), message: typeError })
       return
     }
 
@@ -1188,11 +1194,11 @@ export default function NewGovernanceActionPage({
     try {
       // Step 1: Upload CIP-108 metadata (proposal anchor) to IPFS
       if (!anchorCache.current) {
-        setStatusLabel("Đang upload CIP-108 metadata lên IPFS...")
+        setStatusLabel(t("governance.new.uploadingMetadata"))
 
         let jwt = getJwt()
         if (!jwt) jwt = await reauthenticate()
-        if (!jwt) throw new Error("Xác thực thất bại")
+        if (!jwt) throw new Error(t("governance.new.missingInfo"))
 
         const metaBody = JSON.stringify({
           drepId,
@@ -1211,7 +1217,7 @@ export default function NewGovernanceActionPage({
 
         if (res.status === 401) {
           const newJwt = await reauthenticate()
-          if (!newJwt) throw new Error("Xác thực thất bại")
+          if (!newJwt) throw new Error(t("governance.new.missingInfo"))
           res = await fetch(`${API_URL}/metadata/upload-proposal`, {
             method: "POST",
             headers: { "Content-Type": "application/json", ...authHeader(newJwt) },
@@ -1220,8 +1226,8 @@ export default function NewGovernanceActionPage({
         }
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: "Upload thất bại" }))
-          throw new Error(err.error ?? "Upload metadata thất bại")
+          const err = await res.json().catch(() => ({ error: t("governance.new.defaultError") }))
+          throw new Error(err.error ?? t("governance.new.defaultError"))
         }
 
         const { anchorUrl, anchorDataHash } = await res.json()
@@ -1229,7 +1235,7 @@ export default function NewGovernanceActionPage({
       }
 
       // Step 2: Build + Sign + Submit TX
-      setStatusLabel("Vui lòng ký transaction trong ví...")
+      setStatusLabel(t("governance.new.signingTx"))
       const hash = await submitTx(gaInfo.txType!, {
         anchorUrl: anchorCache.current!.anchorUrl,
         anchorDataHash: anchorCache.current!.anchorDataHash,
@@ -1239,19 +1245,19 @@ export default function NewGovernanceActionPage({
       setTxHash(hash)
       setAlert({
         type: "success",
-        title: "Governance Action đã được submit!",
-        message: "Transaction đang được xử lý trên blockchain.",
+        title: t("governance.new.successTitle"),
+        message: t("governance.new.successDesc"),
       })
     } catch (e: any) {
       setAlert({
         type: "error",
-        title: "Submit thất bại",
-        message: e.message ?? "Có lỗi xảy ra, vui lòng thử lại.",
+        title: t("governance.new.submitFailed"),
+        message: e.message ?? t("governance.new.defaultError"),
       })
     } finally {
       setSubmitting(false)
     }
-  }, [drepId, gaInfo, gaType, typeParams, withdrawalRows, committeeRemoveRows, committeeAddRows, title, abstract, motivation, rationale, validLinks, isTypeSupported, reauthenticate, submitTx])
+  }, [drepId, gaInfo, gaType, typeParams, withdrawalRows, committeeRemoveRows, committeeAddRows, title, abstract, motivation, rationale, validLinks, isTypeSupported, reauthenticate, submitTx, t])
 
   // ─── Guards ───────────────────────────────────────────────────────────────
 
@@ -1268,9 +1274,9 @@ export default function NewGovernanceActionPage({
     return (
       <main className="page-container py-12 max-w-2xl mx-auto">
         <div className="notice-warning rounded-xl p-6 text-center space-y-2">
-          <p className="font-semibold">{!isConnected ? "Vui lòng kết nối ví" : "Chỉ dành cho DRep"}</p>
+          <p className="font-semibold">{!isConnected ? t("governance.new.connectWallet") : t("governance.new.drepOnly")}</p>
           <p className="text-sm text-text-secondary">
-            {!isConnected ? "Bạn cần kết nối ví Cardano." : "Ví của bạn chưa được đăng ký làm DRep."}
+            {!isConnected ? t("governance.new.connectWalletDesc") : t("governance.new.drepOnlyDesc")}
           </p>
         </div>
       </main>
@@ -1292,15 +1298,15 @@ export default function NewGovernanceActionPage({
       <div>
         <div className="flex items-center gap-2 text-xs text-text-muted mb-2">
           <Link href={`/governance-actions${networkParam}`} className="hover:text-accent-light transition-colors">
-            Governance Actions
+            {t("governance.new.breadcrumbParent")}
           </Link>
           <span>/</span>
-          <span>Propose</span>
+          <span>{t("governance.new.breadcrumbCurrent")}</span>
         </div>
-        <h1 className="text-2xl font-bold text-text-primary">Propose Governance Action</h1>
+        <h1 className="text-2xl font-bold text-text-primary">{t("governance.new.pageTitle")}</h1>
         {poll && (
           <p className="text-sm text-text-secondary mt-1">
-            Từ Internal Poll: <span className="text-accent font-medium">"{poll.title}"</span>
+            {t("governance.new.fromPoll", { title: poll.title ?? "" })}
           </p>
         )}
       </div>
@@ -1308,33 +1314,30 @@ export default function NewGovernanceActionPage({
       {/* GA type badge */}
       <div className="flex items-center gap-3 p-4 bg-bg-elevated rounded-xl border border-border-subtle">
         <div className="flex-1">
-          <p className="text-xs text-text-muted uppercase tracking-wider mb-0.5">Loại Governance Action</p>
+          <p className="text-xs text-text-muted uppercase tracking-wider mb-0.5">{t("governance.new.gaTypeLabel")}</p>
           <p className="font-semibold text-text-primary">{gaInfo.label}</p>
-          <p className="text-xs text-text-muted mt-0.5">{gaInfo.desc}</p>
+          <p className="text-xs text-text-muted mt-0.5">{t(`governance.new.gaDesc.${gaType}`)}</p>
         </div>
         <button
           type="button"
           onClick={() => router.back()}
           className="text-xs text-accent-light hover:underline shrink-0"
         >
-          Đổi loại
+          {t("governance.new.changeType")}
         </button>
       </div>
 
       {/* Coming soon notice for unsupported types */}
       {!isTypeSupported && (
         <div className="notice-warning rounded-xl p-4 text-sm">
-          <span className="font-semibold">{gaInfo.label}</span> — Loại này chưa được hỗ trợ submit on-chain.
-          Tính năng sẽ có trong phiên bản tiếp theo.
+          {t("governance.new.unsupportedNotice", { label: gaInfo.label })}
         </div>
       )}
 
       {/* Deposit warning */}
       {isTypeSupported && (
         <div className="notice-warning rounded-xl p-4 text-sm">
-          <span className="font-semibold">Deposit: </span>
-          Ví sẽ bị khóa <span className="font-bold">100,000 ADA</span> khi submit.
-          Số ADA này được hoàn trả về reward address sau khi action hết hiệu lực.
+          {t("governance.new.depositWarning", { amount: "100,000" })}
         </div>
       )}
 
@@ -1342,12 +1345,12 @@ export default function NewGovernanceActionPage({
       <div className="card-static rounded-2xl overflow-hidden">
         <div className="p-5 sm:p-6 space-y-5">
 
-          <SectionDivider label="Content" />
+          <SectionDivider label={t("governance.new.sectionContent")} />
 
           {/* Title */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className={LABEL}>Title <span className="text-danger font-normal normal-case">*</span></label>
+              <label className={LABEL}>{t("governance.new.titleField")} <span className="text-danger font-normal normal-case">*</span></label>
               <span className={`text-xs tabular-nums ${title.length >= 70 ? "text-warning" : "text-text-muted"}`}>
                 {title.length}/80
               </span>
@@ -1358,16 +1361,16 @@ export default function NewGovernanceActionPage({
               onChange={(e) => setTitle(e.target.value)}
               maxLength={80}
               required
-              placeholder="Tiêu đề Governance Action..."
+              placeholder={t("governance.new.titlePlaceholder")}
               className={INPUT}
             />
           </div>
 
           {/* Abstract */}
           <div className="space-y-1.5">
-            <label className={LABEL}>Abstract <span className="text-danger font-normal normal-case">*</span></label>
+            <label className={LABEL}>{t("governance.new.abstractField")} <span className="text-danger font-normal normal-case">*</span></label>
             <RationaleEditor
-              label="" description="" placeholder="Tóm tắt nội dung đề xuất..."
+              label="" description="" placeholder={t("governance.new.abstractPlaceholder")}
               maxLength={2500} height={150}
               value={abstract} onChange={setAbstract}
             />
@@ -1376,10 +1379,10 @@ export default function NewGovernanceActionPage({
           {/* Motivation */}
           <div className="space-y-1.5">
             <label className={LABEL}>
-              Motivation <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+              {t("governance.new.motivationField")} <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">{t("common.optional")}</span>
             </label>
             <RationaleEditor
-              label="" description="" placeholder="Vấn đề nào đề xuất này giải quyết?"
+              label="" description="" placeholder={t("governance.new.motivationPlaceholder")}
               maxLength={15000} height={150}
               value={motivation} onChange={setMotivation}
             />
@@ -1388,10 +1391,10 @@ export default function NewGovernanceActionPage({
           {/* Rationale */}
           <div className="space-y-1.5">
             <label className={LABEL}>
-              Rationale <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+              {t("governance.new.rationaleField")} <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">{t("common.optional")}</span>
             </label>
             <RationaleEditor
-              label="" description="" placeholder="Lập luận và bằng chứng cho đề xuất..."
+              label="" description="" placeholder={t("governance.new.rationalePlaceholder")}
               height={150}
               value={rationale} onChange={setRationale}
             />
@@ -1400,7 +1403,7 @@ export default function NewGovernanceActionPage({
           {/* Type-specific fields */}
           {gaType !== "infoAction" && isTypeSupported && (
             <>
-              <SectionDivider label="On-chain Parameters" />
+              <SectionDivider label={t("governance.new.sectionParams")} />
               <div className="space-y-5">
                 {gaType === "noConfidence" && (
                   <NoConfidenceFields params={typeParams} onChange={patchTypeParams} />
@@ -1435,12 +1438,12 @@ export default function NewGovernanceActionPage({
             </>
           )}
 
-          <SectionDivider label="References" />
+          <SectionDivider label={t("governance.new.sectionReferences")} />
 
           {/* Support links */}
           <div className="space-y-2">
             <label className={LABEL}>
-              Support links <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">Optional</span>
+              {t("governance.new.supportLinks")} <span className="ml-1.5 text-[10px] text-text-muted font-normal normal-case bg-bg-elevated px-1.5 py-0.5 rounded">{t("common.optional")}</span>
             </label>
             <div className="space-y-2">
               {links.map((link, i) => (
@@ -1480,14 +1483,17 @@ export default function NewGovernanceActionPage({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
-              Add Link
+              {t("governance.new.addLink")}
             </button>
           </div>
 
           {/* Metadata standard note */}
           <div className="text-xs text-text-muted bg-bg-elevated rounded-lg px-3 py-2 border border-border-subtle">
-            Metadata sẽ được build theo chuẩn <span className="font-mono text-text-secondary">CIP-108</span> và upload lên IPFS trước khi submit transaction.
-            Hash <span className="font-mono text-text-secondary">blake2b-256</span> sẽ được gắn vào TX để đảm bảo tính toàn vẹn.
+            {t("governance.new.metadataNotePre")}{" "}
+            <span className="font-mono text-text-secondary">CIP-108</span>{" "}
+            {t("governance.new.metadataNotePost")}{" "}
+            <span className="font-mono text-text-secondary">blake2b-256</span>{" "}
+            {t("governance.new.metadataNoteEnd")}
           </div>
         </div>
 
@@ -1499,7 +1505,7 @@ export default function NewGovernanceActionPage({
             disabled={submitting}
             className="px-4 py-2.5 rounded-xl text-sm border border-border-default text-text-secondary hover:border-accent/40 transition-colors disabled:opacity-40"
           >
-            Hủy
+            {t("governance.new.cancel")}
           </button>
 
           <button
@@ -1511,10 +1517,10 @@ export default function NewGovernanceActionPage({
             {submitting ? (
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                {statusLabel || "Đang xử lý..."}
+                {statusLabel || t("governance.new.processing")}
               </>
             ) : (
-              "Submit Governance Action"
+              t("governance.new.submitBtn")
             )}
           </button>
         </div>
@@ -1546,7 +1552,7 @@ export default function NewGovernanceActionPage({
                     setCopied(true)
                     setTimeout(() => setCopied(false), 2000)
                   }}
-                  title="Copy TX Hash"
+                  title={t("governance.new.copyTxHash")}
                   className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-accent-light hover:bg-accent/10 transition-colors"
                 >
                   {copied ? (
@@ -1567,7 +1573,7 @@ export default function NewGovernanceActionPage({
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs text-accent-light hover:underline"
               >
-                Xem trên Cardanoscan
+                {t("governance.new.viewOnCardanoscan")}
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                   <polyline points="15 3 21 3 21 9"/>

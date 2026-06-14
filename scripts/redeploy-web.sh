@@ -20,12 +20,15 @@ PORT="${PORT:-3000}"
 LOG="$ROOT/apps/web/.next-start.log"
 
 echo "▶ [1/4] Dừng web server cũ trên :$PORT (nếu có)…"
-pkill -f "next start" 2>/dev/null || true
-# Dọn process còn giữ port
-if command -v lsof >/dev/null 2>&1; then
-  lsof -ti:"$PORT" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+# Dùng ss để tìm pid giữ port (lsof không hoạt động ổn trên máy này)
+PORT_PID=$(ss -tlnp "sport = :$PORT" 2>/dev/null | awk 'NR>1 {match($0,/pid=([0-9]+)/,a); if(a[1]) print a[1]}' | head -1)
+if [ -n "$PORT_PID" ]; then
+  echo "   Kill pid $PORT_PID (giữ :$PORT)…"
+  kill -9 "$PORT_PID" 2>/dev/null || true
 fi
-sleep 1
+# Fallback: fuser nếu ss không tìm được
+fuser -k "${PORT}/tcp" 2>/dev/null || true
+sleep 2
 
 echo "▶ [2/4] Build production (NEXT_PUBLIC_* được inline lúc này)…"
 pnpm --filter web build
