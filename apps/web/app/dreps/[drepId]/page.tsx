@@ -476,6 +476,7 @@ export default function DRepProfilePage({
 }) {
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
+  const delegatedDrep = useWalletStore((s) => s.delegatedDrep)
   const router = useRouter()
   const { drepKey, reauthenticate } = useWallet()
   const { submitTx } = useTx()
@@ -579,13 +580,16 @@ export default function DRepProfilePage({
   const displayName = profile.givenName ?? profile.name ?? shortDrepId(profile.id)
   const hasAbout = profile.objectives || profile.motivations || profile.qualifications || isLoadingMeta
   const isOwner = !!drepKey?.dRepIDCip105 && drepKey.dRepIDCip105 === profile.id
+  const alreadyDelegatedToThis = delegatedDrep?.id === profile.id
   const networkParam = network !== "mainnet" ? `?network=${network}` : ""
 
   // Determine CTA button layout
   // isOwner: hide delegate, show community button (full width)
-  // !isOwner + active community: [Delegate] [Your Community] side by side
-  // !isOwner + no community: [Delegate] full width
-  const showDelegateBtn = !isOwner
+  // alreadyDelegatedToThis + active community: show "Your DRep Community" (full width, primary)
+  // alreadyDelegatedToThis + no community: hide all buttons
+  // !isOwner + !delegated + active community: [Delegate] [Your Community] side by side
+  // !isOwner + !delegated + no community: [Delegate] full width
+  const showDelegateBtn = !isOwner && !alreadyDelegatedToThis
 
   return (
     <div className="page-container space-y-6 animate-fade-in">
@@ -702,7 +706,7 @@ export default function DRepProfilePage({
           ) : isActive ? (
             <Link
               href={`/dreps/${profile.id}/community${networkParam}`}
-              className={`${isOwner ? "btn-primary" : "btn-outline"} flex-1 text-sm text-center`}
+              className={`${isOwner || alreadyDelegatedToThis ? "btn-primary" : "btn-outline"} flex-1 text-sm text-center`}
             >
               {t("drepDetail.communityBtn")}
             </Link>
