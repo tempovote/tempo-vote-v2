@@ -248,23 +248,37 @@ export default function Navbar() {
             {/* Wallet button — 3 states: connected / hydrating / disconnected */}
             {isConnected && changeAddress ? (
               <div className="flex items-center gap-1.5">
-                <button
-                  className="wallet-connected-btn"
-                  onClick={openModal}
-                  title={changeAddress}
-                  id="wallet-connected-btn"
-                >
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                {/* Mobile: avatar circle only */}
+                <div className="sm:hidden">
+                  <button
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-accent/30 hover:ring-accent/60 transition-all"
                     style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                    onClick={openModal}
+                    title={changeAddress}
                   >
                     {name ? name[0]?.toUpperCase() : "W"}
-                  </div>
-                  <span className="font-mono">{truncate(changeAddress)}</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-muted">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
+                  </button>
+                </div>
+                {/* Desktop: full button with address */}
+                <div className="hidden sm:block">
+                  <button
+                    className="wallet-connected-btn"
+                    onClick={openModal}
+                    title={changeAddress}
+                    id="wallet-connected-btn"
+                  >
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                      style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                    >
+                      {name ? name[0]?.toUpperCase() : "W"}
+                    </div>
+                    <span className="font-mono">{truncate(changeAddress)}</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-muted">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </button>
+                </div>
                 <button
                   onClick={handleDisconnect}
                   className="w-8 h-8 flex items-center justify-center rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors shrink-0"
@@ -279,21 +293,52 @@ export default function Navbar() {
                 </button>
               </div>
             ) : isWalletHydrating ? (
-              <div className="btn-primary text-sm px-4 py-1.5 opacity-70 flex items-center gap-2 cursor-default pointer-events-none select-none">
-                <svg className="w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                {t("wallet.connecting")}
-              </div>
+              <>
+                {/* Mobile: spinner icon only */}
+                <div className="sm:hidden w-8 h-8 flex items-center justify-center rounded-lg bg-accent/10 text-accent-light cursor-default pointer-events-none">
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                </div>
+                {/* Desktop: full spinner button */}
+                <div className="hidden sm:block">
+                  <div className="btn-primary text-sm px-4 py-1.5 opacity-70 cursor-default pointer-events-none select-none">
+                    <svg className="w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    {t("wallet.connecting")}
+                  </div>
+                </div>
+              </>
             ) : (
-              <button
-                className="btn-primary text-sm px-4 py-1.5"
-                onClick={openModal}
-                id="wallet-connect-btn"
-              >
-                {t("wallet.connect")}
-              </button>
+              <>
+                {/* Mobile: wallet icon button */}
+                <div className="sm:hidden">
+                  <button
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-accent/15 text-accent-light hover:bg-accent/25 transition-colors border border-accent/30"
+                    onClick={openModal}
+                    aria-label={t("wallet.connect")}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/>
+                      <path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/>
+                      <path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>
+                    </svg>
+                  </button>
+                </div>
+                {/* Desktop: full text button */}
+                <div className="hidden sm:block">
+                  <button
+                    className="btn-primary text-sm px-4 py-1.5"
+                    onClick={openModal}
+                    id="wallet-connect-btn"
+                  >
+                    {t("wallet.connect")}
+                  </button>
+                </div>
+              </>
             )}
 
             {/* Mobile menu button */}
@@ -422,6 +467,44 @@ export default function Navbar() {
                     </svg>
                     {t("wallet.lockedShort")}
                   </span>
+                )}
+              </div>
+
+              {/* Wallet in mobile menu */}
+              <div className="px-3 py-2 border-t border-border-subtle mt-1 pt-3">
+                {isConnected && changeAddress ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => { setMobileOpen(false); openWalletModal() }}
+                      className="wallet-connected-btn flex-1"
+                    >
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                        style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                      >
+                        {name ? name[0]?.toUpperCase() : "W"}
+                      </div>
+                      <span className="font-mono text-sm">{truncate(changeAddress, 8)}</span>
+                    </button>
+                    <button
+                      onClick={() => { setMobileOpen(false); handleDisconnect() }}
+                      className="w-9 h-9 flex items-center justify-center rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors shrink-0"
+                      aria-label={t("wallet.disconnect")}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="btn-primary w-full text-sm py-2"
+                    onClick={() => { setMobileOpen(false); openWalletModal() }}
+                  >
+                    {t("wallet.connect")}
+                  </button>
                 )}
               </div>
 
