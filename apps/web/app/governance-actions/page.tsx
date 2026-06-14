@@ -8,25 +8,22 @@ import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
 import { govActionIdToBech32 } from "@/lib/governance"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
+import { useT } from "@/i18n/useT"
 
-const STATUS_TABS = [
-  { label: "Active",          value: "active"   },
-  { label: "Ratified",        value: "ratified" },
-  { label: "Enacted",         value: "enacted"  },
-  { label: "Expired",         value: "expired"  },
-]
+const STATUS_TABS = ["active", "ratified", "enacted", "expired"]
 
 const TYPE_CHIPS = [
-  { label: "Treasury",          value: "treasuryWithdrawals"      },
-  { label: "Protocol Params",   value: "protocolParametersUpdate" },
-  { label: "Hard Fork",         value: "hardForkInitiation"       },
-  { label: "Info",              value: "infoAction"               },
-  { label: "No Confidence",     value: "noConfidence"             },
-  { label: "Update Committee",  value: "updateCommittee"          },
-  { label: "New Constitution",  value: "newConstitution"          },
+  "treasuryWithdrawals",
+  "protocolParametersUpdate",
+  "hardForkInitiation",
+  "infoAction",
+  "noConfidence",
+  "updateCommittee",
+  "newConstitution",
 ]
 
 export default function GovernanceActionsPage() {
+  const t = useT()
   const network = useWalletStore((s) => s.selectedNetwork)
   const { drepKey } = useWallet()
 
@@ -67,7 +64,7 @@ export default function GovernanceActionsPage() {
     <div className="page-container space-y-6">
       {/* Header */}
       <h1 className="text-2xl font-bold text-center animate-fade-in">
-        Governance Actions
+        {t("governance.list.title")}
       </h1>
 
       {/* Search bar */}
@@ -88,7 +85,7 @@ export default function GovernanceActionsPage() {
           </svg>
           <input
             type="text"
-            placeholder="Tìm theo tên, txHash hoặc gov_action1…"
+            placeholder={t("governance.list.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input pl-10 w-full"
@@ -100,17 +97,17 @@ export default function GovernanceActionsPage() {
       <div className="space-y-2.5 animate-fade-in">
         {/* Status tabs — badge chip style */}
         <div className="flex items-center gap-3">
-          <span className="text-xs text-text-muted whitespace-nowrap">Trạng thái</span>
+          <span className="text-xs text-text-muted whitespace-nowrap">{t("governance.list.statusLabel")}</span>
           <div className="flex gap-2">
-            {STATUS_TABS.map((tab) => (
+            {STATUS_TABS.map((value) => (
               <button
-                key={tab.value}
-                onClick={() => setStatusFilter(tab.value)}
-                className={`badge badge-${tab.value} transition-opacity ${
-                  statusFilter === tab.value ? "opacity-100" : "opacity-40 hover:opacity-70"
+                key={value}
+                onClick={() => setStatusFilter(value)}
+                className={`badge badge-${value} transition-opacity ${
+                  statusFilter === value ? "opacity-100" : "opacity-40 hover:opacity-70"
                 }`}
               >
-                {tab.label}
+                {t(`common.status.${value}`)}
               </button>
             ))}
           </div>
@@ -118,22 +115,22 @@ export default function GovernanceActionsPage() {
 
         {/* Type chips — scrollable, single-select toggle */}
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs text-text-muted whitespace-nowrap shrink-0">Loại GA</span>
+          <span className="text-xs text-text-muted whitespace-nowrap shrink-0">{t("governance.list.typeLabel")}</span>
           <div
             className="flex gap-2 overflow-x-auto min-w-0"
             style={{ scrollbarWidth: "none" }}
           >
-            {TYPE_CHIPS.map((chip) => (
+            {TYPE_CHIPS.map((value) => (
               <button
-                key={chip.value}
-                onClick={() => setTypeFilter((f) => (f === chip.value ? null : chip.value))}
+                key={value}
+                onClick={() => setTypeFilter((f) => (f === value ? null : value))}
                 className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap shrink-0 ${
-                  typeFilter === chip.value
+                  typeFilter === value
                     ? "bg-accent text-white border-accent"
                     : "bg-bg-card text-text-secondary border-border-subtle hover:text-text-primary hover:border-border-default"
                 }`}
               >
-                {chip.label}
+                {t(`governance.typeChip.${value}`)}
               </button>
             ))}
           </div>
@@ -143,12 +140,11 @@ export default function GovernanceActionsPage() {
       {/* Propose action CTA */}
       <div className="card-accent space-y-3 animate-slide-up">
         <h3 className="text-base font-bold text-accent-light">
-          Đề xuất Governance Action
+          {t("governance.list.proposeTitle")}
         </h3>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <p className="text-sm text-text-secondary">
-            Tạo poll trong cộng đồng DRep trước để lấy ý kiến và xây dựng sự ủng hộ.
-            Khi đã có đủ sự đồng thuận, bạn có thể gửi lên chain như một Governance Action.
+            {t("governance.list.proposeDesc")}
           </p>
           <Link
             href={
@@ -162,7 +158,7 @@ export default function GovernanceActionsPage() {
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Internal Poll
+            {t("governance.list.internalPoll")}
           </Link>
         </div>
       </div>
@@ -179,7 +175,7 @@ export default function GovernanceActionsPage() {
       {/* Error state */}
       {!isLoading && error && (
         <div className="notice-warning rounded-xl p-4 space-y-1">
-          <p className="font-medium">Không thể tải danh sách governance actions</p>
+          <p className="font-medium">{t("governance.list.loadError")}</p>
           <p className="text-xs text-text-muted">{error}</p>
         </div>
       )}
@@ -188,13 +184,13 @@ export default function GovernanceActionsPage() {
       {!isLoading && !error && visible.length === 0 && (
         <div className="text-center py-16 text-text-muted space-y-2">
           <p className="text-4xl">📭</p>
-          <p className="font-medium">Không có governance actions phù hợp</p>
+          <p className="font-medium">{t("governance.list.empty")}</p>
           {(typeFilter || search) && (
             <button
               className="text-sm text-accent-light underline"
               onClick={() => { setTypeFilter(null); setSearch("") }}
             >
-              Xoá bộ lọc
+              {t("governance.list.clearFilters")}
             </button>
           )}
         </div>

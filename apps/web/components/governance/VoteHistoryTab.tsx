@@ -8,6 +8,7 @@ import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useRationale } from "@/hooks/useRationale"
 import type { RationaleContent } from "@/hooks/useRationale"
 import { marked } from "marked"
+import { useT } from "@/i18n/useT"
 
 type RoleTab = "drep" | "cc" | "spo"
 
@@ -60,6 +61,7 @@ function RationaleModal({
   vote: string
   onClose: () => void
 }) {
+  const t = useT()
   const { state, load } = useRationale(rationaleUrl)
 
   // kick off fetch when modal mounts
@@ -86,7 +88,7 @@ function RationaleModal({
             <div className="flex items-center gap-2 mb-0.5">
               <span className={`text-xs font-bold ${voteCls}`}>{voteLabel}</span>
               <span className="text-xs text-text-muted">·</span>
-              <span className="text-xs text-text-muted">Rationale</span>
+              <span className="text-xs text-text-muted">{t("governance.voteHistory.rationale")}</span>
             </div>
             {voterName && (
               <p className="text-sm font-medium text-text-primary truncate">{voterName}</p>
@@ -115,14 +117,14 @@ function RationaleModal({
 
           {state.status === "error" && (
             <p className="text-sm text-text-muted text-center py-4">
-              Không tải được nội dung rationale.{" "}
+              {t("governance.voteHistory.loadError")}{" "}
               <a
                 href={rationaleUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-accent underline"
               >
-                Mở trực tiếp
+                {t("governance.voteHistory.openDirect")}
               </a>
             </p>
           )}
@@ -150,6 +152,7 @@ function MarkdownSection({ label, text }: { label: string; text: string }) {
 }
 
 function RationaleBody({ content, rationaleUrl }: { content: RationaleContent; rationaleUrl: string }) {
+  const t = useT()
   const hasContent =
     content.title || content.comment ||
     content.summary || content.rationaleStatement
@@ -157,14 +160,14 @@ function RationaleBody({ content, rationaleUrl }: { content: RationaleContent; r
   if (!hasContent) {
     return (
       <p className="text-sm text-text-muted text-center py-4">
-        Không có nội dung text.{" "}
+        {t("governance.voteHistory.noTextContent")}{" "}
         <a
           href={rationaleUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="text-accent underline"
         >
-          Xem tài liệu gốc
+          {t("governance.voteHistory.viewOriginal")}
         </a>
       </p>
     )
@@ -175,7 +178,7 @@ function RationaleBody({ content, rationaleUrl }: { content: RationaleContent; r
       {/* CIP-100 title */}
       {content.title && (
         <div>
-          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">Tiêu đề</h4>
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">{t("governance.voteHistory.title")}</h4>
           <p className="text-sm text-text-primary">{content.title}</p>
         </div>
       )}
@@ -189,48 +192,48 @@ function RationaleBody({ content, rationaleUrl }: { content: RationaleContent; r
 
       {/* CIP-100 comment */}
       {content.comment && (
-        <MarkdownSection label={content.title ? "Nội dung" : ""} text={content.comment} />
+        <MarkdownSection label={content.title ? t("governance.voteHistory.content") : ""} text={content.comment} />
       )}
 
       {/* CIP-136 main rationale text */}
       {content.rationaleStatement && (
-        <MarkdownSection label="Lý luận" text={content.rationaleStatement} />
+        <MarkdownSection label={t("governance.voteHistory.reasoning")} text={content.rationaleStatement} />
       )}
 
       {/* CIP-136 optional sections */}
       {content.precedentDiscussion && (
-        <MarkdownSection label="Tiền lệ" text={content.precedentDiscussion} />
+        <MarkdownSection label={t("governance.voteHistory.precedent")} text={content.precedentDiscussion} />
       )}
       {content.counterargumentDiscussion && (
-        <MarkdownSection label="Phản biện" text={content.counterargumentDiscussion} />
+        <MarkdownSection label={t("governance.voteHistory.counterargument")} text={content.counterargumentDiscussion} />
       )}
       {content.conclusion && (
-        <MarkdownSection label="Kết luận" text={content.conclusion} />
+        <MarkdownSection label={t("governance.voteHistory.conclusion")} text={content.conclusion} />
       )}
 
       {/* CIP-136 internal CC vote breakdown */}
       {content.internalVote && (
         <div>
-          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Phiếu nội bộ</h4>
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">{t("governance.voteHistory.internalVote")}</h4>
           <div className="flex flex-wrap gap-3 text-xs">
             {content.internalVote.constitutional != null && (
               <span className="px-2 py-1 rounded bg-vote-bar-yes/20 text-vote-bar-yes font-medium">
-                Hợp hiến: {content.internalVote.constitutional}
+                {t("governance.voteHistory.constitutional")}: {content.internalVote.constitutional}
               </span>
             )}
             {content.internalVote.unconstitutional != null && (
               <span className="px-2 py-1 rounded bg-vote-bar-no/20 text-vote-bar-no font-medium">
-                Bất hợp hiến: {content.internalVote.unconstitutional}
+                {t("governance.voteHistory.unconstitutional")}: {content.internalVote.unconstitutional}
               </span>
             )}
             {content.internalVote.abstain != null && (
               <span className="px-2 py-1 rounded bg-bg-primary text-text-muted font-medium border border-border">
-                Kiêng: {content.internalVote.abstain}
+                {t("governance.voteHistory.abstainCount")}: {content.internalVote.abstain}
               </span>
             )}
             {content.internalVote.didNotVote != null && (
               <span className="px-2 py-1 rounded bg-bg-primary text-text-muted font-medium border border-border">
-                Không bỏ phiếu: {content.internalVote.didNotVote}
+                {t("governance.voteHistory.didNotVote")}: {content.internalVote.didNotVote}
               </span>
             )}
           </div>
@@ -239,7 +242,7 @@ function RationaleBody({ content, rationaleUrl }: { content: RationaleContent; r
 
       {content.references && content.references.length > 0 && (
         <div>
-          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1.5">Tài liệu tham chiếu</h4>
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1.5">{t("governance.voteHistory.referencesTitle")}</h4>
           <ul className="space-y-1">
             {content.references.map((ref, i) => (
               <li key={i} className="text-xs">
@@ -275,13 +278,14 @@ function RationaleButton({
   vote: string
   voterName?: string
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title="Xem Rationale"
+        title={t("governance.voteHistory.viewRationale")}
         className="shrink-0 text-text-muted hover:text-accent transition-colors"
       >
         {/* chat bubble icon */}
@@ -317,11 +321,12 @@ function VoteTable({
   namesMap: ReadonlyMap<string, string>
   hideHeader?: boolean
 }) {
+  const t = useT()
   const filtered = votes
     .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
     .sort((a, b) => b.votingPower - a.votingPower)
 
-  const emptyLabel = side === "yes" ? "Không có YES" : "Không có NO / ABSTAIN"
+  const emptyLabel = side === "yes" ? t("governance.voteHistory.emptyYes") : t("governance.voteHistory.emptyNoAbstain")
 
   return (
     <div className="flex-1 min-w-0">
@@ -348,8 +353,8 @@ function VoteTable({
         <div>
           {/* Table header */}
           <div className="grid grid-cols-[1fr_auto] gap-2 pb-1.5 text-[11px] text-text-muted font-medium">
-            <span>ID</span>
-            <span className="text-right">VP / Vote</span>
+            <span>{t("governance.voteHistory.idCol")}</span>
+            <span className="text-right">{t("governance.voteHistory.vpCol")}</span>
           </div>
           {/* Scrollable rows — max ~50 visible (desktop only) */}
           <div className="divide-y divide-border-subtle pr-1 scrollbar-thin sm:overflow-y-auto sm:max-h-[500px]">
@@ -410,6 +415,7 @@ function VoteTable({
 type MobileVoteFilter = "yes" | "no" | "abstain"
 
 export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
+  const t = useT()
   const [role, setRole] = useState<RoleTab>("drep")
   const [mobileFilter, setMobileFilter] = useState<MobileVoteFilter>("yes")
 
@@ -462,7 +468,7 @@ export function VoteHistoryTab({ votes }: { votes: VoteEntry[] }) {
 
       {roleVotes.length === 0 ? (
         <p className="text-sm text-text-muted py-4 text-center">
-          Chưa có phiếu nào từ {ROLE_LABELS[role]}
+          {t("governance.voteHistory.empty", { role: ROLE_LABELS[role] })}
         </p>
       ) : (
         <>

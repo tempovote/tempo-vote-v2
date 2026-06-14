@@ -86,23 +86,52 @@ export function computeSPOVotePercent(votes: SPOVoteStats): {
   return computeVotePercent(votes as unknown as VoteCounts)
 }
 
-export function getActionTypeLabel(actionType: string): string {
-  const map: Record<string, string> = {
+// Canonical action-type keys used for i18n dict lookup (governance.type.<key>).
+export type ActionTypeKey =
+  | "info"
+  | "treasuryWithdrawals"
+  | "protocolParametersUpdate"
+  | "hardForkInitiation"
+  | "noConfidence"
+  | "updateCommittee"
+  | "newConstitution"
+
+/**
+ * Normalize any raw action-type string (our canonical names or raw Ogmios
+ * strings) to a stable key. Use with i18n: t(`governance.type.${key}`).
+ */
+export function normalizeActionType(actionType: string): ActionTypeKey | string {
+  const map: Record<string, ActionTypeKey> = {
     // canonical names (from our code / CIP)
-    infoAction:               "Info",
+    infoAction:               "info",
+    treasuryWithdrawals:      "treasuryWithdrawals",
+    protocolParametersUpdate: "protocolParametersUpdate",
+    hardForkInitiation:       "hardForkInitiation",
+    noConfidence:             "noConfidence",
+    updateCommittee:          "updateCommittee",
+    newConstitution:          "newConstitution",
+    // raw Ogmios display strings
+    information:              "info",
+    treasuryWithdrawal:       "treasuryWithdrawals",
+    protocolParameterUpdate:  "protocolParametersUpdate",
+    hardFork:                 "hardForkInitiation",
+  }
+  return map[actionType] ?? actionType
+}
+
+/** English fallback label (non-React contexts). UI should prefer i18n via normalizeActionType. */
+export function getActionTypeLabel(actionType: string): string {
+  const labels: Record<ActionTypeKey, string> = {
+    info:                     "Info",
     treasuryWithdrawals:      "Treasury Withdrawals",
     protocolParametersUpdate: "Protocol Parameter Change",
     hardForkInitiation:       "Hard Fork Initiation",
     noConfidence:             "No Confidence",
     updateCommittee:          "Update Committee",
     newConstitution:          "New Constitution",
-    // raw Ogmios display strings
-    information:              "Info",
-    treasuryWithdrawal:       "Treasury Withdrawals",
-    protocolParameterUpdate:  "Protocol Parameter Change",
-    hardFork:                 "Hard Fork Initiation",
   }
-  return map[actionType] ?? actionType
+  const key = normalizeActionType(actionType)
+  return (labels as Record<string, string>)[key] ?? actionType
 }
 
 function buildIpfsGateways(): string[] {

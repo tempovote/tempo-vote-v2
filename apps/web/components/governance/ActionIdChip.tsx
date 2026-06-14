@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react"
 import { govActionIdToBech32 } from "@/lib/governance"
 import { copyToClipboard } from "@/lib/clipboard"
+import { useT } from "@/i18n/useT"
 
 interface Props {
   txHash: string
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function ActionIdChip({ txHash, index, size = "sm" }: Props) {
+  const t = useT()
   const [mode, setMode] = useState<"hex" | "bech32">("hex")
   const [copied, setCopied] = useState(false)
 
@@ -73,7 +75,7 @@ export function ActionIdChip({ txHash, index, size = "sm" }: Props) {
       {/* Copy button */}
       <button
         onClick={copy}
-        title={`Copy ${mode} ID`}
+        title={t("governance.card.copyId", { mode })}
         className="text-text-muted hover:text-accent-light transition-colors shrink-0"
       >
         {copied ? (

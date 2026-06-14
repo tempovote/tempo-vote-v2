@@ -1,5 +1,8 @@
+"use client"
+
 import type { GovernanceAction, VoteCounts, SPOVoteStats } from "@tempo/types"
 import { computeDRepVotePercent, computeVotePercent, computeSPOVotePercent, lovelaceToAda, VOTE_THRESHOLDS } from "@/lib/governance"
+import { useT } from "@/i18n/useT"
 
 interface Props {
   action: GovernanceAction
@@ -79,6 +82,7 @@ interface DRepVoteRowProps {
 }
 
 function DRepVoteRow({ votes, yesPercent, noPercent, notVotedPercent, yesPower, noPower, threshold }: DRepVoteRowProps) {
+  const t = useT()
   const hasPower = votes.totalActiveDRepStake > 0
   const showLabelInBar = yesPercent > 12
 
@@ -137,31 +141,31 @@ function DRepVoteRow({ votes, yesPercent, noPercent, notVotedPercent, yesPower, 
         {hasPower ? (
           <>
             <div>
-              <span className="text-success font-medium">{yesPercent}% Yes</span>
+              <span className="text-success font-medium">{yesPercent}% {t("governance.vote.yes")}</span>
               <span className="text-text-muted"> · {lovelaceToAda(yesPower)} ₳</span>
               <span className="mx-1.5 text-text-muted/50">·</span>
-              <span className="text-danger font-medium">{noPercent}% No</span>
+              <span className="text-danger font-medium">{noPercent}% {t("governance.vote.no")}</span>
               <span className="text-text-muted"> · {lovelaceToAda(noPower)} ₳</span>
               {notVotedPercent > 0 && (
                 <>
                   <span className="mx-1.5 text-text-muted/50">·</span>
-                  <span>{notVotedPercent}% chưa bỏ phiếu</span>
+                  <span>{notVotedPercent}% {t("governance.vote.notVoted")}</span>
                 </>
               )}
             </div>
             {(votes.abstainVotingPower > 0 || votes.autoAbstainStake > 0) && (
               <div className="text-text-muted/70">
-                Abstain: {lovelaceToAda(votes.abstainVotingPower + votes.autoAbstainStake)} ₳
-                {votes.autoAbstainStake > 0 && ` (bao gồm ${lovelaceToAda(votes.autoAbstainStake)} ₳ auto-abstain)`}
+                {t("governance.vote.abstainAmount", { amount: lovelaceToAda(votes.abstainVotingPower + votes.autoAbstainStake) })}
+                {votes.autoAbstainStake > 0 && t("governance.vote.autoAbstainIncluded", { amount: lovelaceToAda(votes.autoAbstainStake) })}
               </div>
             )}
           </>
         ) : (
           <div>
-            <span className="text-success">{votes.yes} Yes</span>
+            <span className="text-success">{votes.yes} {t("governance.vote.yes")}</span>
             {" · "}
-            <span className="text-danger">{votes.no} No</span>
-            {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
+            <span className="text-danger">{votes.no} {t("governance.vote.no")}</span>
+            {votes.abstain > 0 && ` · ${votes.abstain} ${t("governance.vote.abstain")}`}
           </div>
         )}
       </div>
@@ -179,6 +183,7 @@ interface SPOVoteRowProps {
 }
 
 function SPOVoteRow({ votes, yesPercent, noPercent, threshold }: SPOVoteRowProps) {
+  const t = useT()
   const hasPower = votes.totalVotingPower > 0
   const showLabelInBar = yesPercent > 12
 
@@ -223,25 +228,25 @@ function SPOVoteRow({ votes, yesPercent, noPercent, threshold }: SPOVoteRowProps
         {hasPower ? (
           <>
             <div>
-              <span className="text-success font-medium">{yesPercent}% Yes</span>
+              <span className="text-success font-medium">{yesPercent}% {t("governance.vote.yes")}</span>
               <span className="text-text-muted"> · {lovelaceToAda(votes.yesVotingPower)} ₳</span>
               <span className="mx-1.5 text-text-muted/50">·</span>
-              <span className="text-danger font-medium">{noPercent}% No</span>
+              <span className="text-danger font-medium">{noPercent}% {t("governance.vote.no")}</span>
               <span className="text-text-muted"> · {lovelaceToAda(votes.noVotingPower)} ₳</span>
             </div>
             {votes.abstainVotingPower > 0 && (
               <div className="text-text-muted/70">
-                Abstain: {lovelaceToAda(votes.abstainVotingPower)} ₳
+                {t("governance.vote.abstainAmount", { amount: lovelaceToAda(votes.abstainVotingPower) })}
               </div>
             )}
           </>
         ) : (
           <div>
-            <span className="text-success">{votes.yes} Yes ({yesPercent}%)</span>
+            <span className="text-success">{votes.yes} {t("governance.vote.yes")} ({yesPercent}%)</span>
             {" · "}
-            <span className="text-danger">{votes.no} No</span>
-            {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
-            {votes.yes + votes.no + votes.abstain > 0 && ` · ${votes.yes + votes.no + votes.abstain} tổng`}
+            <span className="text-danger">{votes.no} {t("governance.vote.no")}</span>
+            {votes.abstain > 0 && ` · ${votes.abstain} ${t("governance.vote.abstain")}`}
+            {votes.yes + votes.no + votes.abstain > 0 && ` · ${votes.yes + votes.no + votes.abstain} ${t("governance.vote.total")}`}
           </div>
         )}
       </div>
@@ -265,6 +270,7 @@ export function VoteRow({ label, votes, yesPercent, noPercent, notVotedPercent, 
 }
 
 function SimpleVoteRow({ label, votes, yesPercent, noPercent, notVotedPercent, threshold }: SimpleVoteRowProps) {
+  const t = useT()
   const hasActiveMembers = votes.activeMembers > 0
   const showLabelInBar = yesPercent > 20
 
@@ -318,21 +324,21 @@ function SimpleVoteRow({ label, votes, yesPercent, noPercent, notVotedPercent, t
       <div className="pl-[52px] text-xs text-text-muted">
         {hasActiveMembers ? (
           <>
-            <span className="text-success font-medium">{votes.yes}/{votes.activeMembers} Yes ({yesPercent}%)</span>
+            <span className="text-success font-medium">{votes.yes}/{votes.activeMembers} {t("governance.vote.yes")} ({yesPercent}%)</span>
             {" · "}
-            <span className="text-danger">{votes.no} No</span>
-            {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
+            <span className="text-danger">{votes.no} {t("governance.vote.no")}</span>
+            {votes.abstain > 0 && ` · ${votes.abstain} ${t("governance.vote.abstain")}`}
             {notVotedPercent > 0 && (
-              <span className="text-text-muted/70"> · {votes.activeMembers - votes.yes - votes.no - votes.abstain} chưa bỏ phiếu</span>
+              <span className="text-text-muted/70"> · {votes.activeMembers - votes.yes - votes.no - votes.abstain} {t("governance.vote.notVoted")}</span>
             )}
           </>
         ) : (
           <>
-            <span className="text-success">{votes.yes} Yes ({yesPercent}%)</span>
+            <span className="text-success">{votes.yes} {t("governance.vote.yes")} ({yesPercent}%)</span>
             {" · "}
-            <span className="text-danger">{votes.no} No</span>
-            {votes.abstain > 0 && ` · ${votes.abstain} Abstain`}
-            {votes.yes + votes.no + votes.abstain > 0 && ` · ${votes.yes + votes.no + votes.abstain} tổng`}
+            <span className="text-danger">{votes.no} {t("governance.vote.no")}</span>
+            {votes.abstain > 0 && ` · ${votes.abstain} ${t("governance.vote.abstain")}`}
+            {votes.yes + votes.no + votes.abstain > 0 && ` · ${votes.yes + votes.no + votes.abstain} ${t("governance.vote.total")}`}
           </>
         )}
       </div>

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic"
 import { useState } from "react"
 import "@uiw/react-md-editor/markdown-editor.css"
+import { useT } from "@/i18n/useT"
 
 const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false })
 
@@ -19,22 +20,25 @@ interface Props {
 
 type PreviewMode = "edit" | "live" | "preview"
 
-const MODES: { value: PreviewMode; label: string }[] = [
-  { value: "edit",    label: "Nhập" },
-  { value: "live",    label: "Split" },
-  { value: "preview", label: "Xem trước" },
-]
-
 export function RationaleEditor({
   value,
   onChange,
-  label = "Lý do bỏ phiếu",
-  description = "Rationale sẽ được lưu trên IPFS và gắn vào giao dịch vote.",
-  placeholder = "Nhập lý do bỏ phiếu của bạn...",
+  label: labelProp,
+  description: descriptionProp,
+  placeholder: placeholderProp,
   maxLength,
   height = 220,
   optional = false,
 }: Props) {
+  const t = useT()
+  const label = labelProp ?? t("governance.rationaleEditor.label")
+  const description = descriptionProp ?? t("governance.rationaleEditor.description")
+  const placeholder = placeholderProp ?? t("governance.rationaleEditor.placeholder")
+  const MODES: { value: PreviewMode; label: string }[] = [
+    { value: "edit",    label: t("governance.rationaleEditor.modeEdit") },
+    { value: "live",    label: t("governance.rationaleEditor.modeSplit") },
+    { value: "preview", label: t("governance.rationaleEditor.modePreview") },
+  ]
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit")
   const isLimited = maxLength !== undefined
   const remaining = isLimited ? maxLength - value.length : null
@@ -49,7 +53,7 @@ export function RationaleEditor({
             {label}
             {optional && (
               <span className="ml-1.5 text-xs text-text-muted font-normal bg-bg-elevated px-1.5 py-0.5 rounded">
-                Optional
+                {t("common.optional")}
               </span>
             )}
           </label>
@@ -104,11 +108,11 @@ export function RationaleEditor({
         )}
         {isLimited ? (
           <span className={isOver ? "text-danger font-medium" : "text-text-muted"}>
-            {remaining!.toLocaleString()} ký tự còn lại
+            {t("governance.rationaleEditor.charsRemaining", { n: remaining!.toLocaleString() })}
           </span>
         ) : (
           <span className="text-text-muted">
-            {value.length.toLocaleString()} ký tự
+            {t("governance.rationaleEditor.charCount", { n: value.length.toLocaleString() })}
           </span>
         )}
       </div>
