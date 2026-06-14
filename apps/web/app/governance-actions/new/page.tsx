@@ -245,7 +245,7 @@ function HardForkFields({ params, onChange }: { params: TypeParams; onChange: (p
         <p className="text-xs text-text-muted">{t("governance.new.hardFork.versionDesc")}</p>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 flex-1">
-            <span className="text-xs text-text-muted w-12 shrink-0">Major</span>
+            <span className="text-xs text-text-muted w-12 shrink-0">{t("governance.new.hardFork.major")}</span>
             <input
               type="number"
               min={0}
@@ -258,7 +258,7 @@ function HardForkFields({ params, onChange }: { params: TypeParams; onChange: (p
           </div>
           <span className="text-text-muted text-lg font-light">.</span>
           <div className="flex items-center gap-2 flex-1">
-            <span className="text-xs text-text-muted w-12 shrink-0">Minor</span>
+            <span className="text-xs text-text-muted w-12 shrink-0">{t("governance.new.hardFork.minor")}</span>
             <input
               type="number"
               min={0}
@@ -375,7 +375,7 @@ function TreasuryWithdrawalFields({
                 type="text"
                 value={row.stakeAddress}
                 onChange={(e) => patchRow(i, { stakeAddress: e.target.value })}
-                placeholder={`Stake address (${stakeHint})`}
+                placeholder={t("governance.new.treasury.stakeAddressPlaceholder", { hint: stakeHint })}
                 className={INPUT_SM + " flex-1 min-w-0 font-mono text-xs"}
               />
               <div className="relative shrink-0 w-44">
@@ -480,7 +480,7 @@ function UpdateCommitteeFields({
                   next[i] = e.target.value
                   onRemoveChange(next)
                 }}
-                placeholder="cc_cold1... hoặc cc_cold_test1..."
+                placeholder={t("governance.new.committee.removePlaceholder")}
                 className={INPUT_SM + " flex-1 font-mono text-xs"}
               />
               {removeRows.length > 1 && (

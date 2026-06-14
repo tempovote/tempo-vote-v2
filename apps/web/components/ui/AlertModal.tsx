@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import { useT } from "@/i18n/useT"
 
 export type AlertType = "success" | "error" | "warning" | "info"
 
@@ -36,6 +37,7 @@ const CONFIG: Record<AlertType, { icon: string; iconCls: string; btnCls: string 
 }
 
 export function AlertModal({ type, title, message, children, onClose }: Props) {
+  const t = useT()
   const btnRef = useRef<HTMLButtonElement>(null)
   const cfg = CONFIG[type]
 
@@ -102,7 +104,7 @@ export function AlertModal({ type, title, message, children, onClose }: Props) {
             onClick={onClose}
             className={`w-full h-11 rounded-xl text-sm font-semibold transition-colors ${cfg.btnCls}`}
           >
-            OK
+            {t("common.ok")}
           </button>
         </div>
       </div>
