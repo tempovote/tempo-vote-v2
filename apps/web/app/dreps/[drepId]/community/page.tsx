@@ -11,11 +11,21 @@ import { useCommunity, useCommunityPolls } from "@/hooks/useCommunity"
 import { RationaleEditor } from "@/components/governance/RationaleEditor"
 import { AlertModal } from "@/components/ui/AlertModal"
 import { authHeader, getJwt } from "@/lib/api"
+import { useT } from "@/i18n/useT"
 import type { InternalPoll } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" })
+}
+
+function toDatetimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
 function timeFromNow(iso: string): string {
   const ms = new Date(iso).getTime() - Date.now()
@@ -28,15 +38,6 @@ function timeFromNow(iso: string): string {
   const d = Math.floor(ms / 86400000)
   const h = Math.floor((ms % 86400000) / 3600000)
   return `Ends in ${d}d ${h}h`
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("vi-VN", { year: "numeric", month: "2-digit", day: "2-digit" })
-}
-
-function toDatetimeLocal(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -57,16 +58,17 @@ function StatusBadge({ status }: { status: InternalPoll["status"] }) {
 // ─── Poll card ────────────────────────────────────────────────────────────────
 
 const GA_TYPES = [
-  { value: "infoAction",               label: "Info Action",                 desc: "Đề xuất tư vấn, không ràng buộc" },
-  { value: "treasuryWithdrawals",      label: "Treasury Withdrawals",        desc: "Rút ADA từ quỹ Cardano treasury" },
-  { value: "protocolParametersUpdate", label: "Protocol Parameter Change",   desc: "Thay đổi thông số giao thức" },
-  { value: "hardForkInitiation",       label: "Hard Fork Initiation",        desc: "Nâng cấp phiên bản giao thức" },
-  { value: "noConfidence",             label: "No Confidence",               desc: "Bất tín nhiệm Constitutional Committee" },
-  { value: "updateCommittee",          label: "Update Committee",            desc: "Thêm/xóa thành viên CC" },
-  { value: "newConstitution",          label: "New Constitution",            desc: "Thay đổi Hiến pháp Cardano" },
+  { value: "infoAction",               label: "Info Action",               desc: "Advisory proposal, non-binding" },
+  { value: "treasuryWithdrawals",      label: "Treasury Withdrawals",      desc: "Withdraw ADA from Cardano treasury" },
+  { value: "protocolParametersUpdate", label: "Protocol Parameter Change", desc: "Change protocol parameters" },
+  { value: "hardForkInitiation",       label: "Hard Fork Initiation",      desc: "Upgrade protocol version" },
+  { value: "noConfidence",             label: "No Confidence",             desc: "No confidence in Constitutional Committee" },
+  { value: "updateCommittee",          label: "Update Committee",          desc: "Add/remove CC members" },
+  { value: "newConstitution",          label: "New Constitution",          desc: "Change Cardano Constitution" },
 ]
 
 function ProposeDropdown({ poll, drepId, network }: { poll: InternalPoll; drepId: string; network: string }) {
+  const t = useT()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [dropPos, setDropPos] = useState<{ top: number; right: number } | null>(null)
@@ -101,7 +103,6 @@ function ProposeDropdown({ poll, drepId, network }: { poll: InternalPoll; drepId
         type="button"
         onClick={handleToggle}
         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border-default text-text-secondary hover:border-accent/50 hover:text-accent-light transition-colors"
-        title="Đề xuất thành Governance Action"
       >
         Propose Action
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -116,20 +117,20 @@ function ProposeDropdown({ poll, drepId, network }: { poll: InternalPoll; drepId
           className="w-64 bg-bg-card border border-border-default rounded-xl shadow-2xl overflow-hidden animate-fade-in"
         >
           <p className="px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-b border-border-subtle">
-            Chọn loại Governance Action
+            {t("community.proposeDropdownTitle")}
           </p>
-          {GA_TYPES.map((t) => (
+          {GA_TYPES.map((gt) => (
             <button
-              key={t.value}
+              key={gt.value}
               type="button"
               onClick={() => {
                 setOpen(false)
-                router.push(`/governance-actions/new?source=${poll.id}&type=${t.value}${np}`)
+                router.push(`/governance-actions/new?source=${poll.id}&type=${gt.value}${np}`)
               }}
               className="w-full text-left px-3 py-2.5 hover:bg-bg-elevated transition-colors border-b border-border-subtle last:border-0"
             >
-              <p className="text-sm font-medium text-text-primary leading-tight">{t.label}</p>
-              <p className="text-[11px] text-text-muted mt-0.5 leading-tight">{t.desc}</p>
+              <p className="text-sm font-medium text-text-primary leading-tight">{gt.label}</p>
+              <p className="text-[11px] text-text-muted mt-0.5 leading-tight">{gt.desc}</p>
             </button>
           ))}
         </div>
@@ -139,6 +140,7 @@ function ProposeDropdown({ poll, drepId, network }: { poll: InternalPoll; drepId
 }
 
 function PollCard({ poll, drepId, network }: { poll: InternalPoll; drepId: string; network: string }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const ABSTRACT_LIMIT = 200
   const showToggle = (poll.abstract?.length ?? 0) > ABSTRACT_LIMIT
@@ -182,7 +184,7 @@ function PollCard({ poll, drepId, network }: { poll: InternalPoll; drepId: strin
               onClick={() => setExpanded((v) => !v)}
               className="text-xs text-accent-light mt-1 hover:underline"
             >
-              {expanded ? "Thu gọn" : "Xem thêm"}
+              {expanded ? t("community.collapse") : t("community.expand")}
             </button>
           )}
         </div>
@@ -243,6 +245,7 @@ function PollCard({ poll, drepId, network }: { poll: InternalPoll; drepId: strin
 function Pagination({ page, total, limit, onPage }: {
   page: number; total: number; limit: number; onPage: (p: number) => void
 }) {
+  const t = useT()
   const totalPages = Math.ceil(total / limit)
   if (totalPages <= 1) return null
   return (
@@ -252,17 +255,17 @@ function Pagination({ page, total, limit, onPage }: {
         disabled={page <= 1}
         className="px-3 py-1.5 text-sm rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        ← Trước
+        {t("community.paginationPrev")}
       </button>
       <span className="text-xs text-text-muted">
-        Trang {page} / {totalPages} · {total} polls
+        {t("community.paginationInfo", { page, totalPages, total })}
       </span>
       <button
         onClick={() => onPage(page + 1)}
         disabled={page >= totalPages}
         className="px-3 py-1.5 text-sm rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        Tiếp →
+        {t("community.paginationNext")}
       </button>
     </div>
   )
@@ -311,7 +314,7 @@ function SectionDivider({ icon, label }: { icon: ReactNode; label: string }) {
   )
 }
 
-// ─── Create poll form (mobile-first bottom sheet / inline on desktop) ─────────
+// ─── Create poll form ─────────────────────────────────────────────────────────
 
 function CreatePollForm({
   drepId,
@@ -328,6 +331,7 @@ function CreatePollForm({
   onError: (msg: string) => void
   reauthenticate: () => Promise<string | null>
 }) {
+  const t = useT()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const now = new Date()
   const weekLater = new Date(now.getTime() + 7 * 24 * 3600 * 1000)
@@ -348,15 +352,13 @@ function CreatePollForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError]               = useState<string | null>(null)
 
-  // Lock body scroll on mobile when sheet is open
   useEffect(() => {
-    if (window.innerWidth >= 640) return  // desktop: form is inline, no lock needed
+    if (window.innerWidth >= 640) return
     const prev = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => { document.body.style.overflow = prev }
   }, [])
 
-  // ── Image upload ────────────────────────────────────────────────────────────
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -397,7 +399,7 @@ function CreatePollForm({
       setUploadState("idle")
     } catch {
       setUploadState("error")
-      setUploadError("Upload thất bại. Vui lòng thử lại.")
+      setUploadError(t("community.form.uploadErrorMsg"))
       URL.revokeObjectURL(localUrl)
       setImagePreview(null)
     }
@@ -413,11 +415,9 @@ function CreatePollForm({
     setUploadError(null)
   }
 
-  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Read all current state values inside the callback to avoid stale closures
     const currentTitle      = title.trim()
     const currentAbstract   = abstract.trim()
     const currentMotivation = motivation.trim()
@@ -430,11 +430,11 @@ function CreatePollForm({
 
     if (!currentTitle) return
     if (new Date(endsAt) <= new Date(startsAt)) {
-      setError("Thời gian kết thúc phải sau thời gian bắt đầu")
+      setError(t("community.form.validationEndAfterStart"))
       return
     }
     if (votingType !== "BASIC" && currentOptions.length < 2) {
-      setError("Cần ít nhất 2 options")
+      setError(t("community.form.validationMinOptions"))
       return
     }
 
@@ -462,34 +462,33 @@ function CreatePollForm({
     try {
       let jwt = getJwt()
       if (!jwt) jwt = await reauthenticate()
-      if (!jwt) throw new Error("Cần xác thực ví trước khi tạo poll.")
+      if (!jwt) throw new Error(t("community.form.authError"))
 
       let res = await doPost(jwt)
       if (res.status === 401) {
         const newJwt = await reauthenticate()
-        if (!newJwt) throw new Error("Xác thực thất bại. Vui lòng thử lại.")
+        if (!newJwt) throw new Error(t("community.form.authFailed"))
         res = await doPost(newJwt)
       }
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}))
-        throw new Error((errBody as Record<string, string>).error ?? `Tạo poll thất bại (${res.status})`)
+        throw new Error((errBody as Record<string, string>).error ?? t("community.form.createFailedDefault", { status: res.status }))
       }
 
       onSuccess(currentTitle)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Đã xảy ra lỗi"
+      const msg = err instanceof Error ? err.message : t("community.form.unknownError")
       setError(msg)
       onError(msg)
     } finally {
       setIsSubmitting(false)
     }
-  }, [title, abstract, motivation, rationale, imageUrl, links, votingType, options, startsAt, endsAt, drepId, network, reauthenticate, onSuccess, onError])
+  }, [title, abstract, motivation, rationale, imageUrl, links, votingType, options, startsAt, endsAt, drepId, network, reauthenticate, onSuccess, onError, t])
 
-  // ── Action buttons (reused in header & inline footer) ──────────────────────
   const ActionButtons = (
     <>
       <button type="button" onClick={onCancel} disabled={isSubmitting} className="btn-outline flex-1 h-11">
-        Hủy
+        {t("community.form.cancelBtn")}
       </button>
       <button
         type="submit" form="create-poll-form"
@@ -499,43 +498,39 @@ function CreatePollForm({
         {isSubmitting ? (
           <span className="flex items-center justify-center gap-2">
             <span className="spinner shrink-0" style={{ width: 15, height: 15, borderWidth: 2 }} />
-            Đang tạo...
+            {t("community.form.submitting")}
           </span>
-        ) : "Tạo Poll"}
+        ) : t("community.form.submitBtn")}
       </button>
     </>
   )
 
   return (
     <>
-      {/* ── Mobile backdrop ── */}
       <div
         className="fixed inset-0 bg-black/50 z-40 sm:hidden"
         onClick={onCancel}
         aria-hidden
       />
 
-      {/* ── Sheet wrapper ──
-          Mobile: fixed bottom sheet (92svh, rounded-t-2xl)
-          Desktop: inline within card (no fixed, no rounding) */}
       <div className="
         fixed inset-x-0 bottom-0 z-50 flex flex-col max-h-[92svh] rounded-t-2xl bg-bg-card
         sm:static sm:z-auto sm:max-h-none sm:rounded-none sm:bg-transparent sm:border-b sm:border-border-subtle
       ">
 
-        {/* ── Mobile sticky header ── */}
+        {/* Mobile sticky header */}
         <div className="sm:hidden flex items-center justify-between px-4 py-3.5 border-b border-border-subtle shrink-0">
           <div className="flex items-center gap-2">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-light">
               <rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/>
             </svg>
-            <span className="font-semibold text-sm text-text-primary">Create Internal Poll</span>
+            <span className="font-semibold text-sm text-text-primary">{t("community.form.title")}</span>
           </div>
           <button
             type="button"
             onClick={onCancel}
             className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
-            aria-label="Đóng"
+            aria-label={t("community.form.close")}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -543,11 +538,9 @@ function CreatePollForm({
           </button>
         </div>
 
-        {/* ── Scrollable form body ── */}
         <div className="overflow-y-auto overscroll-contain flex-1">
           <form id="create-poll-form" onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-5">
 
-            {/* ── SECTION: Content ── */}
             <SectionDivider
               icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>}
               label="Content"
@@ -556,7 +549,7 @@ function CreatePollForm({
             {/* Title */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className={LABEL}>Title <span className="text-danger font-normal">*</span></label>
+                <label className={LABEL}>{t("community.form.titleLabel")} <span className="text-danger font-normal">*</span></label>
                 <span className={`text-xs tabular-nums ${title.length >= 70 ? "text-warning" : "text-text-muted"}`}>
                   {title.length}/80
                 </span>
@@ -564,7 +557,7 @@ function CreatePollForm({
               <input
                 type="text" value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Tiêu đề cho internal poll"
+                placeholder={t("community.form.titlePlaceholder")}
                 maxLength={80} required
                 className={INPUT}
               />
@@ -574,7 +567,7 @@ function CreatePollForm({
             <div className="space-y-1.5">
               <label className={LABEL}>Abstract</label>
               <RationaleEditor
-                label="" placeholder="Mô tả nội dung poll..."
+                label="" placeholder={t("community.form.abstractPlaceholder")}
                 maxLength={2500} height={150} description=""
                 value={abstract} onChange={setAbstract}
               />
@@ -584,7 +577,7 @@ function CreatePollForm({
             <div className="space-y-1.5">
               <label className={LABEL}>Motivation {OPTIONAL}</label>
               <RationaleEditor
-                label="" placeholder="Vấn đề poll này giải quyết?"
+                label="" placeholder={t("community.form.motivationPlaceholder")}
                 maxLength={15000} height={150} description=""
                 value={motivation} onChange={setMotivation}
               />
@@ -594,13 +587,12 @@ function CreatePollForm({
             <div className="space-y-1.5">
               <label className={LABEL}>Rationale {OPTIONAL}</label>
               <RationaleEditor
-                label="" placeholder="Lý do và lập luận cho poll này..."
+                label="" placeholder={t("community.form.rationalePlaceholder")}
                 height={150} description=""
                 value={rationale} onChange={setRationale}
               />
             </div>
 
-            {/* ── SECTION: Media ── */}
             <SectionDivider
               icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
               label="Media"
@@ -610,7 +602,6 @@ function CreatePollForm({
             <div className="space-y-2">
               <label className={LABEL}>Cover image {OPTIONAL}</label>
               {imagePreview || imageUrl ? (
-                /* Preview */
                 <div className="relative rounded-xl overflow-hidden bg-bg-elevated aspect-video">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={imagePreview ?? imageUrl} alt="Cover" className="w-full h-full object-cover" />
@@ -620,14 +611,14 @@ function CreatePollForm({
                       onClick={() => fileInputRef.current?.click()}
                       className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs rounded-lg backdrop-blur-sm transition-colors"
                     >
-                      Đổi ảnh
+                      {t("community.form.changeImageBtn")}
                     </button>
                     <button
                       type="button"
                       onClick={removeImage}
                       className="px-3 py-1.5 bg-white/20 hover:bg-danger/60 text-white text-xs rounded-lg backdrop-blur-sm transition-colors"
                     >
-                      Xóa
+                      {t("community.form.removeImageBtn")}
                     </button>
                   </div>
                   {uploadState === "uploading" && (
@@ -637,7 +628,6 @@ function CreatePollForm({
                   )}
                 </div>
               ) : (
-                /* Upload zone */
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -652,9 +642,9 @@ function CreatePollForm({
                     </svg>
                   )}
                   <span className="text-sm">
-                    {uploadState === "uploading" ? "Đang upload lên IPFS..." : "Chọn ảnh bìa"}
+                    {uploadState === "uploading" ? t("community.form.uploadingLabel") : t("community.form.uploadZoneLabel")}
                   </span>
-                  <span className="text-xs opacity-60">PNG, JPG, GIF • Tối đa 5MB</span>
+                  <span className="text-xs opacity-60">{t("community.form.uploadHint")}</span>
                 </button>
               )}
               {uploadState === "error" && uploadError && (
@@ -688,7 +678,7 @@ function CreatePollForm({
                         type="button"
                         onClick={() => setLinks(links.filter((_, idx) => idx !== i))}
                         className="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
-                        aria-label="Xóa link"
+                        aria-label="Remove link"
                       >
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                       </button>
@@ -706,25 +696,24 @@ function CreatePollForm({
               </button>
             </div>
 
-            {/* ── SECTION: Voting ── */}
             <SectionDivider
               icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
               label="Voting"
             />
 
-            {/* Voting type — radio cards */}
+            {/* Voting type */}
             <div className="space-y-2">
               <label className={LABEL}>Voting type</label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {VOTING_TYPES.map((t) => {
-                  const active = votingType === t.value
+                {VOTING_TYPES.map((vt) => {
+                  const active = votingType === vt.value
                   return (
                     <button
-                      key={t.value}
+                      key={vt.value}
                       type="button"
                       onClick={() => {
-                        setVotingType(t.value)
-                        if (t.value === "BASIC") setOptions(["", ""])
+                        setVotingType(vt.value)
+                        if (vt.value === "BASIC") setOptions(["", ""])
                       }}
                       className={`text-left rounded-xl border px-4 py-3 transition-all ${
                         active
@@ -736,15 +725,15 @@ function CreatePollForm({
                         <span className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 transition-colors ${
                           active ? "border-accent bg-accent" : "border-border-default"
                         }`} />
-                        <span className="font-medium text-sm">{t.label}</span>
+                        <span className="font-medium text-sm">{vt.label}</span>
                       </div>
-                      <p className="mt-0.5 text-xs text-text-muted pl-5">{t.sub}</p>
+                      <p className="mt-0.5 text-xs text-text-muted pl-5">{vt.sub}</p>
                     </button>
                   )
                 })}
               </div>
               <p className="text-xs text-text-muted px-1">
-                {VOTING_TYPES.find((t) => t.value === votingType)?.description}
+                {VOTING_TYPES.find((vt) => vt.value === votingType)?.description}
               </p>
             </div>
 
@@ -773,7 +762,7 @@ function CreatePollForm({
                           type="button"
                           onClick={() => setOptions(options.filter((_, idx) => idx !== i))}
                           className="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors shrink-0"
-                          aria-label="Xóa option"
+                          aria-label="Remove option"
                         >
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
@@ -792,7 +781,6 @@ function CreatePollForm({
               </div>
             )}
 
-            {/* ── SECTION: Period ── */}
             <SectionDivider
               icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>}
               label="Voting Period"
@@ -800,7 +788,7 @@ function CreatePollForm({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-text-muted">Bắt đầu</label>
+                <label className="text-xs font-medium text-text-muted">{t("community.form.startLabel")}</label>
                 <input
                   type="datetime-local" value={startsAt}
                   onChange={(e) => setStartsAt(e.target.value)}
@@ -808,7 +796,7 @@ function CreatePollForm({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-text-muted">Kết thúc</label>
+                <label className="text-xs font-medium text-text-muted">{t("community.form.endLabel")}</label>
                 <input
                   type="datetime-local" value={endsAt}
                   onChange={(e) => setEndsAt(e.target.value)}
@@ -822,11 +810,10 @@ function CreatePollForm({
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
               <p className="text-xs text-accent-light leading-relaxed">
-                Voting power được tính tại epoch bắt đầu của voting period.
+                {t("community.form.votingPowerNote")}
               </p>
             </div>
 
-            {/* Error */}
             {error && (
               <div className="notice-warning rounded-xl p-3 text-sm flex items-start gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -834,7 +821,6 @@ function CreatePollForm({
               </div>
             )}
 
-            {/* Desktop action buttons (inside form) */}
             <div className="hidden sm:flex gap-3 pt-1">
               {ActionButtons}
             </div>
@@ -842,7 +828,7 @@ function CreatePollForm({
           </form>
         </div>
 
-        {/* ── Mobile sticky footer ── */}
+        {/* Mobile sticky footer */}
         <div
           className="sm:hidden flex gap-3 px-4 py-3 border-t border-border-subtle bg-bg-card shrink-0"
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
@@ -861,6 +847,7 @@ export default function CommunityPage({
 }: {
   params: Promise<{ drepId: string }>
 }) {
+  const t = useT()
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
   const { drepKey, isConnected, isWalletHydrating, reauthenticate } = useWallet()
@@ -891,10 +878,13 @@ export default function CommunityPage({
     setIsFormOpen(false)
     setPage(1)
     refetch()
-    setAlertModal({ type: "success", title: "Poll tạo thành công!", message: `"${pollTitle}" đã được tạo.` })
-  }, [refetch])
+    setAlertModal({
+      type: "success",
+      title: t("community.createPollSuccessTitle"),
+      message: t("community.createPollSuccessDesc", { title: pollTitle }),
+    })
+  }, [refetch, t])
 
-  // ── Guards ──────────────────────────────────────────────────────────────────
   if (isWalletHydrating || isLoading) {
     return (
       <div className="page-container space-y-6 animate-pulse">
@@ -924,10 +914,10 @@ export default function CommunityPage({
           DRep Profile
         </Link>
         <div className="notice-warning rounded-xl p-8 text-center space-y-3">
-          <p className="font-semibold">Community chưa được kích hoạt</p>
-          <p className="text-sm text-text-muted">DRep này chưa kích hoạt DRep Community.</p>
+          <p className="font-semibold">{t("community.notActivatedTitle")}</p>
+          <p className="text-sm text-text-muted">{t("community.notActivatedDesc")}</p>
           <Link href={`/dreps/${drepId}${networkParam}`} className="text-sm text-accent-light underline">
-            Quay lại profile
+            {t("community.backToProfile")}
           </Link>
         </div>
       </div>
@@ -939,7 +929,6 @@ export default function CommunityPage({
   return (
     <div className="page-container space-y-6 animate-fade-in">
 
-      {/* Back link */}
       <Link href={`/dreps/${canonicalId}${networkParam}`} className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <polyline points="15 18 9 12 15 6" />
@@ -947,10 +936,8 @@ export default function CommunityPage({
         {displayName}
       </Link>
 
-      {/* Title */}
       <h1 className="text-2xl font-bold text-center">DRep Community</h1>
 
-      {/* Toolbar + inline form + poll list */}
       <div className="card-static !p-0 overflow-hidden">
 
         {/* Toolbar */}
@@ -966,7 +953,6 @@ export default function CommunityPage({
                 <path d="M20 14l-5 5M22 16l-3 3" strokeWidth="1.5"/>
               </svg>
               Create an internal poll
-              {/* Toggle icon: ⊕ when closed, ⊖ when open */}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-muted">
                 <circle cx="12" cy="12" r="10"/>
                 {isFormOpen
@@ -986,7 +972,7 @@ export default function CommunityPage({
           <div className="flex-1 flex items-center px-4 py-3">
             <input
               type="text"
-              placeholder="Tìm kiếm..."
+              placeholder={t("community.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none"
@@ -1005,12 +991,12 @@ export default function CommunityPage({
               network={network}
               onSuccess={handleFormSuccess}
               onCancel={() => setIsFormOpen(false)}
-              onError={(msg) => setAlertModal({ type: "error", title: "Tạo poll thất bại", message: msg })}
+              onError={(msg) => setAlertModal({ type: "error", title: t("community.createPollErrorTitle"), message: msg })}
               reauthenticate={reauthenticate}
             />
           ) : (
             <div className="border-b border-border-subtle p-5 text-center space-y-2">
-              <p className="text-sm text-text-secondary">Kết nối ví để tạo Internal Poll.</p>
+              <p className="text-sm text-text-secondary">{t("community.connectToCreate")}</p>
             </div>
           )
         )}
@@ -1030,9 +1016,9 @@ export default function CommunityPage({
 
         {!pollsLoading && pollsError && (
           <div className="py-10 text-center space-y-2">
-            <p className="text-sm text-danger font-medium">Không thể tải danh sách poll</p>
+            <p className="text-sm text-danger font-medium">{t("community.pollLoadError")}</p>
             <p className="text-xs text-text-muted">{pollsError}</p>
-            <button onClick={refetch} className="text-xs text-accent-light underline mt-1">Thử lại</button>
+            <button onClick={refetch} className="text-xs text-accent-light underline mt-1">{t("community.retry")}</button>
           </div>
         )}
 
@@ -1040,14 +1026,14 @@ export default function CommunityPage({
           <div className="py-16 text-center space-y-3">
             <p className="text-4xl">📋</p>
             <p className="text-sm text-text-muted">
-              {search ? "Không tìm thấy poll nào phù hợp" : "Chưa có Internal Poll nào"}
+              {search ? t("community.pollNoMatch") : t("community.pollEmpty")}
             </p>
             {isOwner && !search && (
               <button
                 onClick={() => setIsFormOpen(true)}
                 className="text-sm text-accent-light underline"
               >
-                Tạo poll đầu tiên
+                {t("community.createFirstPoll")}
               </button>
             )}
           </div>
