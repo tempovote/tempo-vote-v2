@@ -6,6 +6,7 @@ import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { useDRepStats } from "@/hooks/useDRepStats"
+import { useCommunity } from "@/hooks/useCommunity"
 import { useTx } from "@/hooks/useTx"
 import { resolveAnchorUrl } from "@/lib/governance"
 import { useT } from "@/i18n/useT"
@@ -186,6 +187,7 @@ export function DRepBanner() {
 
   const { profile, isLoading: profileLoading } = useDRepProfile(drepId ?? "", selectedNetwork)
   const { stats, loading: statsLoading } = useDRepStats(drepId, selectedNetwork)
+  const { isActive: communityActive, isLoading: communityLoading } = useCommunity(drepId ?? "", selectedNetwork)
 
   if (!isDrepRegistered || !drepId) return null
 
@@ -276,14 +278,18 @@ export function DRepBanner() {
       {/* Pending epoch info */}
       {pendingEpoch && <PendingEpochNote />}
 
-      {/* Community CTA */}
-      <Link
-        href={`/dreps/${encodeURIComponent(drepId)}/community${networkParam}`}
-        className="block w-full py-3 rounded-xl text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        style={{ background: "linear-gradient(90deg, #4f46e5 0%, #a855f7 100%)" }}
-      >
-        {t("home.drepBanner.community")}
-      </Link>
+      {/* Community CTA — only when community is active */}
+      {communityLoading ? (
+        <div className="h-10 bg-bg-elevated rounded-xl animate-pulse" />
+      ) : communityActive ? (
+        <Link
+          href={`/dreps/${encodeURIComponent(drepId)}/community${networkParam}`}
+          className="block w-full py-3 rounded-xl text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: "linear-gradient(90deg, #4f46e5 0%, #a855f7 100%)" }}
+        >
+          {t("home.drepBanner.community")}
+        </Link>
+      ) : null}
 
     </section>
   )
