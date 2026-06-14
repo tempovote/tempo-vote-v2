@@ -150,7 +150,7 @@ data class CastVoteRequest(
 
 private val BASIC_OPTIONS = listOf("Yes", "No", "Abstain")
 
-private fun computeStatus(
+internal fun computeStatus(
     startsAt: kotlinx.datetime.LocalDateTime,
     endsAt: kotlinx.datetime.LocalDateTime,
     now: kotlinx.datetime.LocalDateTime,
