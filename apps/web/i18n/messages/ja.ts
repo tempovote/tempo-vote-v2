@@ -183,6 +183,9 @@ const ja: Messages = {
       proposeTitle: "ガバナンスアクションを提案",
       proposeDesc: "まず DRep コミュニティでポールを作成して意見を集め、支持を築きましょう。十分な合意が得られたら、ガバナンスアクションとしてオンチェーンに提出できます。",
       internalPoll: "内部ポール",
+      activateCommunity: "コミュニティを有効化",
+      becomeDrep: "DRepになる",
+      drepCommunity: "委任先DRepのコミュニティ",
       loadError: "ガバナンスアクションを読み込めませんでした",
       empty: "該当するガバナンスアクションがありません",
       clearFilters: "フィルターをクリア",
@@ -813,6 +816,7 @@ const ja: Messages = {
   community: {
     notActivatedTitle: "コミュニティ未アクティブ",
     notActivatedDesc: "このDRepはDRep Communityを有効化していません。",
+    notActivatedDelegatorDesc: "委任先のDRepはまだコミュニティを有効化していません。有効化されると、ここでポールの閲覧と投票ができます。",
     backToProfile: "プロフィールに戻る",
     searchPlaceholder: "検索...",
     pollLoadError: "ポールを読み込めませんでした",

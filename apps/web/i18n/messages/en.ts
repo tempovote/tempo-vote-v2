@@ -182,6 +182,9 @@ const en = {
       proposeTitle: "Propose a Governance Action",
       proposeDesc: "Create a poll in your DRep community first to gather feedback and build support. Once consensus is reached, you can submit it on-chain as a Governance Action.",
       internalPoll: "Internal Poll",
+      activateCommunity: "Activate Community",
+      becomeDrep: "Become a DRep",
+      drepCommunity: "Your DRep's Community",
       loadError: "Could not load governance actions",
       empty: "No matching governance actions",
       clearFilters: "Clear filters",
@@ -812,6 +815,7 @@ const en = {
   community: {
     notActivatedTitle: "Community Not Activated",
     notActivatedDesc: "This DRep has not activated DRep Community.",
+    notActivatedDelegatorDesc: "The DRep you delegated to hasn't activated their community yet. You'll be able to view and vote on polls here once they do.",
     backToProfile: "Back to profile",
     searchPlaceholder: "Search...",
     pollLoadError: "Could not load polls",

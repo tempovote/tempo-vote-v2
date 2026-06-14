@@ -850,6 +850,7 @@ export default function CommunityPage({
   const t = useT()
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
+  const delegatedDrep = useWalletStore((s) => s.delegatedDrep)
   const { drepKey, isConnected, isWalletHydrating, reauthenticate } = useWallet()
   const searchParams = useSearchParams()
   const [page, setPage] = useState(1)
@@ -863,6 +864,10 @@ export default function CommunityPage({
   const { polls, total, limit, isLoading: pollsLoading, error: pollsError, refetch } = useCommunityPolls(canonicalId, network, page)
 
   const isOwner = !!drepKey?.dRepIDCip105 && drepKey.dRepIDCip105 === canonicalId
+  const isDelegatorOfThis = !!delegatedDrep?.id && delegatedDrep.id === canonicalId
+  // Community participants = the DRep itself + its delegators. The backend enforces
+  // this for real (canParticipate); this is just the matching UI affordance.
+  const canParticipate = isOwner || isDelegatorOfThis
   const networkParam = network !== "mainnet" ? `?network=${network}` : ""
 
   const filteredPolls = search.trim()
@@ -917,7 +922,7 @@ export default function CommunityPage({
         </Link>
         <div className="notice-warning rounded-xl p-8 text-center space-y-3">
           <p className="font-semibold">{t("community.notActivatedTitle")}</p>
-          <p className="text-sm text-text-muted">{t("community.notActivatedDesc")}</p>
+          <p className="text-sm text-text-muted">{t(isDelegatorOfThis ? "community.notActivatedDelegatorDesc" : "community.notActivatedDesc")}</p>
           <Link href={`/dreps/${canonicalId}${networkParam}`} className="text-sm text-accent-light underline">
             {t("community.backToProfile")}
           </Link>
@@ -942,7 +947,7 @@ export default function CommunityPage({
 
         {/* Toolbar */}
         <div className="flex items-center border-b border-border-subtle">
-          {isOwner ? (
+          {canParticipate ? (
             <button
               type="button"
               onClick={() => setIsFormOpen((v) => !v)}
@@ -984,7 +989,7 @@ export default function CommunityPage({
         </div>
 
         {/* Inline create form */}
-        {isFormOpen && isOwner && (
+        {isFormOpen && canParticipate && (
           isConnected ? (
             <CreatePollForm
               drepId={canonicalId}
@@ -1028,7 +1033,7 @@ export default function CommunityPage({
             <p className="text-sm text-text-muted">
               {search ? t("community.pollNoMatch") : t("community.pollEmpty")}
             </p>
-            {isOwner && !search && (
+            {canParticipate && !search && (
               <button
                 onClick={() => setIsFormOpen(true)}
                 className="text-sm text-accent-light underline"

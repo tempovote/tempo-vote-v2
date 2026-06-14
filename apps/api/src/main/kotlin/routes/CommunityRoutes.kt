@@ -17,7 +17,11 @@ import kotlinx.serialization.decodeFromString
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.cache.CardanoCache
+import vote.tempo.cardano.Network
+import vote.tempo.cardano.OgmiosStateQueries
+import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.drepIdToCredentialHex
+import vote.tempo.cardano.networkFromString
 import vote.tempo.db.Communities
 import vote.tempo.db.InternalPolls
 import vote.tempo.db.PollComments
@@ -154,6 +158,72 @@ private fun computeStatus(
     endsAt < now   -> "closed"
     startsAt > now -> "pending"
     else           -> "active"
+}
+
+/**
+ * Community membership: who may Create / Vote / Comment in a DRep's community.
+ * Per product model the set is "the DRep itself + its delegators" — NOT any wallet.
+ *   • Owner: the connected wallet's own DRep credential == this community's DRep.
+ *   • Delegator: the authenticated stake address has delegated voting power to this DRep.
+ * Both IDs are normalised to credential hex so bech32 / CIP-129 forms compare equal.
+ * (Future scope — allowing any user — would simply relax this to `true`.)
+ */
+private suspend fun canParticipate(
+    stakeAddress: String,
+    jwtDrepId: String?,
+    communityDrepId: String,
+    network: Network,
+): Boolean {
+    val targetCred = runCatching { drepIdToCredentialHex(communityDrepId) }.getOrNull() ?: return false
+
+    // 1) Owner — the wallet IS the DRep that owns this community.
+    if (jwtDrepId != null) {
+        val ownCred = runCatching { drepIdToCredentialHex(jwtDrepId) }.getOrNull()
+        if (ownCred != null && ownCred == targetCred) return true
+    }
+
+    // 2) Delegator — the stake delegated its voting power to this DRep.
+    val delegatedCred = resolveDelegatedDrepCred(stakeAddress, network) ?: return false
+    return delegatedCred == targetCred
+}
+
+/**
+ * Resolve which DRep (credential hex) a stake address delegated voting power to,
+ * or null if none / not delegated to a registered DRep. Reuses the same 60-s
+ * `stakeDeleg` cache the /stake/{addr}/delegation route populates, so a freshly
+ * connected wallet hits cache and pays no Ogmios round-trip here.
+ */
+private suspend fun resolveDelegatedDrepCred(stakeAddress: String, network: Network): String? {
+    val cacheKey = "${network.name}:$stakeAddress"
+
+    CardanoCache.stakeDeleg.getIfPresent(cacheKey)?.let { cached ->
+        val bech32 = (cached as? JsonObject)?.get("delegatedDrep")
+            ?.let { it as? JsonObject }?.get("id")?.jsonPrimitive?.contentOrNull
+        return bech32?.let { runCatching { drepIdToCredentialHex(it) }.getOrNull() }
+    }
+
+    val delegationRaw = runCatching { OgmiosStateQueries(network).getStakeDelegation(stakeAddress) }
+        .getOrNull() ?: return null
+
+    val accountInfo = when (delegationRaw) {
+        is JsonArray  -> delegationRaw.firstOrNull()?.jsonObject
+        is JsonObject -> delegationRaw[stakeAddress]?.jsonObject ?: delegationRaw.values.firstOrNull()?.jsonObject
+        else          -> null
+    }
+    val drepCred = accountInfo?.let { info ->
+        val delegate = info["delegateRepresentative"]?.jsonObject
+        if (delegate?.get("type")?.jsonPrimitive?.contentOrNull == "registered")
+            delegate["id"]?.jsonPrimitive?.contentOrNull
+        else null
+    }
+
+    // Populate the cache in the same shape as /stake/{addr}/delegation for consistency.
+    val bech32 = drepCred?.let { credentialHexToDrepIdCip105(it) ?: it }
+    val response = if (bech32 == null) buildJsonObject { put("delegatedDrep", JsonNull) }
+        else buildJsonObject { putJsonObject("delegatedDrep") { put("id", bech32); put("name", JsonNull) } }
+    CardanoCache.stakeDeleg.put(cacheKey, response)
+
+    return drepCred
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
@@ -294,13 +364,10 @@ fun Route.communityRoutes() {
         authenticate("jwt") {
             post("/{drepId}/polls") {
                 val principal = call.principal<JWTPrincipal>()!!
+                val stakeAddress = principal.payload.subject
                 val jwtDrepId = principal.payload.getClaim("drepId")?.asString()
                 val drepId = call.parameters["drepId"]
                     ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "drepId required"))
-
-                if (jwtDrepId == null || jwtDrepId != drepId) {
-                    return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not authorized for this DRep"))
-                }
 
                 val req = call.receive<CreatePollRequest>()
 
@@ -316,6 +383,11 @@ fun Route.communityRoutes() {
 
                 if (communityRow == null || !communityRow[Communities.isActive]) {
                     return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Community not active"))
+                }
+
+                // Membership: the DRep itself or one of its delegators — not any wallet.
+                if (!canParticipate(stakeAddress, jwtDrepId, drepId, networkFromString(req.network))) {
+                    return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Only the DRep and its delegators can create polls"))
                 }
 
                 val communityId = communityRow[Communities.id]
@@ -477,6 +549,20 @@ fun Route.communityRoutes() {
                     return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid optionId"))
                 }
 
+                // Membership: only the DRep + its delegators may vote.
+                val community = transaction {
+                    val poll = InternalPolls.selectAll().where { InternalPolls.id eq pollId }.singleOrNull()
+                        ?: return@transaction null
+                    Communities.selectAll().where { Communities.id eq poll[InternalPolls.communityId] }.singleOrNull()
+                        ?.let { it[Communities.drepId] to it[Communities.network] }
+                }
+                if (community == null) {
+                    return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Poll not found"))
+                }
+                if (!canParticipate(stakeAddress, principal.payload.getClaim("drepId")?.asString(), community.first, networkFromString(community.second))) {
+                    return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Only the DRep and its delegators can vote"))
+                }
+
                 val now = Clock.System.now().toLocalDateTime(TimeZone.UTC)
 
                 val error: String? = transaction {
@@ -567,11 +653,18 @@ fun Route.communityRoutes() {
                     return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Content cannot be empty"))
                 }
 
-                val pollExists = transaction {
-                    InternalPolls.selectAll().where { InternalPolls.id eq pollId }.count() > 0
+                // Membership: only the DRep + its delegators may comment.
+                val community = transaction {
+                    val poll = InternalPolls.selectAll().where { InternalPolls.id eq pollId }.singleOrNull()
+                        ?: return@transaction null
+                    Communities.selectAll().where { Communities.id eq poll[InternalPolls.communityId] }.singleOrNull()
+                        ?.let { it[Communities.drepId] to it[Communities.network] }
                 }
-                if (!pollExists) {
+                if (community == null) {
                     return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Poll not found"))
+                }
+                if (!canParticipate(stakeAddress, principal.payload.getClaim("drepId")?.asString(), community.first, networkFromString(community.second))) {
+                    return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Only the DRep and its delegators can comment"))
                 }
 
                 // Validate drepId if provided — must be a registered DRep in the cache
