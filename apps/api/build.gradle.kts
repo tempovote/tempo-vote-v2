@@ -115,10 +115,19 @@ dependencies {
     // -------------------------------------------------------------------------
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("org.testcontainers:postgresql:1.20.4")
+    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
 }
 
 tasks.test {
     useJUnitPlatform()
+    // Ryuk (the Testcontainers reaper) is flaky in some sandboxes; the container is
+    // explicitly stopped in @AfterAll so the suite doesn't depend on it.
+    environment("TESTCONTAINERS_RYUK_DISABLED", "true")
+    // docker-java otherwise falls back to API v1.32, which modern daemons reject
+    // (minimum 1.40). It reads the *system property* api.version (not the env var),
+    // so pin it here for the forked test JVM.
+    systemProperty("api.version", "1.41")
 }
 
 tasks.named<JavaExec>("run") {
