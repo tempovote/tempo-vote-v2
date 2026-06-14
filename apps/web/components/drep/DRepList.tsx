@@ -1,5 +1,6 @@
 import Link from "next/link"
 import type { DRep } from "@/lib/mock-data"
+import { useT } from "@/i18n/useT"
 
 interface Props {
   title: string
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function DRepList({ title, dreps }: Props) {
+  const t = useT()
   return (
     <div className="space-y-4">
       <h3 className="text-base font-bold">{title}</h3>
@@ -38,7 +40,7 @@ export default function DRepList({ title, dreps }: Props) {
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-text-muted">
                   <span>
-                    Active Voting Power:{" "}
+                    {t("dreps.list.activeVotingPower")}{" "}
                     <span className="text-text-primary font-medium">{drep.activeVotingPower}</span>
                   </span>
                   <span className={isPositive ? "text-success" : "text-danger"}>
@@ -47,11 +49,11 @@ export default function DRepList({ title, dreps }: Props) {
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-0.5 text-xs text-text-muted">
                   <span>
-                    Delegators:{" "}
+                    {t("dreps.list.delegators")}{" "}
                     <span className="text-text-primary font-medium">{drep.delegators.toLocaleString()}</span>
                   </span>
                   <span>
-                    Influence power ⓘ:{" "}
+                    {t("dreps.list.influencePower")}{" "}
                     <span className="text-text-primary font-medium">{drep.influencePower}</span>
                   </span>
                 </div>
@@ -61,7 +63,7 @@ export default function DRepList({ title, dreps }: Props) {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   className="w-8 h-8 rounded-lg border border-success/40 text-success hover:bg-success/10 flex items-center justify-center transition-colors"
-                  title="Vote Yes"
+                  title={t("dreps.list.voteYes")}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20,6 9,17 4,12" />
@@ -69,7 +71,7 @@ export default function DRepList({ title, dreps }: Props) {
                 </button>
                 <button
                   className="w-8 h-8 rounded-lg border border-danger/40 text-danger hover:bg-danger/10 flex items-center justify-center transition-colors"
-                  title="Vote No"
+                  title={t("dreps.list.voteNo")}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18" />

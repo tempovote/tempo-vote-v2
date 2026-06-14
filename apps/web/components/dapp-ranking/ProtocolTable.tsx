@@ -1,3 +1,5 @@
+import { useT } from "@/i18n/useT"
+
 export type SortMode = "tvl" | "volume"
 
 export interface CardanoProtocol {
@@ -58,6 +60,7 @@ export default function ProtocolTable({
   protocols: CardanoProtocol[]
   sortMode: SortMode
 }) {
+  const t = useT()
   return (
     <div className="overflow-x-auto">
       <table className="w-full md:min-w-[700px] text-sm">
@@ -65,12 +68,12 @@ export default function ProtocolTable({
           <tr className="text-text-muted text-left">
             <th className="py-3 px-4 font-medium w-10">#</th>
             <th className="py-3 px-4 font-medium w-16"></th>
-            <th className="py-3 px-3 font-medium">Name</th>
-            <th className="py-3 px-3 font-medium">Category</th>
-            <ColHeader active={sortMode === "tvl"}>TVL</ColHeader>
-            <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">1d %</th>
-            <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">7d %</th>
-            <ColHeader active={sortMode === "volume"} className="hidden md:table-cell">Vol 24h</ColHeader>
+            <th className="py-3 px-3 font-medium">{t("dappRanking.colName")}</th>
+            <th className="py-3 px-3 font-medium">{t("dappRanking.colCategory")}</th>
+            <ColHeader active={sortMode === "tvl"}>{t("dappRanking.colTvl")}</ColHeader>
+            <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">{t("dappRanking.col1d")}</th>
+            <th className="py-3 px-3 font-medium text-right whitespace-nowrap hidden sm:table-cell">{t("dappRanking.col7d")}</th>
+            <ColHeader active={sortMode === "volume"} className="hidden md:table-cell">{t("dappRanking.colVol24h")}</ColHeader>
           </tr>
         </thead>
         <tbody>
@@ -130,7 +133,7 @@ export default function ProtocolTable({
           {protocols.length === 0 && (
             <tr>
               <td colSpan={8} className="py-16 text-center text-text-muted">
-                Không có dữ liệu.
+                {t("dappRanking.noData")}
               </td>
             </tr>
           )}
