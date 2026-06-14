@@ -8,8 +8,9 @@ import type { MyVote } from "@/hooks/useMyVote"
 import { useAnchorTitle } from "@/hooks/useAnchorTitle"
 import { ActionIdChip } from "./ActionIdChip"
 import VoteResultsPanel from "./VoteResultsPanel"
-import { getActionTypeLabel } from "@/lib/governance"
+import { normalizeActionType } from "@/lib/governance"
 import { GaStatusBadge } from "./GaStatusBadge"
+import { useT } from "@/i18n/useT"
 
 interface Props {
   action: GovernanceAction
@@ -17,11 +18,12 @@ interface Props {
 }
 
 function MyVoteBadge({ vote }: { vote: MyVote }) {
+  const t = useT()
   if (!vote) return null
   const cfg = {
-    YES:     { cls: "bg-success/15 text-success border-success/30",  label: "✓ YES" },
-    NO:      { cls: "bg-danger/15 text-danger border-danger/30",     label: "✓ NO" },
-    ABSTAIN: { cls: "bg-bg-elevated text-text-secondary border-border-default", label: "✓ ABSTAIN" },
+    YES:     { cls: "bg-success/15 text-success border-success/30",  label: `✓ ${t("governance.vote.yes")}` },
+    NO:      { cls: "bg-danger/15 text-danger border-danger/30",     label: `✓ ${t("governance.vote.no")}` },
+    ABSTAIN: { cls: "bg-bg-elevated text-text-secondary border-border-default", label: `✓ ${t("governance.vote.abstain")}` },
   }[vote]
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${cfg.cls}`}>
@@ -31,6 +33,7 @@ function MyVoteBadge({ vote }: { vote: MyVote }) {
 }
 
 export default function GovernanceActionCard({ action, compact = false }: Props) {
+  const t = useT()
   // Use DB title if available; fall back to anchor URL fetch (CORS-friendly hosts only)
   const anchorTitle = useAnchorTitle(action.title ? null : action.anchorUrl)
 
@@ -38,7 +41,7 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
   const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
-  const proposalTitle = action.title ?? anchorTitle ?? getActionTypeLabel(action.actionType)
+  const proposalTitle = action.title ?? anchorTitle ?? t(`governance.type.${normalizeActionType(action.actionType)}`)
 
   return (
     <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block">
@@ -58,20 +61,20 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
         {/* Meta — single row: epoch · status · type */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <span className="text-text-secondary">
-            Hết hạn{" "}
-            <span className="text-text-primary font-medium">Epoch {action.expiresEpoch}</span>
+            {t("governance.card.expires")}{" "}
+            <span className="text-text-primary font-medium">{t("governance.card.epoch", { n: action.expiresEpoch })}</span>
           </span>
           <span className="text-text-muted">·</span>
           <GaStatusBadge status={action.status} />
           <span className="text-text-muted">·</span>
           <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-bg-elevated text-text-secondary border border-border-subtle">
-            {getActionTypeLabel(action.actionType)}
+            {t(`governance.type.${normalizeActionType(action.actionType)}`)}
           </span>
         </div>
 
         {/* Voting Results */}
         <div className="bg-bg-secondary rounded-xl p-4 space-y-3 border border-border-subtle">
-          <h4 className="font-semibold text-sm">Kết quả bỏ phiếu</h4>
+          <h4 className="font-semibold text-sm">{t("governance.card.voteResults")}</h4>
           <VoteResultsPanel action={action} />
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { marked } from "marked"
 import { useAnchorMetadata } from "@/hooks/useAnchorMetadata"
 import { resolveAnchorUrl } from "@/lib/governance"
+import { useT } from "@/i18n/useT"
 
 function MarkdownSection({ text }: { text: string }) {
   const html = marked.parse(text, { async: false }) as string
@@ -17,6 +18,7 @@ function MarkdownSection({ text }: { text: string }) {
 }
 
 export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
+  const t = useT()
   const { data, loading, error } = useAnchorMetadata(anchorUrl)
 
   if (loading) {
@@ -42,7 +44,7 @@ export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
     return (
       <div className="space-y-2 py-2">
         <p className="text-sm text-text-muted">
-          Không thể tải nội dung từ anchor. Có thể do CORS hoặc tài liệu chưa có sẵn.
+          {t("governance.metadata.loadError")}
         </p>
         {resolvedUrl && (
           <a
@@ -51,7 +53,7 @@ export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
             rel="noopener noreferrer"
             className="text-sm text-accent-light hover:underline inline-flex items-center gap-1"
           >
-            Xem trực tiếp
+            {t("governance.metadata.viewDirect")}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
               <polyline points="15 3 21 3 21 9" />
@@ -64,9 +66,9 @@ export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
   }
 
   const sections: { key: keyof typeof data; label: string }[] = [
-    { key: "abstract",   label: "Abstract" },
-    { key: "motivation", label: "Motivation" },
-    { key: "rationale",  label: "Rationale" },
+    { key: "abstract",   label: t("governance.metadata.abstract") },
+    { key: "motivation", label: t("governance.metadata.motivation") },
+    { key: "rationale",  label: t("governance.metadata.rationale") },
   ]
 
   return (
@@ -84,7 +86,7 @@ export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
 
       {data.references && data.references.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-text-primary">References</h3>
+          <h3 className="text-sm font-semibold text-text-primary">{t("governance.metadata.references")}</h3>
           <ul className="space-y-1">
             {data.references.map((ref, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
