@@ -1,15 +1,18 @@
 "use client"
 
 import { useWalletStore } from "@/store/wallet"
+import { useT } from "@/i18n/useT"
 
 export function ConnectWalletCta({
-  message = "Kết nối ví để tiếp tục",
+  message,
   variant = "card",
 }: {
   message?: string
   variant?: "card" | "inline"
 }) {
+  const t = useT()
   const openWalletModal = useWalletStore((s) => s.openWalletModal)
+  const msg = message ?? t("wallet.connectToContinue")
 
   if (variant === "inline") {
     return (
@@ -21,12 +24,12 @@ export function ConnectWalletCta({
             <path d="M2 10h20"/>
           </svg>
         </div>
-        <p className="text-sm text-text-muted">{message}</p>
+        <p className="text-sm text-text-muted">{msg}</p>
         <button
           onClick={openWalletModal}
           className="btn-primary text-sm w-full"
         >
-          Connect Wallet
+          {t("wallet.connect")}
         </button>
       </div>
     )
@@ -42,13 +45,13 @@ export function ConnectWalletCta({
         </svg>
       </div>
       <div className="space-y-1">
-        <p className="font-medium text-text-primary">{message}</p>
+        <p className="font-medium text-text-primary">{msg}</p>
       </div>
       <button
         onClick={openWalletModal}
         className="btn-primary text-sm px-6"
       >
-        Connect Wallet
+        {t("wallet.connect")}
       </button>
     </div>
   )

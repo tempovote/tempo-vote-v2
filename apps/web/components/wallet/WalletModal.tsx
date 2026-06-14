@@ -9,6 +9,7 @@ import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { getWalletInfo, CIP95_WALLETS } from "@tempo/wallet-bridge"
 import type { NetworkId } from "@tempo/wallet-bridge"
 import { copyToClipboard } from "@/lib/clipboard"
+import { useT } from "@/i18n/useT"
 
 const IPFS_DISPLAY_GATEWAYS = [
   "https://gateway.pinata.cloud/ipfs/",
@@ -66,6 +67,7 @@ function truncateAddress(addr: string, chars = 8): string {
 }
 
 function DRepInfoPanel({ drepName, drepId, imageUrl, onClose }: { drepName: string | null; drepId: string | null; imageUrl: string | null; onClose: () => void }) {
+  const t = useT()
   const [copiedDrepId, setCopiedDrepId] = useState(false)
   const [imgGwIdx, setImgGwIdx] = useState(0)
 
@@ -100,26 +102,26 @@ function DRepInfoPanel({ drepName, drepId, imageUrl, onClose }: { drepName: stri
             </div>
           )}
           <div>
-            <p className="text-text-muted text-xs mb-0.5 font-medium">DRep Name</p>
+            <p className="text-text-muted text-xs mb-0.5 font-medium">{t("wallet.modal.drepName")}</p>
             <p className="text-text-primary text-sm font-semibold">{displayName}</p>
           </div>
         </div>
       )}
       <div className="p-3">
         <div className="flex items-center justify-between mb-1">
-          <p className="text-text-muted text-xs font-medium">Your DRep ID</p>
+          <p className="text-text-muted text-xs font-medium">{t("wallet.modal.yourDrepId")}</p>
           {drepId && (
             <button
               onClick={handleCopyDrepId}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors"
-              title="Copy DRep ID"
+              title={t("wallet.modal.copyDrepId")}
             >
               {copiedDrepId ? (
                 <>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  Copied!
+                  {t("wallet.modal.copied")}
                 </>
               ) : (
                 <>
@@ -127,7 +129,7 @@ function DRepInfoPanel({ drepName, drepId, imageUrl, onClose }: { drepName: stri
                     <rect x="9" y="9" width="13" height="13" rx="2" />
                     <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
                   </svg>
-                  Copy
+                  {t("wallet.modal.copy")}
                 </>
               )}
             </button>
@@ -147,7 +149,7 @@ function DRepInfoPanel({ drepName, drepId, imageUrl, onClose }: { drepName: stri
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
           </svg>
-          Cập nhật
+          {t("wallet.modal.update")}
         </Link>
         <Link
           href="/dreps/retire"
@@ -159,7 +161,7 @@ function DRepInfoPanel({ drepName, drepId, imageUrl, onClose }: { drepName: stri
             <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
             <path d="M10 11v6M14 11v6" />
           </svg>
-          Retire
+          {t("wallet.modal.retire")}
         </Link>
       </div>
     </div>
@@ -173,10 +175,11 @@ function GovernanceStatusUnavailable({
   errorKind: "network" | "server" | null
   onClose: () => void
 }) {
+  const t = useT()
   const msg =
     errorKind === "network"
-      ? "API server not running — start the Kotlin backend"
-      : "Không thể kiểm tra trạng thái on-chain"
+      ? t("wallet.modal.statusUnavailableNetwork")
+      : t("wallet.modal.statusUnavailableServer")
 
   return (
     <div className="space-y-2">
@@ -192,10 +195,11 @@ function GovernanceStatusUnavailable({
 }
 
 function GovernanceCTA({ onClose }: { onClose: () => void }) {
+  const t = useT()
   return (
     <div className="p-3 rounded-xl bg-bg-card border border-border-subtle space-y-3">
       <p className="text-text-secondary text-xs leading-relaxed">
-        Tham gia quản trị Cardano bằng cách delegate cho DRep hoặc tự đăng ký trở thành DRep.
+        {t("wallet.modal.govCtaDesc")}
       </p>
       <div className="flex flex-col gap-2">
         <Link
@@ -203,14 +207,14 @@ function GovernanceCTA({ onClose }: { onClose: () => void }) {
           onClick={onClose}
           className="flex items-center justify-center py-2 rounded-lg border border-border-default text-text-secondary hover:text-text-primary hover:bg-white/5 text-xs font-medium transition-colors"
         >
-          Tìm DRep để delegate
+          {t("wallet.modal.findDrep")}
         </Link>
         <Link
           href="/dreps/register"
           onClick={onClose}
           className="flex items-center justify-center py-2 rounded-lg bg-accent/15 border border-accent/30 text-accent-light hover:bg-accent/25 text-xs font-medium transition-colors"
         >
-          Đăng ký trở thành DRep
+          {t("wallet.modal.registerDrep")}
         </Link>
       </div>
     </div>
@@ -223,6 +227,7 @@ interface WalletModalProps {
 }
 
 export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
+  const t = useT()
   const {
     isConnected, isConnecting, error,
     name, networkId, changeAddress, drepKey,
@@ -291,12 +296,12 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-bold text-text-primary">
-            {isConnected ? "Wallet" : isConnecting ? "Connecting..." : "Connect Wallet"}
+            {isConnected ? t("wallet.modal.title") : isConnecting ? t("wallet.connecting") : t("wallet.connect")}
           </h2>
           <button
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-white/5 transition-colors"
-            aria-label="Close"
+            aria-label={t("wallet.modal.close")}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -326,7 +331,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                     <button
                       onClick={handleCopyAddress}
                       className="shrink-0 text-text-muted hover:text-text-primary transition-colors"
-                      title={copied ? "Copied!" : "Copy address"}
+                      title={copied ? t("wallet.modal.copied") : t("wallet.modal.copyAddress")}
                     >
                       {copied ? (
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -358,7 +363,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                 /* Fetching on-chain status from Ogmios */
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-bg-card border border-border-subtle text-xs text-text-muted">
                   <div className="spinner shrink-0" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                  Checking governance status...
+                  {t("wallet.modal.checkingGovernance")}
                 </div>
               ) : isDrepRegistered === true ? (
                 /* Confirmed by Ogmios: registered DRep */
@@ -369,7 +374,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  Delegated to: &ldquo;{delegatedDrep.name ?? truncateAddress(delegatedDrep.id, 8)}&rdquo;
+                  {t("wallet.modal.delegatedTo", { name: delegatedDrep.name ?? truncateAddress(delegatedDrep.id, 8) })}
                 </div>
               ) : isDrepRegistered === false ? (
                 /* Confirmed by Ogmios: not DRep, not delegated */
@@ -390,7 +395,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                   <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
                 </svg>
-                Wallet doesn&apos;t support CIP-95 — governance features limited
+                {t("wallet.modal.noCip95")}
               </div>
             )}
 
@@ -402,8 +407,8 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
           <div className="flex flex-col items-center gap-4 py-8">
             <div className="spinner" style={{ width: 40, height: 40, borderWidth: 3 }} />
             <div className="text-center">
-              <p className="font-semibold text-sm">Connecting to {connectingWallet}...</p>
-              <p className="text-text-muted text-xs mt-1">Check your wallet extension for approval</p>
+              <p className="font-semibold text-sm">{t("wallet.modal.connectingTo", { name: connectingWallet ?? "" })}</p>
+              <p className="text-text-muted text-xs mt-1">{t("wallet.modal.approvalHint")}</p>
             </div>
           </div>
         )}
@@ -423,14 +428,14 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                   <div className="flex items-center justify-between pl-5">
                     <span className="text-text-muted">
                       {/locked/i.test(error)
-                        ? "Unlock your wallet then try again, or reload."
-                        : "Wallet session expired — reload to fix."}
+                        ? t("wallet.modal.unlockRetry")
+                        : t("wallet.modal.sessionExpired")}
                     </span>
                     <button
                       onClick={() => window.location.reload()}
                       className="text-accent-light hover:underline font-medium shrink-0 ml-2"
                     >
-                      Reload ↺
+                      {t("wallet.modal.reload")}
                     </button>
                   </div>
                 )}
@@ -438,7 +443,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
             )}
 
             <p className="text-text-muted text-xs mb-1">
-              Select a wallet to connect. CIP-95 wallets support governance features.
+              {t("wallet.modal.selectPrompt")}
             </p>
 
             <div className="space-y-2">
@@ -485,7 +490,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                         )}
                       </div>
                       {!isInstalled && (
-                        <p className="text-text-muted text-xs mt-0.5">Not installed</p>
+                        <p className="text-text-muted text-xs mt-0.5">{t("wallet.modal.notInstalled")}</p>
                       )}
                     </div>
 
@@ -502,7 +507,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
                         onClick={(e) => e.stopPropagation()}
                         className="text-[11px] text-accent-light hover:underline shrink-0"
                       >
-                        Install ↗
+                        {t("wallet.modal.install")}
                       </a>
                     )}
                   </button>

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { marked } from "marked"
+import { useT } from "@/i18n/useT"
 
 interface Props {
   value: string
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function MarkdownEditor({ value, onChange, placeholder, rows = 5, id, maxLength }: Props) {
+  const t = useT()
   const [tab, setTab] = useState<"write" | "preview">("write")
   const remaining = maxLength !== undefined ? maxLength - value.length : null
   const isOver = remaining !== null && remaining < 0
@@ -35,7 +37,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, rows = 5,
               : "text-text-muted hover:text-text-secondary"
           }`}
         >
-          Viết
+          {t("editor.write")}
         </button>
         <button
           type="button"
@@ -46,7 +48,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, rows = 5,
               : "text-text-muted hover:text-text-secondary"
           }`}
         >
-          Xem trước
+          {t("editor.preview")}
         </button>
         <div className="flex-1" />
         <span className="px-3 py-2 text-xs text-text-muted opacity-50 select-none">Markdown</span>
@@ -79,7 +81,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, rows = 5,
             // eslint-disable-next-line react/no-danger
             <div dangerouslySetInnerHTML={{ __html: html() }} />
           ) : (
-            <span className="text-text-muted italic">Chưa có nội dung...</span>
+            <span className="text-text-muted italic">{t("editor.empty")}</span>
           )}
         </div>
       )}
@@ -87,7 +89,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, rows = 5,
       {/* Character counter */}
       {remaining !== null && (
         <div className={`px-4 pb-2 text-xs text-right ${isOver ? "text-danger font-medium" : "text-text-muted"}`}>
-          {remaining.toLocaleString()} ký tự còn lại
+          {t("editor.charsRemaining", { count: remaining.toLocaleString() })}
         </div>
       )}
     </div>

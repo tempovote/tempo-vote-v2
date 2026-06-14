@@ -275,10 +275,10 @@ export default function TreasuryProjectionPage() {
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-text-muted uppercase tracking-wider">{t("treasury.protocolParams")}</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-text-muted">
-                <span>ρ (expansion)</span><span className="text-text-secondary font-mono">{RHO}</span>
-                <span>τ (treasury cut)</span><span className="text-text-secondary font-mono">{TAU}</span>
-                <span>Epoch length</span><span className="text-text-secondary font-mono">{EPOCH_DAYS} days</span>
-                <span>Epochs/year</span><span className="text-text-secondary font-mono">{EPOCHS_PER_YEAR.toFixed(1)}</span>
+                <span>{t("treasury.paramRho")}</span><span className="text-text-secondary font-mono">{RHO}</span>
+                <span>{t("treasury.paramTau")}</span><span className="text-text-secondary font-mono">{TAU}</span>
+                <span>{t("treasury.paramEpochLength")}</span><span className="text-text-secondary font-mono">{t("treasury.paramDays", { n: EPOCH_DAYS })}</span>
+                <span>{t("treasury.paramEpochsPerYear")}</span><span className="text-text-secondary font-mono">{EPOCHS_PER_YEAR.toFixed(1)}</span>
               </div>
             </div>
           </div>
