@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
 import { useWallet } from "@/hooks/useWallet"
 import { useCommunity } from "@/hooks/useCommunity"
+import { resolvePollCta, resolveTargetDrepId } from "@/lib/pollCta"
 import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
 import { govActionIdToBech32 } from "@/lib/governance"
@@ -32,26 +33,13 @@ export default function GovernanceActionsPage() {
 
   // The CTA must reflect the user's role + real community state, not the always-present
   // derived DRep key (dRepIDCip105 exists for any CIP-95 wallet, even non-DReps).
-  // The community a wallet "belongs to" is its own (if a registered DRep) else the DRep
-  // it delegated to. Both DReps AND their delegators may create internal polls, so:
-  //   • belongs to an active community → create a poll
-  //   • DRep owner of an inactive community → activate it first
-  //   • delegator of an inactive community → open it (page explains the DRep hasn't activated)
-  //   • belongs to no community (not a DRep, hasn't delegated) → register as a DRep
+  // Routing matrix lives in resolvePollCta (lib/pollCta.ts) so it's unit-tested.
   const ownDrepId = drepKey?.dRepIDCip105 ?? null
-  const isDrep = isDrepRegistered === true && !!ownDrepId
-  const targetDrepId = isDrep ? ownDrepId : (delegatedDrep?.id ?? null)
+  const delegatedDrepId = delegatedDrep?.id ?? null
+  const targetDrepId = resolveTargetDrepId(isDrepRegistered, ownDrepId, delegatedDrepId)
   const { isActive: targetActive } = useCommunity(targetDrepId ?? "", network)
-  const netSuffix = network !== "mainnet" ? `&network=${network}` : ""
-  const netQuery = network !== "mainnet" ? `?network=${network}` : ""
-
-  const pollCta = !targetDrepId
-    ? { href: "/dreps/register", label: t("governance.list.becomeDrep") }
-    : targetActive
-      ? { href: `/dreps/${targetDrepId}/community?create=true${netSuffix}`, label: t("governance.list.internalPoll") }
-      : isDrep
-        ? { href: `/dreps/${targetDrepId}/community${netQuery}`, label: t("governance.list.activateCommunity") }
-        : { href: `/dreps/${targetDrepId}/community${netQuery}`, label: t("governance.list.drepCommunity") }
+  const cta = resolvePollCta({ isDrepRegistered, ownDrepId, delegatedDrepId, targetActive, network })
+  const pollCta = { href: cta.href, label: t(cta.labelKey) }
 
   const [statusFilter, setStatusFilter] = useState("active")
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
