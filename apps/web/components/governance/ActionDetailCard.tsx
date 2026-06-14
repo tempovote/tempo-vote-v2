@@ -10,6 +10,7 @@ import type {
   UpdateCommitteeDetails,
   ProtocolParamChangeDetails,
 } from "@tempo/types"
+import { useT } from "@/i18n/useT"
 
 // ── Ogmios protocol parameter key → human label mapping ──────────────────────
 
@@ -74,10 +75,11 @@ function HashRow({ label, value }: { label: string; value: string }) {
 }
 
 function PrevAction({ txHash, index }: { txHash?: string; index?: number }) {
+  const t = useT()
   if (!txHash) return null
   return (
     <div className="pt-3 border-t border-border-subtle space-y-0.5">
-      <p className="text-xs text-text-muted">Previous Action ID</p>
+      <p className="text-xs text-text-muted">{t("governance.actionDetail.prevActionId")}</p>
       <p className="font-mono text-xs text-text-secondary break-all">
         {txHash}#{index ?? 0}
       </p>
@@ -145,6 +147,7 @@ interface ExpandModalProps {
 }
 
 function ExpandModal({ label, content, onClose }: ExpandModalProps) {
+  const t = useT()
   // Parse content into renderable sections (plain text or code blocks)
   const sections = parseModalContent(content)
 
@@ -163,7 +166,7 @@ function ExpandModal({ label, content, onClose }: ExpandModalProps) {
           <button
             onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-full bg-bg-secondary text-text-muted hover:text-text-primary hover:bg-border-subtle transition-colors text-sm"
-            aria-label="Đóng"
+            aria-label={t("governance.actionDetail.close")}
           >
             ✕
           </button>
@@ -233,35 +236,36 @@ function parseModalContent(raw: string): ContentSection[] {
 // ── Type-specific detail sections ─────────────────────────────────────────────
 
 function NoConfidenceDetail() {
+  const t = useT()
   return (
     <div className="p-4 bg-warning/8 border border-warning/20 rounded-xl text-sm space-y-1.5">
-      <p className="font-semibold text-warning">Bất tín nhiệm Constitutional Committee</p>
+      <p className="font-semibold text-warning">{t("governance.actionDetail.noConfidence.title")}</p>
       <p className="text-text-secondary text-xs">
-        Nếu được ratified, đề xuất này sẽ giải tán Constitutional Committee hiện tại.
-        Cardano sẽ vào trạng thái không có CC cho đến khi một Update Committee GA mới được thông qua.
+        {t("governance.actionDetail.noConfidence.desc")}
       </p>
-      <p className="text-text-muted text-xs">Yêu cầu: DRep ≥ 60% + SPO ≥ 51%</p>
+      <p className="text-text-muted text-xs">{t("governance.actionDetail.noConfidence.req")}</p>
     </div>
   )
 }
 
 function HardForkDetail({ d }: { d: HardForkDetails }) {
+  const t = useT()
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-4">
         <div>
-          <p className="text-xs text-text-muted mb-0.5">Phiên bản đề xuất</p>
+          <p className="text-xs text-text-muted mb-0.5">{t("governance.actionDetail.hardFork.proposedVersion")}</p>
           <p className="text-2xl font-bold tabular-nums">
             {d.versionMajor ?? "?"}.{d.versionMinor ?? "?"}
           </p>
         </div>
       </div>
       <p className="text-xs text-text-muted">
-        Hard Fork sẽ nâng cấp giao thức Cardano lên phiên bản{" "}
+        {t("governance.actionDetail.hardFork.desc1")}
         <span className="text-text-secondary font-medium">
           {d.versionMajor}.{d.versionMinor}
         </span>
-        . Tất cả node phải được nâng cấp trước khi epoch chuyển tiếp.
+        {t("governance.actionDetail.hardFork.desc2")}
       </p>
       <PrevAction txHash={d.prevActionTxHash} index={d.prevActionIndex} />
     </div>
@@ -286,6 +290,7 @@ function NewConstitutionDetail({ d }: { d: NewConstitutionDetails }) {
 }
 
 function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
+  const t = useT()
   // Ogmios returns withdrawals as { stakeAddr: { ada: { lovelace: N } } } (object),
   // but older/normalized data may already be an array. Handle both.
   const raw = d as unknown as Record<string, unknown>
@@ -305,7 +310,7 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border-subtle bg-bg-secondary">
-              <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Địa chỉ Stake</th>
+              <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">{t("governance.actionDetail.treasury.stakeAddress")}</th>
               <th className="px-3 py-2 text-right text-xs text-text-muted font-semibold">ADA</th>
             </tr>
           </thead>
@@ -326,7 +331,7 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
           {withdrawals.length > 1 && (
             <tfoot>
               <tr className="bg-bg-secondary border-t border-border-subtle">
-                <td className="px-3 py-2 text-xs text-text-muted font-semibold">Tổng cộng</td>
+                <td className="px-3 py-2 text-xs text-text-muted font-semibold">{t("governance.actionDetail.treasury.total")}</td>
                 <td className="px-3 py-2 text-right font-bold tabular-nums">
                   {lovelaceToAda(totalLovelace)}{" "}
                   <span className="text-text-muted text-xs font-normal">ADA</span>
@@ -345,6 +350,7 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
 }
 
 function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
+  const t = useT()
   const quorumLabel = d.quorumNumerator != null && d.quorumDenominator
     ? `${d.quorumNumerator}/${d.quorumDenominator} (${((d.quorumNumerator / d.quorumDenominator) * 100).toFixed(1)}%)`
     : d.quorumRate != null
@@ -355,7 +361,7 @@ function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
     <div className="space-y-4">
       {quorumLabel && (
         <div>
-          <p className="text-xs text-text-muted mb-0.5">Quorum mới</p>
+          <p className="text-xs text-text-muted mb-0.5">{t("governance.actionDetail.updateCommittee.newQuorum")}</p>
           <p className="font-semibold">{quorumLabel}</p>
         </div>
       )}
@@ -363,14 +369,14 @@ function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
       {d.addedMembers.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-xs font-semibold text-success uppercase tracking-wider">
-            Thêm ({d.addedMembers.length})
+            {t("governance.actionDetail.updateCommittee.add", { n: d.addedMembers.length })}
           </p>
           <div className="rounded-xl border border-border-subtle overflow-hidden">
             {d.addedMembers.map((m, i) => (
               <div key={i} className="flex items-center justify-between px-3 py-2 border-b border-border-subtle/50 last:border-0 text-xs">
                 <span className="font-mono text-text-secondary">{shortHash(m.credential)}</span>
                 {m.termEpoch != null && (
-                  <span className="text-text-muted">hết hạn Epoch {m.termEpoch}</span>
+                  <span className="text-text-muted">{t("governance.actionDetail.updateCommittee.expiresEpoch", { n: m.termEpoch })}</span>
                 )}
               </div>
             ))}
@@ -381,7 +387,7 @@ function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
       {d.removedMembers.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-xs font-semibold text-danger uppercase tracking-wider">
-            Xóa ({d.removedMembers.length})
+            {t("governance.actionDetail.updateCommittee.remove", { n: d.removedMembers.length })}
           </p>
           <div className="rounded-xl border border-border-subtle overflow-hidden">
             {d.removedMembers.map((cred, i) => (
@@ -399,6 +405,7 @@ function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
 }
 
 function ProtocolParamChangeDetail({ d }: { d: ProtocolParamChangeDetails }) {
+  const t = useT()
   const [modal, setModal] = useState<{ label: string; content: string } | null>(null)
   const params = d.parameters ?? {}
   const entries = Object.entries(params)
@@ -407,14 +414,14 @@ function ProtocolParamChangeDetail({ d }: { d: ProtocolParamChangeDetails }) {
     <>
       <div className="space-y-3">
         {entries.length === 0 ? (
-          <p className="text-xs text-text-muted">Không có thông số nào được thay đổi.</p>
+          <p className="text-xs text-text-muted">{t("governance.actionDetail.protocolParam.noChanges")}</p>
         ) : (
           <div className="rounded-xl border border-border-subtle overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border-subtle bg-bg-secondary">
-                  <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">Thông số</th>
-                  <th className="px-3 py-2 text-right text-xs text-text-muted font-semibold">Giá trị đề xuất</th>
+                  <th className="px-3 py-2 text-left text-xs text-text-muted font-semibold">{t("governance.actionDetail.protocolParam.param")}</th>
+                  <th className="px-3 py-2 text-right text-xs text-text-muted font-semibold">{t("governance.actionDetail.protocolParam.proposedValue")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -439,7 +446,7 @@ function ProtocolParamChangeDetail({ d }: { d: ProtocolParamChangeDetails }) {
                               }
                               className="shrink-0 px-2 py-0.5 rounded-md text-xs font-medium bg-accent/10 text-accent-light hover:bg-accent/20 transition-colors border border-accent/20"
                             >
-                              Xem thêm
+                              {t("governance.actionDetail.protocolParam.viewMore")}
                             </button>
                           </div>
                         ) : (
@@ -500,20 +507,25 @@ function formatParamValue(val: unknown): string {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function ActionDetailCard({ action }: { action: GovernanceAction }) {
+  const t = useT()
   const { actionType, details } = action
   const d = details as Record<string, unknown> | null | undefined
 
   // infoAction / information has no extra on-chain detail — nothing to show
   if (actionType === "infoAction" || actionType === "information") return null
 
-  const title = {
-    noConfidence:             "Tác động",
-    hardForkInitiation:       "Phiên bản đề xuất",
-    newConstitution:          "Hiến pháp mới",
-    treasuryWithdrawals:      "Khoản rút",
-    updateCommittee:          "Thay đổi Committee",
-    protocolParametersUpdate: "Thông số đề xuất",
-  }[actionType] ?? "Chi tiết"
+  const sectionKeys: Record<string, string> = {
+    noConfidence:             "governance.actionDetail.sectionTitle.noConfidence",
+    hardForkInitiation:       "governance.actionDetail.sectionTitle.hardForkInitiation",
+    newConstitution:          "governance.actionDetail.sectionTitle.newConstitution",
+    treasuryWithdrawals:      "governance.actionDetail.sectionTitle.treasuryWithdrawals",
+    updateCommittee:          "governance.actionDetail.sectionTitle.updateCommittee",
+    protocolParametersUpdate: "governance.actionDetail.sectionTitle.protocolParametersUpdate",
+  }
+  const sectionKey = sectionKeys[actionType]
+  const title = sectionKey
+    ? t(sectionKey)
+    : t("governance.actionDetail.detailsFallback")
 
   return (
     <div className="card-static space-y-4 animate-fade-in">

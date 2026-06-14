@@ -4,16 +4,18 @@ import { useState } from "react"
 import type { GovernanceAction } from "@tempo/types"
 import { VoteHistoryTab } from "./VoteHistoryTab"
 import { GaMetadataTab } from "./GaMetadataTab"
+import { useT } from "@/i18n/useT"
 
 type Tab = "votes" | "metadata"
 
 export function GaDetailTabs({ action }: { action: GovernanceAction }) {
+  const t = useT()
   const hasMetadata = Boolean(action.anchorUrl)
   const [tab, setTab] = useState<Tab>("votes")
 
   const TABS: { id: Tab; label: string; show: boolean }[] = [
-    { id: "votes",    label: "Votes",    show: true },
-    { id: "metadata", label: "Metadata", show: hasMetadata },
+    { id: "votes",    label: t("governance.tabs.votes"),    show: true },
+    { id: "metadata", label: t("governance.tabs.metadata"), show: hasMetadata },
   ]
 
   const visibleTabs = TABS.filter((t) => t.show)
