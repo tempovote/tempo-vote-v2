@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import ProtocolTable, { type CardanoProtocol, type SortMode } from "@/components/dapp-ranking/ProtocolTable"
+import { useT } from "@/i18n/useT"
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts"
@@ -100,16 +101,10 @@ function TableSkeleton() {
   )
 }
 
-// ── Sort tabs ─────────────────────────────────────────────────────────────
-
-const SORT_TABS: { key: SortMode; label: string }[] = [
-  { key: "tvl",    label: "TVL"    },
-  { key: "volume", label: "Volume" },
-]
-
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function DAppRankingPage() {
+  const t = useT()
   const [protocols, setProtocols] = useState<CardanoProtocol[]>([])
   const [chartData, setChartData] = useState<ChartPoint[]>([])
   const [loadingProtocols, setLoadingProtocols] = useState(true)
@@ -228,7 +223,7 @@ export default function DAppRankingPage() {
     <div className="page-container space-y-8">
 
       {/* Header */}
-      <h1 className="text-2xl font-bold animate-fade-in">DApp Ranking</h1>
+      <h1 className="text-2xl font-bold animate-fade-in">{t("dappRanking.pageTitle")}</h1>
 
       {/* Notice */}
       <div className="notice animate-fade-in">
@@ -238,12 +233,12 @@ export default function DAppRankingPage() {
           <circle cx="12" cy="16" r="1" fill="currentColor" />
         </svg>
         <span>
-          Dữ liệu từ{" "}
+          {t("dappRanking.noticePrefix")}{" "}
           <a href="https://defillama.com/chain/Cardano" target="_blank" rel="noopener noreferrer"
             className="underline text-accent-light hover:text-accent transition-colors">
             DefiLlama
           </a>
-          {" "}— DApp có Cardano là chain chính, TVL tính bằng USD, cập nhật ~24h.
+          {" "}{t("dappRanking.noticeSuffix")}
         </span>
       </div>
 
@@ -252,7 +247,7 @@ export default function DAppRankingPage() {
 
         <div className="card-static space-y-4">
           <div>
-            <p className="text-xs text-text-muted mb-1">Cardano Total TVL</p>
+            <p className="text-xs text-text-muted mb-1">{t("dappRanking.totalTvlLabel")}</p>
             {loadingChart ? (
               <div className="space-y-2">
                 <div className="h-8 w-28 bg-bg-card-hover rounded animate-pulse" />
@@ -269,8 +264,8 @@ export default function DAppRankingPage() {
           </div>
           <div className="pt-2 border-t border-border-subtle text-sm">
             <div className="flex justify-between">
-              <span className="text-text-muted">Showing</span>
-              <span className="font-medium">{loadingProtocols ? "—" : `Top ${sorted.length}`}</span>
+              <span className="text-text-muted">{t("dappRanking.showing")}</span>
+              <span className="font-medium">{loadingProtocols ? "—" : t("dappRanking.showingTop", { n: sorted.length })}</span>
             </div>
           </div>
           <a href="https://defillama.com/chain/Cardano" target="_blank" rel="noopener noreferrer"
@@ -280,13 +275,13 @@ export default function DAppRankingPage() {
               <polyline points="15 3 21 3 21 9"/>
               <line x1="10" y1="14" x2="21" y2="3"/>
             </svg>
-            View on DefiLlama
+            {t("dappRanking.viewOnDefiLlama")}
           </a>
         </div>
 
         <div className="card-static">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold">Cardano TVL — Last 90 Days</h3>
+            <h3 className="text-sm font-semibold">{t("dappRanking.chartTitle")}</h3>
             <div className="flex gap-1 bg-bg-secondary rounded-xl p-1">
               {(["usd", "ada"] as ChartUnit[]).map(u => (
                 <button key={u} onClick={() => setChartUnit(u)}
@@ -305,7 +300,7 @@ export default function DAppRankingPage() {
             <div className="h-48 bg-bg-card-hover rounded animate-pulse" />
           ) : chartData.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-text-muted text-sm">
-              Không có dữ liệu biểu đồ
+              {t("dappRanking.noChartData")}
             </div>
           ) : (() => {
             const isAda = chartUnit === "ada" && adaPrice > 0
@@ -347,14 +342,17 @@ export default function DAppRankingPage() {
       <div className="animate-fade-in">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <h2 className="text-xl font-bold">
-            Protocol Rankings
+            {t("dappRanking.rankingsTitle")}
             {!loadingProtocols && (
-              <span className="ml-2 text-sm font-normal text-text-muted">Top {sorted.length}</span>
+              <span className="ml-2 text-sm font-normal text-text-muted">{t("dappRanking.showingTop", { n: sorted.length })}</span>
             )}
           </h2>
 
           <div className="flex gap-1 bg-bg-secondary rounded-xl p-1">
-            {SORT_TABS.map(tab => (
+            {([
+              { key: "tvl" as SortMode, label: t("dappRanking.sortTvl") },
+              { key: "volume" as SortMode, label: t("dappRanking.sortVolume") },
+            ]).map(tab => (
               <button key={tab.key} onClick={() => setSortMode(tab.key)}
                 className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   sortMode === tab.key

@@ -12,6 +12,7 @@ import { useDRepVpChange } from "@/hooks/useDRepVpChange"
 import { lovelaceToAda } from "@/lib/governance"
 import DRepAvatar from "@/components/drep/DRepAvatar"
 import CopyableId from "@/components/ui/CopyableId"
+import { useT } from "@/i18n/useT"
 
 function looksLikeDrepId(q: string): boolean {
   const t = q.trim()
@@ -73,6 +74,7 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 export default function DRepsPage() {
+  const t = useT()
   const router = useRouter()
   const network = useWalletStore((s) => s.selectedNetwork)
   const [inputValue, setInputValue] = useState("")
@@ -123,7 +125,7 @@ export default function DRepsPage() {
 
   return (
     <div className="page-container space-y-10">
-      <h1 className="text-2xl font-bold animate-fade-in">DReps</h1>
+      <h1 className="text-2xl font-bold animate-fade-in">{t("dreps.pageTitle")}</h1>
 
       {/* Search */}
       <div className="space-y-4 animate-fade-in">
@@ -144,7 +146,7 @@ export default function DRepsPage() {
             </svg>
             <input
               type="text"
-              placeholder="Tên, drep1… hoặc 56-char hex"
+              placeholder={t("dreps.searchPlaceholder")}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -152,7 +154,7 @@ export default function DRepsPage() {
             />
           </div>
           <button className="btn-primary px-6" onClick={isIdQuery ? handleNavigateToId : undefined}>
-            {isIdQuery ? "Go to Profile" : "Search"}
+            {isIdQuery ? t("dreps.goToProfile") : t("dreps.searchBtn")}
           </button>
         </div>
 
@@ -164,7 +166,7 @@ export default function DRepsPage() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
-            View profile for {inputValue.trim().slice(0, 20)}{inputValue.trim().length > 20 ? "…" : ""}
+            {t("dreps.viewProfile", { id: inputValue.trim().slice(0, 20) + (inputValue.trim().length > 20 ? "…" : "") })}
           </Link>
         )}
       </div>
@@ -174,13 +176,13 @@ export default function DRepsPage() {
         {nameQ ? (
           <div className="space-y-4 animate-fade-in">
             <div className="flex items-center gap-3">
-              <h3 className="text-base font-semibold">Kết quả tìm kiếm</h3>
+              <h3 className="text-base font-semibold">{t("dreps.searchResults")}</h3>
               {isDrepsLoading && (
-                <span className="text-xs text-text-muted">Đang tải danh sách...</span>
+                <span className="text-xs text-text-muted">{t("dreps.loadingList")}</span>
               )}
               {namesStillLoading && !isDrepsLoading && (
                 <span className="text-xs text-text-muted">
-                  Đang tải tên ({namesLoaded}/{anchorWithUrl})...
+                  {t("dreps.loadingNames", { loaded: namesLoaded, total: anchorWithUrl })}
                 </span>
               )}
             </div>
@@ -189,16 +191,16 @@ export default function DRepsPage() {
               <div className="text-center py-10 text-text-muted space-y-2">
                 <p className="text-3xl">🔍</p>
                 <p className="font-medium">
-                  Không tìm thấy DRep phù hợp với &ldquo;{q}&rdquo;
+                  {t("dreps.noResults", { q })}
                 </p>
                 {namesStillLoading && (
-                  <p className="text-xs">Tên DRep đang tải — thử lại sau vài giây</p>
+                  <p className="text-xs">{t("dreps.namesStillLoading")}</p>
                 )}
                 <button
                   className="text-sm text-accent-light underline"
                   onClick={() => setInputValue("")}
                 >
-                  Xoá tìm kiếm
+                  {t("dreps.clearSearch")}
                 </button>
               </div>
             ) : (
@@ -222,7 +224,7 @@ export default function DRepsPage() {
                             <div className="font-medium text-sm truncate">{name}</div>
                           ) : (
                             <div className="text-xs text-text-muted italic">
-                              {drep.anchorUrl ? "Đang tải tên..." : "Không có tên"}
+                              {drep.anchorUrl ? t("dreps.loadingName") : t("dreps.noName")}
                             </div>
                           )}
                           <CopyableId id={drep.id} />
@@ -236,7 +238,7 @@ export default function DRepsPage() {
                 })}
                 {searchResults.length > 30 && (
                   <p className="text-xs text-center text-text-muted py-2">
-                    Còn {searchResults.length - 30} DRep khác — nhập thêm để thu hẹp kết quả
+                    {t("dreps.moreResults", { n: searchResults.length - 30 })}
                   </p>
                 )}
               </div>
@@ -249,21 +251,21 @@ export default function DRepsPage() {
             {/* Pill tab bar — same pattern as VoteHistoryTab */}
             <div className="flex gap-1 bg-bg-secondary rounded-xl p-1 overflow-x-auto scrollbar-none">
               {([
-                { id: "delegators", label: "Delegators" },
-                { id: "whales",     label: "Whales >1M ₳" },
-                { id: "vp",         label: "Voting Power" },
-                { id: "vpChange",   label: "VP Change / epoch Δ" },
-              ] as { id: LeaderboardTab; label: string }[]).map((t) => (
+                { id: "delegators", label: t("dreps.tab.delegators") },
+                { id: "whales",     label: t("dreps.tab.whales") },
+                { id: "vp",         label: t("dreps.tab.vp") },
+                { id: "vpChange",   label: t("dreps.tab.vpChange") },
+              ] as { id: LeaderboardTab; label: string }[]).map((tab) => (
                 <button
-                  key={t.id}
-                  onClick={() => setActiveTab(t.id)}
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                    activeTab === t.id
+                    activeTab === tab.id
                       ? "bg-bg-card text-text-primary shadow-sm"
                       : "text-text-muted hover:text-text-secondary"
                   }`}
                 >
-                  {t.label}
+                  {tab.label}
                 </button>
               ))}
             </div>
@@ -276,10 +278,10 @@ export default function DRepsPage() {
                 {activeTab === "delegators" && (<>
                   <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
                     <th className="py-2.5 px-4 font-medium w-10">#</th>
-                    <th className="py-2.5 px-4 font-medium">DRep</th>
-                    <th className="py-2.5 px-4 font-medium text-right">Delegators</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Active VP</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Influence</th>
+                    <th className="py-2.5 px-4 font-medium">{t("dreps.col.drep")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right">{t("dreps.col.delegators")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">{t("dreps.col.activeVp")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">{t("dreps.col.influence")}</th>
                   </tr></thead>
                   <tbody>
                     {leaderboardLoading
@@ -300,16 +302,16 @@ export default function DRepsPage() {
                 {activeTab === "whales" && (<>
                   <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
                     <th className="py-2.5 px-4 font-medium w-10">#</th>
-                    <th className="py-2.5 px-4 font-medium">DRep</th>
-                    <th className="py-2.5 px-4 font-medium text-right">Whales</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Total Delegators</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Active VP</th>
+                    <th className="py-2.5 px-4 font-medium">{t("dreps.col.drep")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right">{t("dreps.col.whales")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">{t("dreps.col.totalDelegators")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">{t("dreps.col.activeVp")}</th>
                   </tr></thead>
                   <tbody>
                     {whaleLoading
                       ? [...Array(10)].map((_, i) => <SkeletonRow key={i} cols={5} />)
                       : whaleLeaders.length === 0
-                        ? <tr><td colSpan={5} className="py-12 text-center text-text-muted text-sm">Whale data is being indexed — check back in a few minutes</td></tr>
+                        ? <tr><td colSpan={5} className="py-12 text-center text-text-muted text-sm">{t("dreps.whaleEmpty")}</td></tr>
                         : whaleLeaders.map((entry, i) => (
                             <tr key={entry.id} className={`border-b border-border-subtle hover:bg-bg-card-hover transition-colors ${i === 0 ? "bg-yellow-500/5" : ""}`}>
                               <td className="py-3 px-4"><RankBadge rank={i + 1} /></td>
@@ -326,10 +328,10 @@ export default function DRepsPage() {
                 {activeTab === "vp" && (<>
                   <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
                     <th className="py-2.5 px-4 font-medium w-10">#</th>
-                    <th className="py-2.5 px-4 font-medium">DRep</th>
-                    <th className="py-2.5 px-4 font-medium text-right">Active VP</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Influence</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Delegators</th>
+                    <th className="py-2.5 px-4 font-medium">{t("dreps.col.drep")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right">{t("dreps.col.activeVp")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">{t("dreps.col.influence")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">{t("dreps.col.delegators")}</th>
                   </tr></thead>
                   <tbody>
                     {byVpLoading
@@ -350,16 +352,16 @@ export default function DRepsPage() {
                 {activeTab === "vpChange" && (<>
                   <thead><tr className="border-b border-border-default text-text-muted text-left text-xs">
                     <th className="py-2.5 px-4 font-medium w-10">#</th>
-                    <th className="py-2.5 px-4 font-medium">DRep</th>
-                    <th className="py-2.5 px-4 font-medium text-right">Change</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">Current VP</th>
-                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">Prev VP</th>
+                    <th className="py-2.5 px-4 font-medium">{t("dreps.col.drep")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right">{t("dreps.col.change")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden sm:table-cell">{t("dreps.col.currentVp")}</th>
+                    <th className="py-2.5 px-4 font-medium text-right hidden md:table-cell">{t("dreps.col.prevVp")}</th>
                   </tr></thead>
                   <tbody>
                     {vpChangeLoading
                       ? [...Array(10)].map((_, i) => <SkeletonRow key={i} cols={5} />)
                       : vpChangers.length === 0
-                        ? <tr><td colSpan={5} className="py-12 text-center text-text-muted text-sm">Collecting epoch snapshots — data available after the next epoch boundary</td></tr>
+                        ? <tr><td colSpan={5} className="py-12 text-center text-text-muted text-sm">{t("dreps.vpChangeEmpty")}</td></tr>
                         : vpChangers.map((entry, i) => (
                             <tr key={entry.id} className={`border-b border-border-subtle hover:bg-bg-card-hover transition-colors ${i === 0 ? "bg-yellow-500/5" : ""}`}>
                               <td className="py-3 px-4"><RankBadge rank={i + 1} /></td>

@@ -13,6 +13,7 @@ import { useTx } from "@/hooks/useTx"
 import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { resolveAnchorUrls } from "@/lib/governance"
 import { authHeader, getJwt } from "@/lib/api"
+import { useT } from "@/i18n/useT"
 import type { DRepVote } from "@tempo/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
@@ -101,6 +102,7 @@ function VoteBadge({ vote }: { vote: DRepVote["vote"] }) {
 // ─── Voting history row ───────────────────────────────────────────────────────
 
 function VoteHistoryRow({ entry }: { entry: DRepVote }) {
+  const t = useT()
   const displayTitle = entry.title
     ?? `${entry.txHash.slice(0, 10)}…${entry.txHash.slice(-6)}#${entry.index}`
 
@@ -116,7 +118,7 @@ function VoteHistoryRow({ entry }: { entry: DRepVote }) {
         {displayTitle}
       </span>
       <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
-        {entry.expiresEpoch != null ? `Epoch ${entry.expiresEpoch}` : "Expired"}
+        {entry.expiresEpoch != null ? t("drepDetail.epochLabel", { n: entry.expiresEpoch }) : t("drepDetail.expired")}
       </span>
       <VoteBadge vote={entry.vote} />
     </Link>
@@ -141,6 +143,7 @@ function Pagination({ page, total, limit, onPage }: {
   limit: number
   onPage: (p: number) => void
 }) {
+  const t = useT()
   const totalPages = Math.ceil(total / limit)
   if (totalPages <= 1) return null
   const pages = pageWindow(page, totalPages)
@@ -156,7 +159,7 @@ function Pagination({ page, total, limit, onPage }: {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Trước
+        {t("drepDetail.paginationPrev")}
       </button>
 
       {/* Page numbers */}
@@ -183,14 +186,14 @@ function Pagination({ page, total, limit, onPage }: {
       {/* Next + count */}
       <div className="flex items-center gap-3">
         <span className="hidden sm:block text-xs text-text-muted whitespace-nowrap">
-          {total} votes
+          {t("drepDetail.voteCount", { total })}
         </span>
         <button
           onClick={() => onPage(page + 1)}
           disabled={page >= totalPages}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-text-secondary border border-border-subtle hover:text-text-primary hover:border-border-default hover:bg-bg-elevated transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          Tiếp
+          {t("drepDetail.paginationNext")}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
           </svg>
@@ -310,6 +313,7 @@ function DelegateModal({
   network: string
   onClose: () => void
 }) {
+  const t = useT()
   const isConnected = useWalletStore((s) => s.isConnected)
   const delegatedDrep = useWalletStore((s) => s.delegatedDrep)
   const { submitTx, isReady } = useTx()
@@ -336,7 +340,7 @@ function DelegateModal({
       setTxHash(hash)
       setTxStatus("success")
     } catch (err: unknown) {
-      setTxError(err instanceof Error ? err.message : "Giao dịch thất bại")
+      setTxError(err instanceof Error ? err.message : t("drepDetail.delegate.txFailed"))
       setTxStatus("error")
     }
   }
@@ -352,7 +356,7 @@ function DelegateModal({
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle">
-          <h2 className="text-sm font-bold">Ủy quyền bỏ phiếu</h2>
+          <h2 className="text-sm font-bold">{t("drepDetail.delegate.title")}</h2>
           {txStatus !== "loading" && (
             <button onClick={onClose} className="p-1 text-text-muted hover:text-text-primary transition-colors">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -367,7 +371,7 @@ function DelegateModal({
 
           {/* Target DRep */}
           <div className="bg-bg-elevated rounded-xl p-4 border border-border-subtle space-y-1">
-            <p className="text-xs text-text-muted">Ủy quyền cho</p>
+            <p className="text-xs text-text-muted">{t("drepDetail.delegate.to")}</p>
             <p className="font-semibold text-text-primary truncate">{displayName}</p>
             <p className="font-mono text-xs text-text-muted">{shortDrepId(drepId)}</p>
           </div>
@@ -375,23 +379,23 @@ function DelegateModal({
           {/* Current delegation */}
           {isConnected && !alreadyDelegated && delegatedDrep && txStatus === "idle" && (
             <div className="bg-bg-elevated rounded-xl p-3 border border-border-subtle text-xs text-text-muted space-y-0.5">
-              <p>Đang ủy quyền cho</p>
+              <p>{t("drepDetail.delegate.currentLabel")}</p>
               <p className="font-mono text-text-secondary truncate">
                 {delegatedDrep.name ?? shortDrepId(delegatedDrep.id)}
               </p>
-              <p className="text-[10px] opacity-70">Ủy quyền mới sẽ thay thế ủy quyền hiện tại</p>
+              <p className="text-[10px] opacity-70">{t("drepDetail.delegate.replaceNote")}</p>
             </div>
           )}
 
           {/* Not connected */}
           {!isConnected && (
-            <ConnectWalletCta variant="inline" message="Kết nối ví để ủy quyền" />
+            <ConnectWalletCta variant="inline" message={t("drepDetail.delegate.connectMsg")} />
           )}
 
           {/* Already delegated */}
           {isConnected && alreadyDelegated && txStatus === "idle" && (
             <div className="notice-success rounded-xl p-4 text-sm text-center">
-              Bạn đã ủy quyền cho DRep này
+              {t("drepDetail.delegate.alreadyDelegatedMsg")}
             </div>
           )}
 
@@ -399,14 +403,14 @@ function DelegateModal({
           {txStatus === "loading" && (
             <div className="flex flex-col items-center gap-3 py-4">
               <div className="w-8 h-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
-              <p className="text-sm text-text-muted">Đang ký và gửi giao dịch...</p>
+              <p className="text-sm text-text-muted">{t("drepDetail.delegate.signing")}</p>
             </div>
           )}
 
           {/* Success */}
           {txStatus === "success" && txHash && (
             <div className="notice-success rounded-xl p-4 space-y-2">
-              <p className="font-semibold text-sm">Ủy quyền thành công!</p>
+              <p className="font-semibold text-sm">{t("drepDetail.delegate.successTitle")}</p>
               <p className="text-xs break-all font-mono opacity-80">{txHash}</p>
               <a
                 href={`${explorerBase}/${txHash}`}
@@ -414,7 +418,7 @@ function DelegateModal({
                 rel="noopener noreferrer"
                 className="inline-block text-xs underline"
               >
-                Xem trên Cardanoscan →
+                {t("drepDetail.delegate.viewCardanoscan")}
               </a>
             </div>
           )}
@@ -422,7 +426,7 @@ function DelegateModal({
           {/* Error */}
           {txStatus === "error" && txError && (
             <div className="notice-warning rounded-xl p-4 space-y-1">
-              <p className="font-semibold text-sm">Giao dịch thất bại</p>
+              <p className="font-semibold text-sm">{t("drepDetail.delegate.txFailed")}</p>
               <p className="text-xs opacity-80">{txError}</p>
             </div>
           )}
@@ -431,14 +435,14 @@ function DelegateModal({
         {/* Footer */}
         <div className="px-5 pb-5 flex gap-3">
           {txStatus === "success" ? (
-            <button onClick={onClose} className="btn-primary flex-1 text-sm">Đóng</button>
+            <button onClick={onClose} className="btn-primary flex-1 text-sm">{t("drepDetail.delegate.closeBtn")}</button>
           ) : txStatus === "error" ? (
             <>
-              <button onClick={() => setTxStatus("idle")} className="btn-outline flex-1 text-sm">Thử lại</button>
-              <button onClick={onClose} className="btn-outline flex-1 text-sm">Đóng</button>
+              <button onClick={() => setTxStatus("idle")} className="btn-outline flex-1 text-sm">{t("drepDetail.delegate.retryBtn")}</button>
+              <button onClick={onClose} className="btn-outline flex-1 text-sm">{t("drepDetail.delegate.closeBtn")}</button>
             </>
           ) : !isConnected ? (
-            <button onClick={onClose} className="btn-outline flex-1 text-sm">Đóng</button>
+            <button onClick={onClose} className="btn-outline flex-1 text-sm">{t("drepDetail.delegate.closeBtn")}</button>
           ) : (
             <>
               <button
@@ -446,14 +450,14 @@ function DelegateModal({
                 disabled={txStatus === "loading"}
                 className="btn-outline flex-1 text-sm"
               >
-                Hủy
+                {t("drepDetail.delegate.cancelBtn")}
               </button>
               <button
                 onClick={() => { void handleDelegate() }}
                 disabled={!isReady || txStatus === "loading" || alreadyDelegated}
                 className="btn-primary flex-1 text-sm disabled:opacity-50"
               >
-                {alreadyDelegated ? "Đã ủy quyền" : "Ủy quyền"}
+                {alreadyDelegated ? t("drepDetail.delegate.alreadyDelegatedBtn") : t("drepDetail.delegate.delegateBtn")}
               </button>
             </>
           )}
@@ -476,6 +480,7 @@ export default function DRepProfilePage({
   const { drepKey, reauthenticate } = useWallet()
   const { submitTx } = useTx()
 
+  const t = useT()
   const { profile, isLoading, isLoadingMeta, error } = useDRepProfile(drepId, network)
   const canonicalId = profile?.id ?? drepId
   const { stats: drepStats, loading: statsLoading } = useDRepStats(
@@ -522,12 +527,12 @@ export default function DRepProfilePage({
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        throw new Error((body as { error?: string }).error ?? `Kích hoạt thất bại (${res.status})`)
+        throw new Error((body as { error?: string }).error ?? `${t("drepDetail.activateFailed")} (${res.status})`)
       }
 
       refetchCommunity()
     } catch (err: unknown) {
-      setActivateError(err instanceof Error ? err.message : "Kích hoạt thất bại")
+      setActivateError(err instanceof Error ? err.message : t("drepDetail.activateFailed"))
     } finally {
       setActivating(false)
     }
@@ -561,10 +566,10 @@ export default function DRepProfilePage({
     return (
       <div className="page-container">
         <div className="notice-warning rounded-xl p-6 text-center space-y-3">
-          <p className="font-semibold">Không tìm thấy DRep</p>
-          <p className="text-xs text-text-muted">{error ?? "DRep không tồn tại hoặc chưa đăng ký"}</p>
+          <p className="font-semibold">{t("drepDetail.notFound")}</p>
+          <p className="text-xs text-text-muted">{error ?? t("drepDetail.notFoundDesc")}</p>
           <Link href="/dreps" className="text-sm text-accent-light underline">
-            ← Quay lại danh sách DReps
+            ← {t("drepDetail.backLink")}
           </Link>
         </div>
       </div>
@@ -590,7 +595,7 @@ export default function DRepProfilePage({
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Danh sách DReps
+        {t("drepDetail.backLink")}
       </Link>
 
       {/* ── Profile Header ──────────────────────────────────────────────── */}
@@ -618,14 +623,14 @@ export default function DRepProfilePage({
           {/* Status chip + Share */}
           <div className="flex items-center gap-2 shrink-0">
             {profile.active ? (
-              <span className="badge badge-active">Active</span>
+              <span className="badge badge-active">{t("common.status.active")}</span>
             ) : (
-              <span className="badge badge-expired">Inactive</span>
+              <span className="badge badge-expired">{t("common.status.expired")}</span>
             )}
             <button
               onClick={() => navigator.clipboard.writeText(window.location.href)}
               className="p-2 rounded-lg border border-border-subtle text-text-muted hover:text-text-primary hover:border-border-default transition-colors"
-              title="Sao chép link"
+              title={t("drepDetail.copyLink")}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -640,37 +645,37 @@ export default function DRepProfilePage({
         <div className="bg-bg-secondary rounded-xl border border-border-subtle divide-y divide-border-subtle">
           <div className="grid grid-cols-3 divide-x divide-border-subtle">
             <StatCell
-              label="Active Voting Power"
+              label={t("drepDetail.statActiveVp")}
               value={drepStats ? `${formatAda(drepStats.activeVotingPower)} ₳` : profile.votingPower != null ? `${formatAda(profile.votingPower)} ₳` : null}
               loading={statsLoading && !drepStats}
               fallback={profile.isRegistered ? "0 ₳" : "—"}
             />
             <StatCell
-              label="Live Voting Power"
+              label={t("drepDetail.statLiveVp")}
               value={drepStats ? `${formatAda(drepStats.liveVotingPower)} ₳` : null}
               loading={statsLoading}
             />
             <StatCell
-              label="Delegators"
+              label={t("drepDetail.statDelegators")}
               value={drepStats ? drepStats.delegatorCount.toLocaleString() : null}
               loading={statsLoading}
             />
           </div>
           <div className="grid grid-cols-3 divide-x divide-border-subtle">
             <StatCell
-              label="Influence Power"
+              label={t("drepDetail.statInfluence")}
               value={drepStats ? `${drepStats.influencePower.toFixed(2)}%` : null}
               loading={statsLoading}
               highlight
             />
             <StatCell
-              label="Voted"
+              label={t("drepDetail.statVoted")}
               value={drepStats ? `${drepStats.votedPercent.toFixed(2)}%` : null}
               loading={statsLoading}
               highlight
             />
             <StatCell
-              label="Not Voted"
+              label={t("drepDetail.statNotVoted")}
               value={drepStats ? `${drepStats.notVotedPercent.toFixed(2)}%` : null}
               loading={statsLoading}
               danger={!!drepStats && drepStats.notVotedPercent > 10}
@@ -688,7 +693,7 @@ export default function DRepProfilePage({
               className="btn-primary flex-1 text-sm"
               onClick={() => setDelegateModalOpen(true)}
             >
-              Delegate Voting Power
+              {t("drepDetail.delegateBtn")}
             </button>
           )}
 
@@ -699,7 +704,7 @@ export default function DRepProfilePage({
               href={`/dreps/${profile.id}/community${networkParam}`}
               className={`${isOwner ? "btn-primary" : "btn-outline"} flex-1 text-sm text-center`}
             >
-              Your DRep Community
+              {t("drepDetail.communityBtn")}
             </Link>
           ) : isOwner ? (
             <button
@@ -707,7 +712,7 @@ export default function DRepProfilePage({
               disabled={activating}
               className="btn-primary flex-1 text-sm"
             >
-              {activating ? "Đang kích hoạt..." : "Kích hoạt Community · 2 ADA"}
+              {activating ? t("drepDetail.activating") : t("drepDetail.activateCommunityBtn")}
             </button>
           ) : null}
         </div>
@@ -717,15 +722,15 @@ export default function DRepProfilePage({
       {/* ── About (CIP-119 metadata) ──────────────────────────────────────── */}
       {hasAbout && (
         <div className="card-static space-y-5">
-          <h2 className="text-base font-bold">Về DRep này</h2>
-          <AboutSection title="Objectives" content={profile.objectives} isLoading={isLoadingMeta && !profile.objectives} />
-          <AboutSection title="Motivations" content={profile.motivations} isLoading={isLoadingMeta && !profile.motivations} />
-          <AboutSection title="Qualifications" content={profile.qualifications} isLoading={isLoadingMeta && !profile.qualifications} />
+          <h2 className="text-base font-bold">{t("drepDetail.aboutTitle")}</h2>
+          <AboutSection title={t("drepDetail.objectivesLabel")} content={profile.objectives} isLoading={isLoadingMeta && !profile.objectives} />
+          <AboutSection title={t("drepDetail.motivationsLabel")} content={profile.motivations} isLoading={isLoadingMeta && !profile.motivations} />
+          <AboutSection title={t("drepDetail.qualificationsLabel")} content={profile.qualifications} isLoading={isLoadingMeta && !profile.qualifications} />
 
           {/* References */}
           {profile.references && profile.references.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">References</h3>
+              <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">{t("drepDetail.referencesLabel")}</h3>
               <div className="flex flex-wrap gap-2">
                 {profile.references.map((ref, i) => (
                   <a
@@ -753,7 +758,7 @@ export default function DRepProfilePage({
       <div className="card-static space-y-0 !p-0 overflow-hidden">
         <div className="px-4 py-4 border-b border-border-subtle">
           <h2 className="text-base font-bold">
-            Voting History
+            {t("drepDetail.voteHistoryTitle")}
             {total > 0 && (
               <span className="ml-2 text-sm font-normal text-text-muted">({total})</span>
             )}
@@ -775,14 +780,14 @@ export default function DRepProfilePage({
 
         {!isLoadingVotes && voteError && (
           <div className="px-4 py-6 text-center text-sm text-text-muted">
-            Không thể tải lịch sử bỏ phiếu
+            {t("drepDetail.voteLoadError")}
           </div>
         )}
 
         {!isLoadingVotes && !voteError && votes.length === 0 && (
           <div className="px-4 py-10 text-center space-y-2">
             <p className="text-3xl">🗳️</p>
-            <p className="text-sm text-text-muted">DRep này chưa bỏ phiếu nào</p>
+            <p className="text-sm text-text-muted">{t("drepDetail.noVotes")}</p>
           </div>
         )}
 
