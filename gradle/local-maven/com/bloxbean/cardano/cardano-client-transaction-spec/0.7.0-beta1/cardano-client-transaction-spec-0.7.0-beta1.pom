@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <!-- This module was also published with a richer model, Gradle metadata,  -->
+  <!-- which should be used instead. Do not delete the following line which  -->
+  <!-- is to indicate to Gradle or any Gradle module metadata file consumer  -->
+  <!-- that they should prefer consuming it instead. -->
+  <!-- do_not_remove: published-with-gradle-metadata -->
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.bloxbean.cardano</groupId>
+  <artifactId>cardano-client-transaction-spec</artifactId>
+  <version>0.7.0-beta1</version>
+  <name>Cardano Client Transaction Spec (Serialization) module</name>
+  <description>Cardano Client Lib - Transaction Spec Module</description>
+  <url>https://github.com/bloxbean/cardano-client-lib</url>
+  <licenses>
+    <license>
+      <name>The MIT License</name>
+      <url>https://opensource.org/licenses/mit-license.php</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>satran004</id>
+      <name>Satya</name>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:git://github.com/bloxbean/cardano-client-lib.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/bloxbean/cardano-client-lib.git</developerConnection>
+    <url>https://github.com/bloxbean/cardano-client-lib</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.11</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.bloxbean.cardano</groupId>
+      <artifactId>cardano-client-common</artifactId>
+      <version>0.7.0-beta1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.bloxbean.cardano</groupId>
+      <artifactId>cardano-client-crypto</artifactId>
+      <version>0.7.0-beta1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.bloxbean.cardano</groupId>
+      <artifactId>cardano-client-common-spec</artifactId>
+      <version>0.7.0-beta1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.bloxbean.cardano</groupId>
+      <artifactId>cardano-client-address</artifactId>
+      <version>0.7.0-beta1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.bloxbean.cardano</groupId>
+      <artifactId>cardano-client-metadata</artifactId>
+      <version>0.7.0-beta1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.bloxbean.cardano</groupId>
+      <artifactId>cardano-client-plutus</artifactId>
+      <version>0.7.0-beta1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>33.0.0-jre</version>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+</project>

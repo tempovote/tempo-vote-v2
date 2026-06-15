@@ -41,7 +41,11 @@ application {
 }
 
 repositories {
-    mavenLocal()   // cardano-client-transaction-spec patched locally (govActionDeposit support)
+    // Vendored patched cardano-client-transaction-spec (govActionDeposit support) so CI
+    // can resolve it without a local ~/.m2 publish. Listed first; local dev still has
+    // mavenLocal as a fallback. See gradle/local-maven/.
+    maven { url = uri("$rootDir/gradle/local-maven") }
+    mavenLocal()
     mavenCentral()
 }
 
