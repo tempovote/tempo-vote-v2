@@ -520,10 +520,12 @@ private fun buildCip108Metadata(req: ProposalUploadRequest): JsonObject = buildJ
         val validLinks = req.supportLinks.filter { it.startsWith("http") }
         if (validLinks.isNotEmpty()) {
             putJsonArray("references") {
-                validLinks.forEachIndexed { i, url ->
+                validLinks.forEach { url ->
                     addJsonObject {
                         put("@type", "Other")
-                        put("label", "Reference ${i + 1}")
+                        // Use the URL as the label so wallets/explorers that render the
+                        // label show the actual reference, not a meaningless "Reference N".
+                        put("label", url)
                         put("uri", url)
                     }
                 }
