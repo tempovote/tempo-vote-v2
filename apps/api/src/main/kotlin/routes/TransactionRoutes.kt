@@ -6,6 +6,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
 import vote.tempo.cardano.Network
+import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.TxBuilder
 import vote.tempo.cardano.getBackendService
 import vote.tempo.cardano.networkFromString
@@ -149,6 +150,24 @@ fun Route.transactionRoutes() {
             val req = call.receive<BuildTxRequest>()
             val network = networkFromString(req.network)
             val builder = TxBuilder(network)
+
+            // Conway proposals refund their deposit to rewardAddress, whose stake credential
+            // must already be registered on-chain — otherwise the ledger rejects submit with
+            // error 3146 ("unknown stake credential"). Brand-new wallets have an unregistered
+            // stake key, so surface a clear, actionable error here instead of the cryptic
+            // submit failure. Fail open if the registration check itself can't run.
+            if (req.txType.uppercase().startsWith("PROPOSE_")) {
+                val registered = runCatching {
+                    OgmiosStateQueries(network).isStakeRegistered(req.rewardAddress)
+                }.getOrNull()
+                if (registered == false) {
+                    return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse(
+                        "Your wallet's stake key is not registered on-chain, so it cannot receive " +
+                        "the Governance Action deposit refund. Delegate your wallet to a DRep (or a " +
+                        "stake pool) first — that registers the stake key — then submit the proposal again."
+                    ))
+                }
+            }
 
             runCatching {
                 when (req.txType.uppercase()) {

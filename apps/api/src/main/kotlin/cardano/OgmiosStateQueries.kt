@@ -297,6 +297,23 @@ class OgmiosStateQueries(private val network: Network) {
     }
 
     /**
+     * True if the stake credential behind a bech32 reward/stake address is registered
+     * on-chain. Conway proposals refund their deposit to this account, which the ledger
+     * requires to be registered (else submit fails with error 3146). A registered account
+     * has a rewardAccountSummaries entry; an unregistered one does not.
+     * Throws on query failure — the caller decides whether to fail open.
+     */
+    suspend fun isStakeRegistered(stakeAddress: String): Boolean {
+        val raw = getStakeDelegation(stakeAddress)
+        val accountInfo = when (raw) {
+            is JsonArray  -> raw.firstOrNull()?.jsonObject
+            is JsonObject -> raw[stakeAddress]?.jsonObject ?: raw.values.firstOrNull()?.jsonObject
+            else          -> null
+        }
+        return accountInfo != null
+    }
+
+    /**
      * Fetch stake delegation and delegated DRep info via two separate HTTP calls.
      * Returns (delegationResult, drepInfoResult?) — drepInfoResult is null if not
      * delegated to a registered DRep.
