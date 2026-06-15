@@ -13,6 +13,7 @@ import { ConnectWalletCta } from "@/components/ui/ConnectWalletCta"
 import { RationaleEditor } from "@/components/governance/RationaleEditor"
 import { type GovernanceAction } from "@tempo/types"
 import { resolveAnchorUrl, normalizeActionType } from "@/lib/governance"
+import { CopyIconButton } from "@/components/ui/CopyIconButton"
 import { getJwt, authHeader } from "@/lib/api"
 import { useT, type TFunc } from "@/i18n/useT"
 import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
@@ -506,23 +507,19 @@ export default function GovernanceActionDetailPage({
 
             {/* Anchor hash */}
             {action.anchorHash && (
-              <div className="bg-bg-secondary rounded-lg px-3 py-2 text-xs text-text-muted font-mono flex items-center justify-between gap-2">
-                <span>
-                  <span className="text-text-muted/60 mr-2">hash:</span>
-                  <span title={action.anchorHash}>
-                    {action.anchorHash.slice(0, 12)}…{action.anchorHash.slice(-8)}
-                  </span>
+              <div className="bg-bg-secondary rounded-lg px-3 py-2 text-xs text-text-muted font-mono break-all">
+                <span className="text-text-muted/60 mr-2">hash:</span>
+                <span title={action.anchorHash}>
+                  {/* full on desktop, truncated on mobile */}
+                  <span className="hidden sm:inline">{action.anchorHash}</span>
+                  <span className="sm:hidden">{action.anchorHash.slice(0, 12)}…{action.anchorHash.slice(-8)}</span>
                 </span>
-                <button
-                  onClick={() => navigator.clipboard.writeText(action.anchorHash!)}
-                  className="shrink-0 text-text-muted hover:text-text-primary transition-colors"
+                <CopyIconButton
+                  value={action.anchorHash}
                   title={t("governance.detail.copyHash")}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                </button>
+                  size={11}
+                  className="hover:text-text-primary"
+                />
               </div>
             )}
           </div>
