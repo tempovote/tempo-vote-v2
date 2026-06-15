@@ -97,7 +97,9 @@ export function GaMetadataTab({ anchorUrl }: { anchorUrl: string }) {
                   rel="noopener noreferrer"
                   className="text-accent-light hover:underline break-all"
                 >
-                  {ref.label}
+                  {/* Show the raw URL. Older proposals stored a useless "Reference N"
+                      label; fall back to it only if a URI is somehow missing. */}
+                  {ref.uri || ref.label}
                 </a>
               </li>
             ))}
