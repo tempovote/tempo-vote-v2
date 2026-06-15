@@ -523,7 +523,7 @@ function UpdateCommitteeFields({
                 type="text"
                 value={row.credential}
                 onChange={(e) => patchAddRow(i, { credential: e.target.value })}
-                placeholder="cc_cold1..."
+                placeholder={t("governance.new.committee.removePlaceholder")}
                 className={INPUT_SM + " flex-1 font-mono text-xs"}
               />
               <div className="flex items-center gap-1 shrink-0">
