@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useRef, useCallback } from "react"
+import { use, useState, useRef, useCallback, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
@@ -1138,6 +1138,26 @@ export default function NewGovernanceActionPage({
   const patchTypeParams = useCallback((patch: Partial<TypeParams>) => {
     setTypeParams((prev) => ({ ...prev, ...patch }))
   }, [])
+
+  // Committee changes must chain to the latest enacted committee action (CIP-1694; the
+  // ledger rejects a wrong/stale ref with error 3159). Prefill it from the backend so the
+  // user doesn't have to find it — only when the field is still empty, so edits stick.
+  useEffect(() => {
+    if (gaType !== "updateCommittee") return
+    let cancelled = false
+    fetch(`${API_URL}/governance/last-enacted?network=${network}&purpose=committee`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { txHash: string | null; index: number | null } | null) => {
+        if (cancelled || !d || d.txHash == null) return
+        setTypeParams((prev) =>
+          prev.prevGovActionTxHash.trim() || prev.prevGovActionIdx.trim()
+            ? prev
+            : { ...prev, prevGovActionTxHash: d.txHash!, prevGovActionIdx: String(d.index ?? 0) },
+        )
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [gaType, network])
 
   // Treasury Withdrawal recipient rows
   const [withdrawalRows, setWithdrawalRows] = useState<WithdrawalRow[]>([{ ...EMPTY_WITHDRAWAL_ROW }])

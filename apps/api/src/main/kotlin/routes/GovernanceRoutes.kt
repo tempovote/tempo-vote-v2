@@ -120,6 +120,32 @@ fun Route.chainInfoRoutes() {
 fun Route.governanceRoutes() {
 
     /**
+     * GET /governance/last-enacted?network=preprod&purpose=committee
+     *
+     * Returns { txHash, index } of the most-recently-enacted governance action of the
+     * given purpose, or nulls if none. The proposal form prefills prevGovActionId from
+     * this so a new proposal chains to the correct enacted action (CIP-1694; the ledger
+     * rejects a wrong/stale reference with error 3159). Authoritative DB final_status
+     * first; falls back to deriving from pending-proposal ancestors via Ogmios.
+     */
+    get("/governance/last-enacted") {
+        val network = networkFromString(call.request.queryParameters["network"] ?: "preprod")
+        val actionTypes = when (call.request.queryParameters["purpose"]) {
+            "committee"    -> listOf("constitutionalCommittee", "noConfidence")
+            "pparam"       -> listOf("protocolParametersUpdate")
+            "constitution" -> listOf("constitution")
+            "hardfork"     -> listOf("hardForkInitiation")
+            else -> return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Unknown or missing purpose"))
+        }
+        val resolved = GovernanceActionDao.getLastEnactedActionId(network.name.lowercase(), actionTypes)
+            ?: runCatching { OgmiosStateQueries(network).getLastEnactedGovActionId(*actionTypes.toTypedArray()) }.getOrNull()
+        call.respond(buildJsonObject {
+            put("txHash", resolved?.first?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("index", resolved?.second?.let { JsonPrimitive(it) } ?: JsonNull)
+        })
+    }
+
+    /**
      * POST /admin/backfill-enacted?network=mainnet|preprod
      *
      * One-time operation: fetches all governance proposals from Blockfrost, identifies those
