@@ -228,4 +228,26 @@ object GovernanceActionDao {
             0
         }
     }
+
+    /**
+     * (txHash, index) of the most-recently-enacted proposal among the given action types,
+     * or null. A new proposal of the same purpose must chain its prevGovActionId to this
+     * (CIP-1694; ledger rejects otherwise with error 3159). actionTypes are raw Ogmios
+     * types, e.g. ["constitutionalCommittee", "noConfidence"] for the committee purpose.
+     */
+    fun getLastEnactedActionId(network: String, actionTypes: List<String>): Pair<String, Int>? =
+        runCatching {
+            transaction {
+                IdxGovernanceProposals.selectAll()
+                    .where {
+                        (IdxGovernanceProposals.network eq network) and
+                        (IdxGovernanceProposals.actionType inList actionTypes) and
+                        (IdxGovernanceProposals.finalStatus eq "enacted")
+                    }
+                    .orderBy(IdxGovernanceProposals.submittedSlot, SortOrder.DESC)
+                    .limit(1)
+                    .firstOrNull()
+                    ?.let { it[IdxGovernanceProposals.txHash] to it[IdxGovernanceProposals.index] }
+            }
+        }.getOrNull()
 }

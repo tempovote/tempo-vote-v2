@@ -414,7 +414,7 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
             addPrevActionId(this, action)
         }
 
-        "newConstitution" -> buildJsonObject {
+        "newConstitution", "constitution" -> buildJsonObject {
             action["constitution"]?.jsonObject?.let { c ->
                 c["anchor"]?.jsonObject?.let { a ->
                     a["url"]?.jsonPrimitive?.contentOrNull?.let  { put("constitutionUrl", it) }
@@ -447,7 +447,7 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
             addPrevActionId(this, action)
         }
 
-        "updateCommittee" -> buildJsonObject {
+        "updateCommittee", "constitutionalCommittee" -> buildJsonObject {
             // Quorum threshold
             action["quorum"]?.let { q ->
                 when {
@@ -472,7 +472,9 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
                     val mObj = m.jsonObject
                     val cred = mObj["credential"]?.jsonObject?.get("hash")?.jsonPrimitive?.contentOrNull
                         ?: mObj["id"]?.jsonPrimitive?.contentOrNull
-                    val epoch = mObj["bound"]?.jsonObject?.get("epoch")?.jsonPrimitive?.intOrNull
+                    // Ogmios 6.x: term end is under "mandate".epoch; older shapes used "bound"/"epoch".
+                    val epoch = mObj["mandate"]?.jsonObject?.get("epoch")?.jsonPrimitive?.intOrNull
+                        ?: mObj["bound"]?.jsonObject?.get("epoch")?.jsonPrimitive?.intOrNull
                         ?: mObj["epoch"]?.jsonPrimitive?.intOrNull
                     if (cred != null) {
                         add(buildJsonObject {
@@ -637,8 +639,8 @@ internal fun actionTypeLabel(ogmiosType: String): String = when (ogmiosType) {
     "protocolParametersUpdate" -> "Protocol Parameter Change"
     "hardForkInitiation"       -> "Hard Fork Initiation"
     "noConfidence"             -> "No Confidence"
-    "updateCommittee"          -> "Update Committee"
-    "newConstitution"          -> "New Constitution"
-    "infoAction"               -> "Info Action"
+    "updateCommittee", "constitutionalCommittee" -> "Update Committee"
+    "newConstitution", "constitution"            -> "New Constitution"
+    "infoAction", "information"                   -> "Info Action"
     else                       -> ogmiosType
 }

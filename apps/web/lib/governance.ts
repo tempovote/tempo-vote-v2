@@ -115,6 +115,8 @@ export function normalizeActionType(actionType: string): ActionTypeKey | string 
     treasuryWithdrawal:       "treasuryWithdrawals",
     protocolParameterUpdate:  "protocolParametersUpdate",
     hardFork:                 "hardForkInitiation",
+    constitutionalCommittee:  "updateCommittee",
+    constitution:             "newConstitution",
   }
   return map[actionType] ?? actionType
 }
@@ -227,7 +229,7 @@ export const VOTE_THRESHOLDS: Record<string, { drep?: number; spo?: number; cc?:
   protocolParametersUpdate: { drep: 0.75, cc: 0.60 },
   hardForkInitiation:       { drep: 0.60, spo: 0.51, cc: 0.60 },
   noConfidence:             { drep: 0.60, spo: 0.51 },
-  updateCommittee:          { drep: 0.67, cc: 0.60 },
+  updateCommittee:          { drep: 0.67, spo: 0.51 },  // committee changes ratified by DRep + SPO, not CC
   newConstitution:          { drep: 0.75, cc: 0.60 },
   infoAction:               {},
 }
