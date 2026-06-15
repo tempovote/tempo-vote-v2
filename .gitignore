@@ -16,7 +16,10 @@ out/
 .gradle/
 apps/api/build/
 *.jar
-# Exception: vendored patched dependency for CI (see gradle/local-maven/)
+# Exceptions that MUST be committed (the global *.jar above is too broad):
+#  - the Gradle wrapper jar bootstraps ./gradlew on a fresh checkout (CI)
+#  - the vendored patched dependency for CI (see gradle/local-maven/)
+!gradle/wrapper/gradle-wrapper.jar
 !gradle/local-maven/**/*.jar
 *.class
 
