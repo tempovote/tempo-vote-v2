@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { normalizeActionType } from "@/lib/governance"
 import type {
   GovernanceAction,
   HardForkDetails,
@@ -508,11 +509,13 @@ function formatParamValue(val: unknown): string {
 
 export function ActionDetailCard({ action }: { action: GovernanceAction }) {
   const t = useT()
-  const { actionType, details } = action
-  const d = details as Record<string, unknown> | null | undefined
+  // Canonicalise raw Ogmios types (e.g. "constitutionalCommittee" → "updateCommittee")
+  // so the per-type switch below matches.
+  const actionType = normalizeActionType(action.actionType)
+  const d = action.details as Record<string, unknown> | null | undefined
 
-  // infoAction / information has no extra on-chain detail — nothing to show
-  if (actionType === "infoAction" || actionType === "information") return null
+  // infoAction has no extra on-chain detail — nothing to show
+  if (actionType === "info" || actionType === "infoAction") return null
 
   const sectionKeys: Record<string, string> = {
     noConfidence:             "governance.actionDetail.sectionTitle.noConfidence",

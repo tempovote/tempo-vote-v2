@@ -1,7 +1,7 @@
 "use client"
 
 import type { GovernanceAction, VoteCounts, SPOVoteStats } from "@tempo/types"
-import { computeDRepVotePercent, computeVotePercent, computeSPOVotePercent, lovelaceToAda, VOTE_THRESHOLDS } from "@/lib/governance"
+import { computeDRepVotePercent, computeVotePercent, computeSPOVotePercent, lovelaceToAda, normalizeActionType, VOTE_THRESHOLDS } from "@/lib/governance"
 import { useT } from "@/i18n/useT"
 
 interface Props {
@@ -9,9 +9,12 @@ interface Props {
 }
 
 export default function VoteResultsPanel({ action }: Props) {
-  const thresholds = VOTE_THRESHOLDS[action.actionType] ?? {}
+  // action.actionType may be a raw Ogmios string (e.g. "constitutionalCommittee");
+  // canonicalise so threshold lookup + role display match.
+  const actionType = normalizeActionType(action.actionType)
+  const thresholds = VOTE_THRESHOLDS[actionType] ?? {}
 
-  const drepPct = computeDRepVotePercent(action.drepVotes, action.actionType)
+  const drepPct = computeDRepVotePercent(action.drepVotes, actionType)
   const spoPct  = computeSPOVotePercent(action.spoVotes)
   const ccPct   = computeVotePercent(action.ccVotes)
 
@@ -22,7 +25,7 @@ export default function VoteResultsPanel({ action }: Props) {
   const showCc  = thresholds.cc  !== undefined || ccHasVotes
 
   // Effective yes/no after applying GovTool formula (auto-noConfidence routing)
-  const isNoConfidence = action.actionType === "noConfidence"
+  const isNoConfidence = actionType === "noConfidence"
   const drepYesPower = isNoConfidence
     ? action.drepVotes.yesVotingPower + action.drepVotes.autoNoConfidenceStake
     : action.drepVotes.yesVotingPower
