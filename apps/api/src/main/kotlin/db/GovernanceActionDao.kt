@@ -6,6 +6,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.cardano.DRepVoteStats
@@ -13,6 +14,7 @@ import vote.tempo.cardano.GovernanceActionDto
 import vote.tempo.cardano.SPOVoteStats
 import vote.tempo.cardano.VoteCounts
 import vote.tempo.cardano.actionTypeLabel
+import vote.tempo.cardano.extractActionDetails
 
 private val logger = KotlinLogging.logger("GovernanceActionDao")
 
@@ -192,8 +194,15 @@ object GovernanceActionDao {
                     spoVotes     = SPOVoteStats(t.spoYes, t.spoNo, t.spoAbstain),
                     ccVotes      = VoteCounts(t.ccYes, t.ccNo, t.ccAbstain),
                     votes        = emptyList(),
+                    // Stored actionDetails is the raw Ogmios action object. Normalize it through
+                    // extractActionDetails so the shape matches live proposals (addedMembers,
+                    // versionMajor, withdrawals[], …) — otherwise the FE detail card crashes on
+                    // the raw shape (e.g. d.addedMembers is undefined for committee actions).
                     details      = row[IdxGovernanceProposals.actionDetails]
-                        ?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() },
+                        ?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() }
+                        ?.let { parsed ->
+                            (parsed as? JsonObject)?.let { extractActionDetails(actionType, it, it) } ?: parsed
+                        },
                     status       = status,
                     title        = row[IdxGovernanceProposals.title],
                 )
