@@ -608,20 +608,33 @@ class TxBuilder(private val network: Network) {
     }
 
     /**
-     * Parse a CC cold credential from bech32 (cc_cold1..., cc_cold_test1...,
-     * cc_cold_script1..., cc_cold_script_test1...) or raw hex key hash.
+     * Parse a CC cold credential into a Credential. Accepts:
+     *  • CIP-105 bech32:  cc_cold1… (key hash, 28B) / cc_cold_script1… (script, 28B)
+     *  • CIP-129 bech32:  cc_cold1… with a 1-byte header (29B). Low nibble of the header
+     *    is the credential type: 0x2 = key hash, 0x3 = script hash — strip it.
+     *  • raw 28-byte hex key hash.
      */
     private fun parseCcCredential(credential: String): Credential {
         val trimmed = credential.trim()
         return when {
-            trimmed.startsWith("cc_cold_script") -> {
-                val hash = com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data
-                Credential.fromScript(hash)
-            }
+            // CIP-105 script credential uses a distinct HRP; always a 28-byte hash.
+            trimmed.startsWith("cc_cold_script") ->
+                Credential.fromScript(com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data)
+
+            // cc_cold HRP covers CIP-105 key (28B) and CIP-129 (29B: header + hash).
             trimmed.startsWith("cc_cold") -> {
-                val hash = com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data
-                Credential.fromKey(hash)
+                val data = com.bloxbean.cardano.client.crypto.Bech32.decode(trimmed).data
+                when (data.size) {
+                    28 -> Credential.fromKey(data)                         // CIP-105 key hash
+                    29 -> {                                                 // CIP-129
+                        val hash = data.copyOfRange(1, data.size)
+                        if ((data[0].toInt() and 0x0f) == 0x03) Credential.fromScript(hash)
+                        else Credential.fromKey(hash)
+                    }
+                    else -> error("Invalid CC cold credential: expected 28 (CIP-105) or 29 (CIP-129) bytes, got ${data.size}")
+                }
             }
+
             else -> Credential.fromKey(HexUtil.decodeHexString(trimmed))
         }
     }

@@ -91,7 +91,11 @@ fun Route.drepRoutes() {
                     exec(
                         """
                         SELECT dv.proposal_tx_hash, dv.proposal_index,
-                               COALESCE(dv.anchor_url, gp.anchor_url) AS anchor_url,
+                               -- Prefer the GA proposal anchor (carries the title); fall back to
+                               -- the vote's own rationale anchor only if the proposal has none.
+                               -- The client resolves the GA title from this anchor when gp.title
+                               -- isn't indexed yet, so it must point at the proposal, not the vote.
+                               COALESCE(gp.anchor_url, dv.anchor_url) AS anchor_url,
                                dv.vote, dv.slot,
                                COALESCE(gp.action_type, dv.action_type)     AS resolved_type,
                                COALESCE(gp.expires_epoch, dv.expires_epoch) AS resolved_expires,
