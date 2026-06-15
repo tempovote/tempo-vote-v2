@@ -7,6 +7,7 @@ import { useWalletStore } from "@/store/wallet"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
 import { useDRepStats } from "@/hooks/useDRepStats"
 import { useDRepVotingHistory } from "@/hooks/useDRepVotingHistory"
+import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useCommunity } from "@/hooks/useCommunity"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
@@ -35,20 +36,25 @@ function DRepAvatar({ drepId, imageUrl, name, size = 64 }: {
   size?: number
 }) {
   const [colors] = useState(() => hashToColors(drepId))
-  const [imgError, setImgError] = useState(false)
+  const [gwIdx, setGwIdx] = useState(0)
   const initial = (name ?? drepId).charAt(0).toUpperCase()
 
-  if (imageUrl && !imgError) {
+  // Resolve ipfs:// (and /ipfs/ links) to HTTP gateway URLs the browser can load —
+  // a raw ipfs:// src never renders. On error, advance to the next gateway candidate.
+  const candidates = resolveAnchorUrls(imageUrl)
+  const src = candidates[gwIdx]
+
+  if (src) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={imageUrl}
+        src={src}
         alt={name ?? drepId}
         width={size}
         height={size}
         className="rounded-full object-cover shrink-0"
         style={{ width: size, height: size }}
-        onError={() => setImgError(true)}
+        onError={() => setGwIdx((i) => i + 1)}
       />
     )
   }
@@ -101,9 +107,10 @@ function VoteBadge({ vote }: { vote: DRepVote["vote"] }) {
 
 // ─── Voting history row ───────────────────────────────────────────────────────
 
-function VoteHistoryRow({ entry }: { entry: DRepVote }) {
+function VoteHistoryRow({ entry, resolvedTitle }: { entry: DRepVote; resolvedTitle?: string | null }) {
   const t = useT()
   const displayTitle = entry.title
+    ?? resolvedTitle
     ?? `${entry.txHash.slice(0, 10)}…${entry.txHash.slice(-6)}#${entry.index}`
 
   return (
@@ -491,6 +498,9 @@ export default function DRepProfilePage({
   const [votePage, setVotePage] = useState(1)
   const { votes, total, limit, isLoading: isLoadingVotes, error: voteError } =
     useDRepVotingHistory(canonicalId, network, votePage, 10)
+  // Fresh proposals often have no DB title yet — fall back to resolving the GA title
+  // from anchor metadata client-side (same approach as the Governance Actions list).
+  const voteTitles = useAnchorTitlesMap(votes.map((v) => (v.title ? null : v.anchorUrl)))
 
   // Community state
   const { isActive, isLoading: communityLoading, refetch: refetchCommunity } = useCommunity(drepId, network)
@@ -708,7 +718,9 @@ export default function DRepProfilePage({
               href={`/dreps/${profile.id}/community${networkParam}`}
               className={`${isOwner || alreadyDelegatedToThis ? "btn-primary" : "btn-outline"} flex-1 text-sm text-center`}
             >
-              {t("drepDetail.communityBtn")}
+              {/* "Your DRep Community" only fits when it's the user's own DRep or the one
+                  they delegated to; otherwise it's just someone else's community. */}
+              {isOwner || alreadyDelegatedToThis ? t("drepDetail.communityBtn") : t("drepDetail.viewCommunityBtn")}
             </Link>
           ) : isOwner ? (
             <button
@@ -799,7 +811,11 @@ export default function DRepProfilePage({
           <>
             <div className="divide-y divide-border-subtle">
               {votes.map((entry) => (
-                <VoteHistoryRow key={`${entry.txHash}-${entry.index}`} entry={entry} />
+                <VoteHistoryRow
+                  key={`${entry.txHash}-${entry.index}`}
+                  entry={entry}
+                  resolvedTitle={entry.anchorUrl ? voteTitles.get(entry.anchorUrl) ?? null : null}
+                />
               ))}
             </div>
             <Pagination
