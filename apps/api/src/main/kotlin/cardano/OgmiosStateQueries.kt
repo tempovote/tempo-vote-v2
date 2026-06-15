@@ -100,6 +100,17 @@ fun txHashToGovActionId(txHash: String, index: Int): String {
 }
 
 /**
+ * CIP-129 cold committee credential (28-byte hash hex) → bech32 "cc_cold1...".
+ * Header byte = key-type (CC Cold = 0b0001) << 4 | credential-type (key 0b0010 / script 0b0011),
+ * i.e. 0x12 for a key hash and 0x13 for a script hash. Falls back to the raw hex on bad input.
+ */
+fun ccColdCredentialToBech32(hashHex: String, isScript: Boolean): String = runCatching {
+    val header = if (isScript) 0x13 else 0x12
+    val bytes = byteArrayOf(header.toByte()) + hashHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    bech32Encode("cc_cold", bytesToBech32Words(bytes))
+}.getOrDefault(hashHex)
+
+/**
  * Construct a bech32 stake address from a 28-byte credential hex.
  * Assumes the DRep credential is the same as the wallet's stake key credential —
  * valid for typical CIP-30/CIP-95 wallet registrations.

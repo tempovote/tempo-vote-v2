@@ -403,7 +403,7 @@ fun mapOgmiosProposal(
  * Extract type-specific fields from the Ogmios action body.
  * Returns null for types with no extra data (infoAction, noConfidence).
  */
-private fun extractActionDetails(actionType: String, action: JsonObject, proposal: JsonObject): JsonElement? {
+internal fun extractActionDetails(actionType: String, action: JsonObject, proposal: JsonObject): JsonElement? {
     return when (actionType) {
 
         "hardForkInitiation" -> buildJsonObject {
@@ -459,7 +459,16 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
                             put("quorumDenominator", d)
                         }
                     }
-                    q is JsonPrimitive -> q.doubleOrNull?.let { put("quorumRate", it) }
+                    q is JsonPrimitive -> {
+                        // Ogmios index stores quorum as a "N/D" string (e.g. "2/3"); live uses a double.
+                        val frac = q.contentOrNull?.split("/")
+                        val n = frac?.getOrNull(0)?.trim()?.toIntOrNull()
+                        val d = frac?.getOrNull(1)?.trim()?.toIntOrNull()
+                        when {
+                            n != null && d != null -> { put("quorumNumerator", n); put("quorumDenominator", d) }
+                            else -> q.doubleOrNull?.let { put("quorumRate", it) }
+                        }
+                    }
                     else -> {}
                 }
             }
@@ -478,13 +487,13 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
                         ?: mObj["epoch"]?.jsonPrimitive?.intOrNull
                     if (cred != null) {
                         add(buildJsonObject {
-                            put("credential", cred)
+                            put("credential", ccColdCredentialToBech32(cred, isScriptCredential(mObj)))
                             if (epoch != null) put("termEpoch", epoch)
                         })
                     }
                 }
             })
-            // Removed members: list of credential hashes
+            // Removed members: list of CIP-129 cc_cold credentials
             val removed = action["members"]?.jsonObject?.get("removed")?.jsonArray
                 ?: JsonArray(emptyList())
             put("removedMembers", buildJsonArray {
@@ -492,7 +501,7 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
                     val rObj = r.jsonObject
                     val cred = rObj["credential"]?.jsonObject?.get("hash")?.jsonPrimitive?.contentOrNull
                         ?: rObj["id"]?.jsonPrimitive?.contentOrNull
-                    if (cred != null) add(JsonPrimitive(cred))
+                    if (cred != null) add(JsonPrimitive(ccColdCredentialToBech32(cred, isScriptCredential(rObj))))
                 }
             })
             addPrevActionId(this, action)
@@ -514,6 +523,17 @@ private fun extractActionDetails(actionType: String, action: JsonObject, proposa
 
         else -> null  // infoAction, noConfidence — no extra data
     }
+}
+
+/**
+ * Whether a committee member credential is script-based (vs key-based).
+ * Ogmios marks this with `from: "script"` | `"verificationKey"`, either flat on the
+ * member object or nested under `credential`.
+ */
+private fun isScriptCredential(member: JsonObject): Boolean {
+    val from = member["from"]?.jsonPrimitive?.contentOrNull
+        ?: member["credential"]?.jsonObject?.get("from")?.jsonPrimitive?.contentOrNull
+    return from == "script"
 }
 
 /** Append previousActionId fields (txHash + index) if present in the action body. */

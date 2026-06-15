@@ -204,18 +204,16 @@ export function credentialHexToDrepId(hex: string): string {
 }
 
 // CIP-129: governance action ID → bech32 (gov_action1...)
-// Payload: txHash bytes (32) + index as 4-byte big-endian
+// Payload: txHash bytes (32) + index as a SINGLE byte (33 bytes total).
+// This matches cardano-cli / explorers (cexplorer, Eternl). Using a 4-byte
+// index produces a non-standard, longer string (…qqqqqq…) that explorers reject.
 export function govActionIdToBech32(txHash: string, index: number): string {
   try {
-    const hashBytes = new Uint8Array(32)
+    const payload = new Uint8Array(33)
     for (let i = 0; i < 32; i++) {
-      hashBytes[i] = parseInt(txHash.slice(i * 2, i * 2 + 2), 16)
+      payload[i] = parseInt(txHash.slice(i * 2, i * 2 + 2), 16)
     }
-    const indexBytes = new Uint8Array(4)
-    new DataView(indexBytes.buffer).setUint32(0, index, false) // big-endian
-    const payload = new Uint8Array(36)
-    payload.set(hashBytes, 0)
-    payload.set(indexBytes, 32)
+    payload[32] = index & 0xff
     const words = bech32.toWords(payload)
     return bech32.encode("gov_action", words, 200)
   } catch {

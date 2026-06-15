@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { normalizeActionType } from "@/lib/governance"
+import { CopyIconButton } from "@/components/ui/CopyIconButton"
 import type {
   GovernanceAction,
   HardForkDetails,
@@ -78,11 +79,13 @@ function HashRow({ label, value }: { label: string; value: string }) {
 function PrevAction({ txHash, index }: { txHash?: string; index?: number }) {
   const t = useT()
   if (!txHash) return null
+  const full = `${txHash}#${index ?? 0}`
   return (
     <div className="pt-3 border-t border-border-subtle space-y-0.5">
       <p className="text-xs text-text-muted">{t("governance.actionDetail.prevActionId")}</p>
       <p className="font-mono text-xs text-text-secondary break-all">
-        {txHash}#{index ?? 0}
+        {full}
+        <CopyIconButton value={full} title={t("common.copy")} />
       </p>
     </div>
   )
@@ -250,23 +253,12 @@ function NoConfidenceDetail() {
 }
 
 function HardForkDetail({ d }: { d: HardForkDetails }) {
-  const t = useT()
+  // Card title ("Proposed version") already labels this section, so no inner
+  // label or descriptive sentence — just the version number + previous action.
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-4">
-        <div>
-          <p className="text-xs text-text-muted mb-0.5">{t("governance.actionDetail.hardFork.proposedVersion")}</p>
-          <p className="text-2xl font-bold tabular-nums">
-            {d.versionMajor ?? "?"}.{d.versionMinor ?? "?"}
-          </p>
-        </div>
-      </div>
-      <p className="text-xs text-text-muted">
-        {t("governance.actionDetail.hardFork.desc1")}
-        <span className="text-text-secondary font-medium">
-          {d.versionMajor}.{d.versionMinor}
-        </span>
-        {t("governance.actionDetail.hardFork.desc2")}
+      <p className="text-2xl font-bold tabular-nums">
+        {d.versionMajor ?? "?"}.{d.versionMinor ?? "?"}
       </p>
       <PrevAction txHash={d.prevActionTxHash} index={d.prevActionIndex} />
     </div>
@@ -350,8 +342,52 @@ function TreasuryWithdrawalDetail({ d }: { d: TreasuryWithdrawalDetails }) {
   )
 }
 
+function CommitteeMemberRow({
+  index,
+  credential,
+  termEpoch,
+  tone,
+}: {
+  index: number
+  credential: string
+  termEpoch?: number | null
+  tone: "add" | "remove"
+}) {
+  const t = useT()
+  const badge = tone === "add" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+  const short = `${credential.slice(0, 10)}…${credential.slice(-8)}`
+  const epochPill = termEpoch != null && (
+    <span className="shrink-0 px-2.5 py-1 rounded-full bg-bg-secondary border border-border-subtle text-text-muted text-[11px] font-medium whitespace-nowrap">
+      {t("governance.actionDetail.updateCommittee.expiresEpoch", { n: termEpoch })}
+    </span>
+  )
+  return (
+    <div className="px-3 py-2.5 border-b border-border-subtle/50 last:border-0">
+      <div className="flex items-center gap-3">
+        <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold tabular-nums ${badge}`}>
+          {index}
+        </div>
+        <div className="min-w-0 flex-1">
+          <span className="font-mono text-xs text-text-secondary min-w-0">
+            <span className="hidden sm:inline break-all">{credential}</span>
+            <span className="sm:hidden">{short}</span>
+            <CopyIconButton value={credential} title={t("common.copy")} />
+          </span>
+        </div>
+        {/* desktop: term pill inline at right */}
+        <div className="hidden sm:block">{epochPill}</div>
+      </div>
+      {/* mobile: term pill on its own line, aligned under the credential */}
+      {termEpoch != null && <div className="sm:hidden mt-1.5 pl-9">{epochPill}</div>}
+    </div>
+  )
+}
+
 function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
   const t = useT()
+  // Defensive: historical/raw shapes may omit these arrays — never crash on .length/.map.
+  const addedMembers = d.addedMembers ?? []
+  const removedMembers = d.removedMembers ?? []
   const quorumLabel = d.quorumNumerator != null && d.quorumDenominator
     ? `${d.quorumNumerator}/${d.quorumDenominator} (${((d.quorumNumerator / d.quorumDenominator) * 100).toFixed(1)}%)`
     : d.quorumRate != null
@@ -367,34 +403,27 @@ function UpdateCommitteeDetail({ d }: { d: UpdateCommitteeDetails }) {
         </div>
       )}
 
-      {d.addedMembers.length > 0 && (
+      {addedMembers.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-xs font-semibold text-success uppercase tracking-wider">
-            {t("governance.actionDetail.updateCommittee.add", { n: d.addedMembers.length })}
+            {t("governance.actionDetail.updateCommittee.add", { n: addedMembers.length })}
           </p>
           <div className="rounded-xl border border-border-subtle overflow-hidden">
-            {d.addedMembers.map((m, i) => (
-              <div key={i} className="flex items-center justify-between px-3 py-2 border-b border-border-subtle/50 last:border-0 text-xs">
-                <span className="font-mono text-text-secondary">{shortHash(m.credential)}</span>
-                {m.termEpoch != null && (
-                  <span className="text-text-muted">{t("governance.actionDetail.updateCommittee.expiresEpoch", { n: m.termEpoch })}</span>
-                )}
-              </div>
+            {addedMembers.map((m, i) => (
+              <CommitteeMemberRow key={i} index={i + 1} credential={m.credential} termEpoch={m.termEpoch} tone="add" />
             ))}
           </div>
         </div>
       )}
 
-      {d.removedMembers.length > 0 && (
+      {removedMembers.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-xs font-semibold text-danger uppercase tracking-wider">
-            {t("governance.actionDetail.updateCommittee.remove", { n: d.removedMembers.length })}
+            {t("governance.actionDetail.updateCommittee.remove", { n: removedMembers.length })}
           </p>
           <div className="rounded-xl border border-border-subtle overflow-hidden">
-            {d.removedMembers.map((cred, i) => (
-              <div key={i} className="px-3 py-2 border-b border-border-subtle/50 last:border-0 font-mono text-xs text-text-secondary">
-                {shortHash(cred)}
-              </div>
+            {removedMembers.map((cred, i) => (
+              <CommitteeMemberRow key={i} index={i + 1} credential={cred} tone="remove" />
             ))}
           </div>
         </div>
