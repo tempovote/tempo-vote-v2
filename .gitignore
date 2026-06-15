@@ -16,6 +16,8 @@ out/
 .gradle/
 apps/api/build/
 *.jar
+# Exception: vendored patched dependency for CI (see gradle/local-maven/)
+!gradle/local-maven/**/*.jar
 *.class
 
 # Environment
