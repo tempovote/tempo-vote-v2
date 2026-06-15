@@ -1,0 +1,169 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.bloxbean.cardano",
+    "module": "cardano-client-transaction-spec",
+    "version": "0.7.0-beta1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "7.5.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 11,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.11"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-common",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-crypto",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-common-spec",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-address",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-metadata",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-plutus",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "cardano-client-transaction-spec-0.7.0-beta1.jar",
+          "url": "cardano-client-transaction-spec-0.7.0-beta1.jar",
+          "size": 287841,
+          "sha512": "aa6a314615908847cb05eb56508aadabcfa6da25be7703145e0fe58575e5b7f090934ebe7dd42ca1b6f08e633aeb83072b486d17bff4c76e15e414addd9bdcd5",
+          "sha256": "4c8982de56b14b4f97a4389ad301db990f0dcab3040c54bb4653815fa9fa4bc0",
+          "sha1": "ad3a0ec2363255c624fcfe5fb381c48dc26d402f",
+          "md5": "b855e420a1a43d8d9f5079ddaf331f54"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 11,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "com.google.guava",
+          "module": "guava",
+          "version": {
+            "requires": "33.0.0-jre"
+          }
+        },
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.11"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-common",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-crypto",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-common-spec",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-address",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-metadata",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        },
+        {
+          "group": "com.bloxbean.cardano",
+          "module": "cardano-client-plutus",
+          "version": {
+            "requires": "0.7.0-beta1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "cardano-client-transaction-spec-0.7.0-beta1.jar",
+          "url": "cardano-client-transaction-spec-0.7.0-beta1.jar",
+          "size": 287841,
+          "sha512": "aa6a314615908847cb05eb56508aadabcfa6da25be7703145e0fe58575e5b7f090934ebe7dd42ca1b6f08e633aeb83072b486d17bff4c76e15e414addd9bdcd5",
+          "sha256": "4c8982de56b14b4f97a4389ad301db990f0dcab3040c54bb4653815fa9fa4bc0",
+          "sha1": "ad3a0ec2363255c624fcfe5fb381c48dc26d402f",
+          "md5": "b855e420a1a43d8d9f5079ddaf331f54"
+        }
+      ]
+    }
+  ]
+}
