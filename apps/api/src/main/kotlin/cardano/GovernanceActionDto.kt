@@ -415,13 +415,16 @@ internal fun extractActionDetails(actionType: String, action: JsonObject, propos
         }
 
         "newConstitution", "constitution" -> buildJsonObject {
-            action["constitution"]?.jsonObject?.let { c ->
-                c["anchor"]?.jsonObject?.let { a ->
-                    a["url"]?.jsonPrimitive?.contentOrNull?.let  { put("constitutionUrl", it) }
-                    a["hash"]?.jsonPrimitive?.contentOrNull?.let { put("constitutionHash", it) }
-                }
-                c["script"]?.jsonPrimitive?.contentOrNull?.let { put("guardrailsHash", it) }
+            // Ogmios 6.x shape: { metadata: {url, hash}, guardrails: {hash} }.
+            // Fallback to an older/CDDL-ish { constitution: {anchor, script} } shape.
+            val c = action["constitution"]?.jsonObject
+            (action["metadata"]?.jsonObject ?: c?.get("anchor")?.jsonObject)?.let { a ->
+                a["url"]?.jsonPrimitive?.contentOrNull?.let  { put("constitutionUrl", it) }
+                a["hash"]?.jsonPrimitive?.contentOrNull?.let { put("constitutionHash", it) }
             }
+            (action["guardrails"]?.jsonObject?.get("hash")?.jsonPrimitive?.contentOrNull
+                ?: c?.get("script")?.jsonPrimitive?.contentOrNull)
+                ?.let { put("guardrailsHash", it) }
             addPrevActionId(this, action)
         }
 

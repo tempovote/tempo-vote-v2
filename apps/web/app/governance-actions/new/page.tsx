@@ -1139,13 +1139,45 @@ export default function NewGovernanceActionPage({
     setTypeParams((prev) => ({ ...prev, ...patch }))
   }, [])
 
-  // Committee changes must chain to the latest enacted committee action (CIP-1694; the
-  // ledger rejects a wrong/stale ref with error 3159). Prefill it from the backend so the
-  // user doesn't have to find it — only when the field is still empty, so edits stick.
+  // Update Committee AND No Confidence share the same "committee" lineage and must chain to the
+  // latest enacted action of that purpose (CIP-1694; the ledger rejects a wrong/stale ref with
+  // error 3159). Prefill it from the backend so the user doesn't have to find it — only when the
+  // field is still empty, so edits stick.
   useEffect(() => {
-    if (gaType !== "updateCommittee") return
+    if (gaType !== "updateCommittee" && gaType !== "noConfidence") return
     let cancelled = false
     fetch(`${API_URL}/governance/last-enacted?network=${network}&purpose=committee`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { txHash: string | null; index: number | null } | null) => {
+        if (cancelled || !d || d.txHash == null) return
+        setTypeParams((prev) =>
+          prev.prevGovActionTxHash.trim() || prev.prevGovActionIdx.trim()
+            ? prev
+            : { ...prev, prevGovActionTxHash: d.txHash!, prevGovActionIdx: String(d.index ?? 0) },
+        )
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [gaType, network])
+
+  // New Constitution: prefill the guardrails script hash (current on-chain one) and the
+  // previous enacted constitution action, so the built action matches the real structure
+  // (constitution = anchor + guardrails + previous action id). Only fills empty fields.
+  useEffect(() => {
+    if (gaType !== "newConstitution") return
+    let cancelled = false
+    fetch(`${API_URL}/governance/chain-info?network=${network}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { guardrailsHash?: string | null } | null) => {
+        if (cancelled || !d?.guardrailsHash) return
+        setTypeParams((prev) =>
+          prev.constitutionScriptHash.trim()
+            ? prev
+            : { ...prev, constitutionScriptHash: d.guardrailsHash! },
+        )
+      })
+      .catch(() => {})
+    fetch(`${API_URL}/governance/last-enacted?network=${network}&purpose=constitution`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { txHash: string | null; index: number | null } | null) => {
         if (cancelled || !d || d.txHash == null) return
