@@ -3,43 +3,17 @@
 import { useState, useEffect } from "react"
 import ProtocolTable, { type CardanoProtocol, type SortMode } from "@/components/dapp-ranking/ProtocolTable"
 import { useT } from "@/i18n/useT"
+import { DappRankingSchema } from "@tempo/types"
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts"
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
+
 // ── Types ──────────────────────────────────────────────────────────────
 
-interface ChainTvlEntry { date: number; tvl: number }
 interface ChartPoint { label: string; tvl: number }
-interface CoinsResponse {
-  coins: { "coingecko:cardano"?: { price: number } }
-}
-
 type ChartUnit = "usd" | "ada"
-
-interface LlamaProtocolRaw {
-  id: string
-  name: string
-  slug: string
-  logo: string
-  url: string
-  category: string | null
-  chain: string
-  tvl: number | null
-  change_1d: number | null
-  change_7d: number | null
-}
-
-interface LlamaOverviewEntry {
-  name: string
-  slug: string
-  total24h: number | null
-  totalRevenue24h?: number | null
-}
-
-interface LlamaOverviewResponse {
-  protocols?: LlamaOverviewEntry[]
-}
 
 // ── Cache ───────────────────────────────────────────────────────────────
 
@@ -57,25 +31,10 @@ function setCached<T>(key: string, data: T): void {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-const LLAMA = "https://api.llama.fi"
-
-async function safeJson<T>(url: string, fallback: T): Promise<T> {
-  try {
-    const r = await fetch(url)
-    return r.ok ? (r.json() as Promise<T>) : fallback
-  } catch {
-    return fallback
-  }
-}
-
 function formatTvlSummary(usd: number): string {
   if (usd >= 1e9) return `$${(usd / 1e9).toFixed(2)}B`
   if (usd >= 1e6) return `$${(usd / 1e6).toFixed(1)}M`
   return `$${Math.round(usd).toLocaleString()}`
-}
-
-function fmtDate(unix: number): string {
-  return new Date(unix * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
 }
 
 // ── Loading skeleton ─────────────────────────────────────────────────────
@@ -107,107 +66,35 @@ export default function DAppRankingPage() {
   const t = useT()
   const [protocols, setProtocols] = useState<CardanoProtocol[]>([])
   const [chartData, setChartData] = useState<ChartPoint[]>([])
-  const [loadingProtocols, setLoadingProtocols] = useState(true)
-  const [loadingChart, setLoadingChart] = useState(true)
+  const [loading, setLoading] = useState(true)
   const [totalTvl, setTotalTvl] = useState(0)
   const [change24h, setChange24h] = useState(0)
   const [sortMode, setSortMode] = useState<SortMode>("tvl")
   const [chartUnit, setChartUnit] = useState<ChartUnit>("usd")
   const [adaPrice, setAdaPrice] = useState(0)
 
-  // Fetch Cardano chain TVL history
+  // Single fetch to our API — BE keeps a DB snapshot refreshed from DefiLlama every 2h,
+  // so the browser no longer hits DefiLlama directly (heavy /protocols + flaky gateways).
   useEffect(() => {
-    const key = "cardano-tvl-history-v2"
-    const cached = getCached<{ chart: ChartPoint[]; tvl: number; change: number }>(key)
-    if (cached) {
-      setChartData(cached.chart)
-      setTotalTvl(cached.tvl)
-      setChange24h(cached.change)
-      setLoadingChart(false)
-      return
+    const key = "dapp-ranking-v1"
+    const apply = (d: import("@tempo/types").DappRanking) => {
+      setProtocols(d.protocols)
+      setChartData(d.tvlHistory)
+      setTotalTvl(d.totalTvl)
+      setChange24h(d.change24h)
+      setAdaPrice(d.adaPrice)
     }
-    safeJson<ChainTvlEntry[]>(`${LLAMA}/v2/historicalChainTvl/Cardano`, [])
+    const cached = getCached<import("@tempo/types").DappRanking>(key)
+    if (cached) { apply(cached); setLoading(false); return }
+
+    fetch(`${API_URL}/dapp-ranking`)
+      .then(r => (r.ok ? r.json() : null))
       .then(raw => {
-        const chart: ChartPoint[] = raw.slice(-90).map(e => ({
-          label: fmtDate(e.date),
-          tvl: Math.round(e.tvl / 1e4) / 100,
-        }))
-        const last = raw[raw.length - 1]
-        const prev = raw[raw.length - 2]
-        const tvl = last?.tvl ?? 0
-        const change = last && prev && prev.tvl > 0
-          ? ((last.tvl - prev.tvl) / prev.tvl) * 100
-          : 0
-        setCached(key, { chart, tvl, change })
-        setChartData(chart)
-        setTotalTvl(tvl)
-        setChange24h(change)
+        const parsed = DappRankingSchema.safeParse(raw)
+        if (parsed.success) { setCached(key, parsed.data); apply(parsed.data) }
       })
-      .finally(() => setLoadingChart(false))
-  }, [])
-
-  // Fetch ADA price for chart unit toggle
-  useEffect(() => {
-    const key = "ada-price"
-    const cached = getCached<number>(key)
-    if (cached) { setAdaPrice(cached); return }
-    safeJson<CoinsResponse>("https://coins.llama.fi/prices/current/coingecko:cardano", { coins: {} })
-      .then(res => {
-        const price = res.coins["coingecko:cardano"]?.price ?? 0
-        if (price > 0) { setCached(key, price); setAdaPrice(price) }
-      })
-  }, [])
-
-  // Fetch protocols + dex volumes + fees in parallel
-  useEffect(() => {
-    const key = "cardano-protocols-v3"
-    const cached = getCached<CardanoProtocol[]>(key)
-    if (cached) {
-      setProtocols(cached)
-      setLoadingProtocols(false)
-      return
-    }
-
-    const DEX_URL = `${LLAMA}/overview/dexs?chain=Cardano&excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true`
-    const FEES_URL = `${LLAMA}/overview/fees?chain=Cardano&excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true`
-
-    Promise.all([
-      safeJson<LlamaProtocolRaw[]>(`${LLAMA}/protocols`, []),
-      safeJson<LlamaOverviewResponse>(DEX_URL, {}),
-      safeJson<LlamaOverviewResponse>(FEES_URL, {}),
-    ]).then(([rawAll, dexRes, feesRes]) => {
-      const volMap = new Map<string, number>()
-      for (const p of dexRes.protocols ?? []) {
-        if (p.total24h != null) volMap.set(p.slug, p.total24h)
-      }
-      const feesMap = new Map<string, number>()
-      const revMap = new Map<string, number>()
-      for (const p of feesRes.protocols ?? []) {
-        if (p.total24h != null) feesMap.set(p.slug, p.total24h)
-        if (p.totalRevenue24h != null) revMap.set(p.slug, p.totalRevenue24h)
-      }
-
-      const cardano: CardanoProtocol[] = rawAll
-        .filter(p => p.chain === "Cardano")
-        .sort((a, b) => (b.tvl ?? 0) - (a.tvl ?? 0))
-        .map((p, i) => ({
-          rank: i + 1,
-          name: p.name,
-          slug: p.slug,
-          logo: p.logo,
-          category: p.category ?? "Unknown",
-          tvl: p.tvl ?? 0,
-          change1d: p.change_1d ?? 0,
-          change7d: p.change_7d ?? 0,
-          volume24h: volMap.get(p.slug) ?? null,
-          fees24h: feesMap.get(p.slug) ?? null,
-          revenue24h: revMap.get(p.slug) ?? null,
-          url: p.url || `https://defillama.com/protocol/${p.slug}`,
-        }))
-
-      setCached(key, cardano)
-      setProtocols(cardano)
-    }).finally(() => setLoadingProtocols(false))
+      .catch(() => { /* leave empty state; UI shows skeleton → empty */ })
+      .finally(() => setLoading(false))
   }, [])
 
   // Sort and take top 30
@@ -248,7 +135,7 @@ export default function DAppRankingPage() {
         <div className="card-static space-y-4">
           <div>
             <p className="text-xs text-text-muted mb-1">{t("dappRanking.totalTvlLabel")}</p>
-            {loadingChart ? (
+            {loading ? (
               <div className="space-y-2">
                 <div className="h-8 w-28 bg-bg-card-hover rounded animate-pulse" />
                 <div className="h-3 w-16 bg-bg-card-hover rounded animate-pulse" />
@@ -265,7 +152,7 @@ export default function DAppRankingPage() {
           <div className="pt-2 border-t border-border-subtle text-sm">
             <div className="flex justify-between">
               <span className="text-text-muted">{t("dappRanking.showing")}</span>
-              <span className="font-medium">{loadingProtocols ? "—" : t("dappRanking.showingTop", { n: sorted.length })}</span>
+              <span className="font-medium">{loading ? "—" : t("dappRanking.showingTop", { n: sorted.length })}</span>
             </div>
           </div>
           <a href="https://defillama.com/chain/Cardano" target="_blank" rel="noopener noreferrer"
@@ -296,7 +183,7 @@ export default function DAppRankingPage() {
               ))}
             </div>
           </div>
-          {loadingChart ? (
+          {loading ? (
             <div className="h-48 bg-bg-card-hover rounded animate-pulse" />
           ) : chartData.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-text-muted text-sm">
@@ -343,7 +230,7 @@ export default function DAppRankingPage() {
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <h2 className="text-xl font-bold">
             {t("dappRanking.rankingsTitle")}
-            {!loadingProtocols && (
+            {!loading && (
               <span className="ml-2 text-sm font-normal text-text-muted">{t("dappRanking.showingTop", { n: sorted.length })}</span>
             )}
           </h2>
@@ -366,7 +253,7 @@ export default function DAppRankingPage() {
         </div>
 
         <div className="card-static !p-0 overflow-hidden animate-slide-up">
-          {loadingProtocols
+          {loading
             ? <TableSkeleton />
             : <ProtocolTable protocols={sorted} sortMode={sortMode} />
           }

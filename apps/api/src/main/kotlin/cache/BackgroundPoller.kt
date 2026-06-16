@@ -14,6 +14,9 @@ import vote.tempo.cardano.parseDRepDelegatorCounts
 import vote.tempo.cardano.parseDRepStakeContext
 import vote.tempo.cardano.parseGovernanceThresholds
 import vote.tempo.cardano.extractSPOPoolIds
+import vote.tempo.cardano.DappRankingSnapshot
+import vote.tempo.cardano.fetchDappRankingSnapshot
+import vote.tempo.db.DappRankingDao
 import vote.tempo.cardano.fetchPoolInfoBlockfrost
 import vote.tempo.cardano.runPoolMetadataFetcher
 import vote.tempo.cardano.credentialHexToDrepIdCip105
@@ -35,6 +38,8 @@ private const val WHALE_TOP_DREPS         = 20                       // candidat
 private const val WHALE_THRESHOLD         = 1_000_000_000_000L      // 1M ADA in lovelace
 private const val POOL_STAKE_STARTUP_MS   = 10 * 60 * 1_000L        // 10 min — wait for govActions cache to warm
 private const val POOL_STAKE_INTERVAL_MS  = 8 * 60 * 60 * 1_000L   // 8 h — live stake changes slowly
+private const val DAPP_RANKING_STARTUP_MS  = 15_000L                // 15 s — warm DApp ranking soon after boot
+private const val DAPP_RANKING_INTERVAL_MS = 2 * 60 * 60 * 1_000L   // 2 h — TVL/volume/fees change slowly
 
 // Per-network state for exponential backoff
 private val consecutiveFailures = mutableMapOf<Network, Int>()
@@ -100,7 +105,29 @@ fun Application.startBackgroundPoller() {
         logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 10 min)" }
     }
 
+    // DApp ranking (DefiLlama) snapshot — network-agnostic (Cardano mainnet DeFi). Always runs:
+    // fetches 5 DefiLlama endpoints, stores the FE-shaped payload in DB so the browser never
+    // hits DefiLlama directly. Keeps the previous snapshot on a failed fetch.
+    scope.launch {
+        delay(DAPP_RANKING_STARTUP_MS)
+        while (isActive) {
+            runCatching { refreshDappRanking() }
+                .onFailure { logger.warn { "DApp ranking refresh failed: ${it.message}" } }
+            delay(DAPP_RANKING_INTERVAL_MS)
+        }
+    }
+    logger.info { "DApp ranking indexer scheduled — every 2 h (startup delay 15 s)" }
+
     logger.info { "BackgroundPoller scheduled — Ogmios state every 5 min (delegator counts inline), pool metadata fetch every 1 h" }
+}
+
+/** Fetch the DApp ranking from DefiLlama and persist it; keep the previous snapshot on failure. */
+private suspend fun refreshDappRanking() {
+    val snapshot = fetchDappRankingSnapshot() ?: return
+    val jsonStr = Json.encodeToString(DappRankingSnapshot.serializer(), snapshot)
+    withContext(Dispatchers.IO) { DappRankingDao.upsert(jsonStr) }
+    CardanoCache.dappRanking.invalidate("cardano")
+    logger.info { "DApp ranking refreshed — ${snapshot.protocols.size} protocols, total TVL $${snapshot.totalTvl.toLong()}" }
 }
 
 private suspend fun pollAllNetworks() {

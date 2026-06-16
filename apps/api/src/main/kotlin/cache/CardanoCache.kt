@@ -134,6 +134,14 @@ object CardanoCache {
         .build<String, JsonElement>()   // key: "NETWORK:limit"
 
     /**
+     * Cardano DApp ranking snapshot (DefiLlama), refreshed in DB by BackgroundPoller every 2 h.
+     * In-memory layer in front of the DB read for GET /dapp-ranking. Single key "cardano".
+     */
+    val dappRanking = Caffeine.newBuilder()
+        .expireAfterWrite(30, TimeUnit.MINUTES)
+        .build<String, JsonElement>()   // key: "cardano"
+
+    /**
      * VP (stake) map per network — credHex → lovelace. Written each main poll cycle so the
      * whale indexer (2 h schedule) can select candidates by VP in addition to delegator count.
      */
