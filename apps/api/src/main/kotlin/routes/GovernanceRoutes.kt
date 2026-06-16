@@ -306,7 +306,7 @@ private suspend fun resolveVoterNames(network: Network, votes: List<VoteEntry>):
                 coroutineScope {
                     uncached.map { vote ->
                         async {
-                            val meta = runCatching { fetchDRepMeta(vote.anchorUrl!!) }.getOrNull()
+                            val meta = runCatching { resolveDRepMeta(network, vote.id, vote.anchorUrl) }.getOrNull()
                             val name     = meta?.name
                             val imageUrl = meta?.imageUrl
                             if (name != null || imageUrl != null) {
@@ -411,7 +411,7 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
                 coroutineScope {
                     uncached.map { vote ->
                         async {
-                            val meta = runCatching { fetchDRepMeta(vote.anchorUrl!!) }.getOrNull()
+                            val meta = runCatching { resolveDRepMeta(network, vote.id, vote.anchorUrl) }.getOrNull()
                             val name     = meta?.name
                             val imageUrl = meta?.imageUrl
                             if (name != null || imageUrl != null) {

@@ -7,10 +7,14 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import vote.tempo.db.DrepMetadataDao
 import org.jetbrains.exposed.sql.IColumnType
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.VarCharColumnType
@@ -408,7 +412,7 @@ fun Route.drepRoutes() {
                         val cachedName     = cached?.get("name")?.jsonPrimitive?.contentOrNull
                         val cachedImageUrl = cached?.get("imageUrl")?.jsonPrimitive?.contentOrNull
                         val meta = if ((cachedName == null || cachedImageUrl == null) && anchor != null)
-                            fetchDRepMeta(anchor) else null
+                            resolveDRepMeta(network, credHex, anchor) else null
                         val name     = cachedName     ?: meta?.name
                         val imageUrl = cachedImageUrl ?: meta?.imageUrl
                         // Populate drepInfo cache so vote history can resolve this DRep's name
@@ -495,7 +499,7 @@ fun Route.drepRoutes() {
                         val cachedName     = cached?.get("name")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
                         val cachedImageUrl = cached?.get("imageUrl")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
                         val meta = if ((cachedName == null || cachedImageUrl == null) && anchor != null)
-                            fetchDRepMeta(anchor) else null
+                            resolveDRepMeta(network, credHex, anchor) else null
                         val name     = cachedName     ?: meta?.name
                         val imageUrl = cachedImageUrl ?: meta?.imageUrl
                         buildJsonObject {
@@ -576,7 +580,7 @@ fun Route.drepRoutes() {
                         val cachedName     = cached?.get("name")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
                         val cachedImageUrl = cached?.get("imageUrl")?.let { if (it is JsonPrimitive) it.contentOrNull else null }
                         val meta = if ((cachedName == null || cachedImageUrl == null) && anchor != null)
-                            fetchDRepMeta(anchor) else null
+                            resolveDRepMeta(network, entry.credHex, anchor) else null
                         val name     = cachedName     ?: meta?.name
                         val imageUrl = cachedImageUrl ?: meta?.imageUrl
                         buildJsonObject {
@@ -758,7 +762,7 @@ private suspend fun buildDRepResponse(
     }
 
     val anchorUrl = listEntry["anchorUrl"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull
-    val meta = anchorUrl?.let { fetchDRepMeta(it) }
+    val meta = resolveDRepMeta(network, credentialHex, anchorUrl)
     val votingPower = listEntry["votingPower"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.longOrNull ?: 0L
     val stakeKeyBalance: Long? = null
     val mandateEpoch = listEntry["mandateEpoch"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.intOrNull
@@ -899,6 +903,7 @@ internal fun buildCandidateUrls(anchorUrl: String): List<String> {
     return (origIfHttps + IPFS_GATEWAYS_BE.map { "${it}${cid}" }).distinct()
 }
 
+@Serializable
 internal data class DRepMeta(
     val name: String?,
     val imageUrl: String?,
@@ -914,6 +919,29 @@ internal fun extractMetaStr(el: JsonElement?): String? {
     if (el is JsonPrimitive) return el.contentOrNull?.takeIf { it.isNotBlank() }
     if (el is JsonObject) return el["@value"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
     return null
+}
+
+/**
+ * Resolve DRep metadata with a persistent DB cache in front of the IPFS/anchor fetch.
+ *
+ *   L2 (DB drep_metadata) → if present and the anchor is unchanged, return it.
+ *   L3 (fetchDRepMeta)     → fetch once, persist to DB, return.
+ *
+ * This avoids re-hitting flaky IPFS gateways on every request and survives API restarts.
+ * Re-fetches only when the DRep updates its anchor URL (metadata changed). credHex may be
+ * null (caller couldn't derive it) — then we skip the DB layer and fetch directly.
+ */
+internal suspend fun resolveDRepMeta(network: Network, credHex: String?, anchorUrl: String?): DRepMeta? {
+    if (anchorUrl == null) return null
+    if (credHex == null) return fetchDRepMeta(anchorUrl)
+
+    val net = network.name.lowercase()
+    withContext(Dispatchers.IO) { DrepMetadataDao.get(net, credHex) }?.let { (storedAnchor, meta) ->
+        if (storedAnchor == anchorUrl) return meta   // cache hit, anchor unchanged
+    }
+    val meta = fetchDRepMeta(anchorUrl) ?: return null
+    runCatching { withContext(Dispatchers.IO) { DrepMetadataDao.upsert(net, credHex, anchorUrl, meta) } }
+    return meta
 }
 
 /**
