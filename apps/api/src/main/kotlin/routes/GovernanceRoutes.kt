@@ -12,6 +12,7 @@ import kotlinx.serialization.json.*
 import vote.tempo.cache.CardanoCache
 import vote.tempo.cardano.DRepStakeContext
 import vote.tempo.cardano.GovernanceActionDto
+import vote.tempo.cardano.canonicalActionType
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.drepIdToCredentialHex
@@ -193,7 +194,10 @@ fun Route.governanceRoutes() {
             val proposals = fetchProposals(network)
 
             val filtered = proposals
-                .let { list -> if (typeFilter   != null) list.filter { it.actionType.equals(typeFilter,   ignoreCase = true) } else list }
+                .let { list -> if (typeFilter != null) {
+                    val wanted = canonicalActionType(typeFilter)
+                    list.filter { canonicalActionType(it.actionType) == wanted }
+                } else list }
                 .let { list -> if (statusFilter != null) list.filter { it.status.equals(statusFilter, ignoreCase = true) } else list }
 
             call.respond(filtered)

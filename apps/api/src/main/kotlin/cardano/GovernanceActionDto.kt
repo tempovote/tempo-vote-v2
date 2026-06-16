@@ -664,3 +664,19 @@ internal fun actionTypeLabel(ogmiosType: String): String = when (ogmiosType) {
     "infoAction", "information"                   -> "Info Action"
     else                       -> ogmiosType
 }
+
+/**
+ * Canonical action-type key for filtering. Collapses raw Ogmios values and our own
+ * aliases to one stable key so `?type=` filtering matches regardless of which form
+ * the caller sends (mirrors the FE normalizeActionType).
+ */
+internal fun canonicalActionType(type: String): String = when (type) {
+    "information", "infoAction"                   -> "info"
+    "treasuryWithdrawals", "treasuryWithdrawal"   -> "treasuryWithdrawals"
+    "protocolParametersUpdate", "protocolParameterUpdate" -> "protocolParametersUpdate"
+    "hardForkInitiation", "hardFork"              -> "hardForkInitiation"
+    "noConfidence"                                -> "noConfidence"
+    "constitutionalCommittee", "updateCommittee"  -> "updateCommittee"
+    "constitution", "newConstitution"             -> "newConstitution"
+    else                                          -> type
+}
