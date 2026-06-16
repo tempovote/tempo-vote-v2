@@ -256,7 +256,7 @@ class TxBuilder(private val network: Network) {
      * @param constitutionAnchorHash blake2b-256 hash of the constitution document (hex)
      * @param constitutionScriptHash optional guardrails script hash (28-byte hex)
      */
-    fun buildNewConstitution(
+    suspend fun buildNewConstitution(
         changeAddress: String,
         rewardAddress: String,
         anchorUrl: String,
@@ -270,9 +270,13 @@ class TxBuilder(private val network: Network) {
         val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
         val prevId = buildPrevGovActionId(prevGovActionTxHash, prevGovActionIdx)
         val constitutionAnchor = Anchor(constitutionAnchorUrl, HexUtil.decodeHexString(constitutionAnchorHash))
+        // A constitution must reference the active guardrails script. Default to the current
+        // on-chain hash when the caller leaves it blank (mainnet: fa24fb30…).
+        val scriptHash = constitutionScriptHash?.takeIf { it.isNotBlank() }
+            ?: OgmiosStateQueries(network).getConstitutionGuardrailsHash()?.joinToString("") { "%02x".format(it) }
         val constitution = Constitution.builder()
             .anchor(constitutionAnchor)
-            .scripthash(constitutionScriptHash)
+            .scripthash(scriptHash)
             .build()
         val action = NewConstitution.builder()
             .prevGovActionId(prevId)
