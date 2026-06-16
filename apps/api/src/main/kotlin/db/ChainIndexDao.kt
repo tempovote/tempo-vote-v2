@@ -105,6 +105,23 @@ object ChainIndexDao {
     }
 
     /**
+     * Persist a server-side-resolved CIP-108 title (and abstract) for a governance action.
+     * Updates the existing idx_governance_proposals row; a no-op (returns 0) if the proposal
+     * isn't indexed yet. Called lazily from the GA endpoint so titles survive across requests
+     * instead of relying on the browser to fetch slow IPFS gateways within its 5 s timeout.
+     */
+    fun updateGaTitle(network: String, txHash: String, index: Int, title: String, abstract: String?): Int = transaction {
+        IdxGovernanceProposals.update({
+            (IdxGovernanceProposals.network eq network) and
+            (IdxGovernanceProposals.txHash eq txHash) and
+            (IdxGovernanceProposals.index eq index)
+        }) {
+            it[IdxGovernanceProposals.title] = title
+            if (abstract != null) it[IdxGovernanceProposals.abstract] = abstract
+        }
+    }
+
+    /**
      * Build rationale maps for multiple proposals at once.
      * Returns Map<"txHash#index", Map<voterHex, rationaleUrl>>.
      */

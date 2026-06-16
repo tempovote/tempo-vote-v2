@@ -1,5 +1,7 @@
 package vote.tempo.routes
 
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -330,6 +332,36 @@ private suspend fun resolveVoterNames(network: Network, votes: List<VoteEntry>):
     }
 }
 
+/** Max number of missing titles to resolve from anchors per request — bounds latency/connections. */
+private const val GA_TITLE_BACKFILL_LIMIT = 20
+
+/** Anchors that yielded no title (dead/unreachable/no title field) — skip re-fetching for this process. */
+private val gaTitleMissCache: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+/**
+ * Fetch a governance action's CIP-108 metadata server-side and extract (title, abstract).
+ * Runs server-side so CORS limits don't apply and slow IPFS gateways (which the browser's 5 s
+ * fetch timeout would drop) get a longer 8 s budget per candidate. Returns null if no title
+ * is found on any gateway. extractMetaStr handles plain strings and JSON-LD {"@value": …} wrappers.
+ */
+private suspend fun fetchAnchorTitleAbstract(anchorUrl: String): Pair<String, String?>? {
+    for (url in buildCandidateUrls(anchorUrl)) {
+        val result = runCatching {
+            withTimeout(8_000L) {
+                val response = httpClient.get(url)
+                if (!response.status.isSuccess()) return@withTimeout null
+                val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                val body = json["body"]?.jsonObject ?: json
+                val title    = extractMetaStr(body["title"])    ?: extractMetaStr(json["title"])
+                val abstract = extractMetaStr(body["abstract"]) ?: extractMetaStr(json["abstract"])
+                title?.let { it to abstract }
+            }
+        }.getOrNull()
+        if (result != null) return result
+    }
+    return null
+}
+
 /**
  * Fetch governance proposals — three tiers merged by key (txHash:index):
  *  1. Live proposals from Ogmios (cached, richest data including vote weights)
@@ -432,10 +464,53 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
         ChainIndexDao.buildGaTitleMap(network.name.lowercase())
     }
 
+    // GAs still missing a title after the DB lookup: resolve the anchor JSON server-side once
+    // and persist it. The browser's own 5 s fetch timeout drops slow IPFS gateways (Pinata can
+    // take 4–6 s), so titles flicker/vanish on the client; resolving here (8 s/gateway, no CORS)
+    // and writing to the DB means every later request serves the title instantly from titleMap.
+    val resolvedTitles = HashMap<String, String>()
+    val netLower = network.name.lowercase()
+    val needTitle = all
+        .filter { ga ->
+            ga.anchorUrl != null &&
+            ga.title == null &&
+            titleMap["${ga.txHash}#${ga.index}"] == null &&
+            "${ga.txHash}#${ga.index}" !in gaTitleMissCache
+        }
+        .distinctBy { "${it.txHash}#${it.index}" }
+        .take(GA_TITLE_BACKFILL_LIMIT)
+
+    if (needTitle.isNotEmpty()) {
+        runCatching {
+            withTimeout(12_000L) {
+                coroutineScope {
+                    needTitle.map { ga ->
+                        async {
+                            val key = "${ga.txHash}#${ga.index}"
+                            val ta = runCatching { fetchAnchorTitleAbstract(ga.anchorUrl!!) }.getOrNull()
+                            if (ta == null) {
+                                gaTitleMissCache.add(key)   // skip dead/slow anchors next time
+                                return@async
+                            }
+                            resolvedTitles[key] = ta.first
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    ChainIndexDao.updateGaTitle(netLower, ga.txHash, ga.index, ta.first, ta.second)
+                                }
+                            }
+                        }
+                    }.forEach { it.await() }
+                }
+            }
+        }
+    }
+
     // Enrich all DRep vote entries with names from (now-populated) drepInfo cache.
     // Also merge DB title for any GA missing one (active GAs parsed from Ogmios have title=null).
     return all.map { ga ->
-        val enrichedTitle = ga.title ?: titleMap["${ga.txHash}#${ga.index}"]
+        val enrichedTitle = ga.title
+            ?: titleMap["${ga.txHash}#${ga.index}"]
+            ?: resolvedTitles["${ga.txHash}#${ga.index}"]
         ga.copy(
             title = enrichedTitle,
             votes = ga.votes.map { vote ->

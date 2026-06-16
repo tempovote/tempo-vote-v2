@@ -882,7 +882,18 @@ private suspend fun queryStakeKeyBalance(credentialHex: String, network: Network
 }.getOrNull()
 
 internal val PINATA_GATEWAY = System.getenv("PINATA_GATEWAY") ?: "https://ipfs.io"
-internal val IPFS_GATEWAYS_BE = listOf("$PINATA_GATEWAY/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/")
+// Ordered gateway fallback. The dedicated PINATA_GATEWAY is fastest for our own pinned files
+// but returns 403 for CIDs not on this account, so public gateways must follow it. Mirrors the
+// frontend list (lib/governance.ts) — gateway.pinata.cloud has the broadest coverage and serves
+// many GA/DRep anchors that ipfs.io/dweb.link drop or redirect.
+internal val IPFS_GATEWAYS_BE = listOf(
+    "$PINATA_GATEWAY/ipfs/",
+    "https://gateway.pinata.cloud/ipfs/",
+    "https://ipfs.io/ipfs/",
+    "https://dweb.link/ipfs/",
+    "https://w3s.link/ipfs/",
+    "https://nftstorage.link/ipfs/",
+).distinct()
 
 /** Extract CID from any IPFS URL form (ipfs:// or https://<gateway>/ipfs/<cid>) */
 private fun extractIpfsCid(url: String): String? {
