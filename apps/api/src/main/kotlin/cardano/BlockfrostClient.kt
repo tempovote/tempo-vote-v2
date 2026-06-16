@@ -2,6 +2,7 @@ package vote.tempo.cardano
 
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -9,8 +10,10 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import java.io.IOException
 
 private val logger = KotlinLogging.logger("BlockfrostClient")
 
@@ -24,6 +27,15 @@ data class BlockfrostPoolInfo(
 
 private val blockfrostHttp = HttpClient(CIO) {
     engine { requestTimeout = 0 }
+    // Blockfrost free tier caps at 10 req/s. On 429 (rate limit) or 5xx, back off and
+    // retry instead of silently dropping the data. exponentialDelay() honours the
+    // Retry-After header that Blockfrost sends with a 429.
+    install(HttpRequestRetry) {
+        maxRetries = 3
+        retryIf { _, response -> response.status.value == 429 || response.status.value in 500..599 }
+        retryOnExceptionIf { _, cause -> cause is IOException }
+        exponentialDelay(base = 2.0, maxDelayMs = 8_000)
+    }
 }
 
 private val blockfrostJson = Json { ignoreUnknownKeys = true }
@@ -91,31 +103,6 @@ suspend fun fetchPoolInfoBlockfrost(
         }
     }.onFailure { e ->
         logger.warn { "Blockfrost fetchPoolInfo failed for $poolIdBech32 [$network]: ${e.message}" }
-    }.getOrNull()
-}
-
-/**
- * Fetch a DRep's current amount from Blockfrost.
- * Even for deregistered DReps, Blockfrost retains the last-known amount.
- * Returns null if Blockfrost is not configured or the call fails/404s.
- */
-suspend fun fetchDRepVotingPowerBlockfrost(drepId: String, network: Network): Long? {
-    val projectId = blockfrostProjectId(network) ?: return null
-    val base = blockfrostBaseUrl(network)
-    return runCatching {
-        withTimeout(10_000L) {
-            val resp = blockfrostHttp.get("$base/governance/dreps/$drepId") {
-                header("project_id", projectId)
-            }
-            if (!resp.status.isSuccess()) {
-                logger.warn { "Blockfrost GET /governance/dreps/$drepId → HTTP ${resp.status.value} [$network]" }
-                return@withTimeout null
-            }
-            val body = blockfrostJson.parseToJsonElement(resp.bodyAsText()).jsonObject
-            body["amount"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
-        }
-    }.onFailure { e ->
-        logger.warn { "Blockfrost fetchDRepVotingPower failed for $drepId [$network]: ${e.message}" }
     }.getOrNull()
 }
 
@@ -211,9 +198,11 @@ suspend fun fetchEnactedProposalKeys(network: Network): List<Pair<String, Int>> 
             }
             logger.info { "Blockfrost [$network] found ${stubs.size} total governance proposals" }
 
-            // ── Step 2: fetch detail for each proposal, 10 in parallel ────────────
+            // ── Step 2: fetch detail per proposal, 8 in parallel, ~1 s between chunks ──
+            // Keeps the burst under Blockfrost's 10 req/s cap (HttpRequestRetry covers the rest).
             val enacted = mutableListOf<Pair<String, Int>>()
-            stubs.chunked(10).forEach { chunk ->
+            stubs.chunked(8).forEachIndexed { chunkIdx, chunk ->
+                if (chunkIdx > 0) delay(1_000L)
                 coroutineScope {
                     chunk.map { (txHash, certIdx) ->
                         async {
