@@ -18,5 +18,6 @@ fun Application.configureRouting() {
         communityRoutes()
         metadataRoutes()
         walletRoutes()
+        dappRankingRoutes()
     }
 }

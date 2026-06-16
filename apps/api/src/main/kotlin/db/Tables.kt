@@ -168,6 +168,19 @@ object DrepDelegatorStakes : Table("drep_delegator_stakes") {
 }
 
 /**
+ * Single-row snapshot of the Cardano DApp ranking computed from DefiLlama.
+ * Refreshed by BackgroundPoller every 2h; served via GET /dapp-ranking so the browser
+ * never hits DefiLlama directly. snapshot_json holds the full FE-shaped payload.
+ */
+object CardanoDappSnapshot : Table("cardano_dapp_snapshot") {
+    val id           = varchar("id", 16)
+    val snapshotJson = text("snapshot_json")
+    val updatedAt    = datetime("updated_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+/**
  * Persistent cache of DRep metadata (CIP-119) fetched from anchor URLs.
  * Avoids re-fetching flaky IPFS gateways on every request and survives API restarts.
  * Filled lazily by resolveDRepMeta() after a successful fetch.
