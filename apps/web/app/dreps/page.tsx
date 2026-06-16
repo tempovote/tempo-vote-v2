@@ -37,11 +37,12 @@ function VpDeltaCell({ entry }: { entry: { delta: number; pctChange: number } })
   const gain = entry.delta >= 0
   return (
     <div className="text-right">
+      {/* ΔADA is the sort key → make it the prominent value; % is secondary context */}
       <div className={`font-bold tabular-nums ${gain ? "text-green-400" : "text-red-400"}`}>
-        {gain ? "+" : ""}{entry.pctChange.toFixed(2)}%
+        {gain ? "+" : ""}{lovelaceToAda(Math.abs(entry.delta))} ₳
       </div>
       <div className={`text-xs tabular-nums ${gain ? "text-green-500/70" : "text-red-500/70"}`}>
-        {gain ? "+" : ""}{lovelaceToAda(Math.abs(entry.delta))} ₳
+        {gain ? "+" : ""}{entry.pctChange.toFixed(2)}%
       </div>
     </div>
   )
