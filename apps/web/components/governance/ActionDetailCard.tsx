@@ -68,10 +68,14 @@ function shortHash(h: string) {
 }
 
 function HashRow({ label, value }: { label: string; value: string }) {
+  const t = useT()
   return (
     <div className="space-y-0.5">
       <p className="text-xs text-text-muted">{label}</p>
-      <p className="font-mono text-xs text-text-secondary break-all">{value}</p>
+      <p className="font-mono text-xs text-text-secondary break-all">
+        {value}
+        <CopyIconButton value={value} title={t("common.copy")} />
+      </p>
     </div>
   )
 }
@@ -480,7 +484,7 @@ function ProtocolParamChangeDetail({ d }: { d: ProtocolParamChangeDetails }) {
                             </button>
                           </div>
                         ) : (
-                          <span className="font-mono text-xs font-medium tabular-nums text-accent-light">
+                          <span className="font-mono text-xs font-medium tabular-nums text-accent-light break-all">
                             {formatParamValue(val)}
                           </span>
                         )}
@@ -523,6 +527,10 @@ function formatParamValue(val: unknown): string {
     }
     // { bytes: N }
     if ("bytes" in o && typeof o.bytes === "number") return `${o.bytes.toLocaleString()} bytes`
+    // { memory, cpu } execution units — show as a compact, readable pair
+    if ("memory" in o && "cpu" in o && typeof o.memory === "number" && typeof o.cpu === "number") {
+      return `mem ${o.memory.toLocaleString()} · cpu ${o.cpu.toLocaleString()}`
+    }
     // { numerator, denominator } rational
     if ("numerator" in o && "denominator" in o) {
       const n = o.numerator as number
