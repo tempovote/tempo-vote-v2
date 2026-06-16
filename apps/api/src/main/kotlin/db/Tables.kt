@@ -168,6 +168,23 @@ object DrepDelegatorStakes : Table("drep_delegator_stakes") {
 }
 
 /**
+ * Persistent cache of DRep metadata (CIP-119) fetched from anchor URLs.
+ * Avoids re-fetching flaky IPFS gateways on every request and survives API restarts.
+ * Filled lazily by resolveDRepMeta() after a successful fetch.
+ */
+object DrepMetadata : Table("drep_metadata") {
+    val network    = varchar("network", 10)
+    val credHex    = varchar("cred_hex", 56)
+    val anchorUrl  = text("anchor_url").nullable()
+    val name       = text("name").nullable()
+    val imageUrl   = text("image_url").nullable()
+    val metaJson   = text("meta_json")
+    val updatedAt  = datetime("updated_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(network, credHex)
+}
+
+/**
  * Governance proposals indexed from chain-sync (Conway tx.proposals[]).
  * One row per governance action submitted on-chain.
  * Used to serve historical GAs (expired / enacted / dropped) that have left Ogmios ledger state.
