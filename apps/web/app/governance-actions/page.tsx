@@ -8,7 +8,7 @@ import { useCommunity } from "@/hooks/useCommunity"
 import { resolvePollCta, resolveTargetDrepId } from "@/lib/pollCta"
 import GovernanceActionCard from "@/components/governance/GovernanceActionCard"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
-import { govActionIdToBech32 } from "@/lib/governance"
+import { govActionIdToBech32, normalizeActionType } from "@/lib/governance"
 import { useAnchorTitlesMap } from "@/hooks/useAnchorTitle"
 import { useT } from "@/i18n/useT"
 
@@ -49,10 +49,12 @@ export default function GovernanceActionsPage() {
   // Both status and type are filtered client-side from the single ${network}:all cache entry.
   const { actions, isLoading, error } = useGovernanceActions(network)
 
-  // Client-side status + type filtering (order matters: status first)
+  // Client-side status + type filtering (order matters: status first).
+  // TYPE_CHIPS hold canonical keys (e.g. "updateCommittee") while a.actionType is the
+  // raw Ogmios value (e.g. "constitutionalCommittee") — normalize before comparing.
   const statusFiltered = actions.filter((a) => a.status === statusFilter)
   const typeFiltered = typeFilter
-    ? statusFiltered.filter((a) => a.actionType === typeFilter)
+    ? statusFiltered.filter((a) => normalizeActionType(a.actionType) === normalizeActionType(typeFilter))
     : statusFiltered
 
   // Titles are served by the API (DB-backed). Only fall back to anchor-fetch for GAs
@@ -67,6 +69,7 @@ export default function GovernanceActionsPage() {
           a.txHash.toLowerCase().includes(q) ||
           a.type.toLowerCase().includes(q) ||
           a.actionType.toLowerCase().includes(q) ||
+          normalizeActionType(a.actionType).toLowerCase().includes(q) ||
           govActionIdToBech32(a.txHash, a.index).toLowerCase().includes(q) ||
           (title?.toLowerCase().includes(q) ?? false)
         )
@@ -134,6 +137,17 @@ export default function GovernanceActionsPage() {
             className="flex gap-2 overflow-x-auto min-w-0"
             style={{ scrollbarWidth: "none" }}
           >
+            {/* "All" resets the type filter back to showing every type */}
+            <button
+              onClick={() => setTypeFilter(null)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap shrink-0 ${
+                typeFilter === null
+                  ? "bg-accent text-white border-accent"
+                  : "bg-bg-card text-text-secondary border-border-subtle hover:text-text-primary hover:border-border-default"
+              }`}
+            >
+              {t("governance.typeChip.all")}
+            </button>
             {TYPE_CHIPS.map((value) => (
               <button
                 key={value}

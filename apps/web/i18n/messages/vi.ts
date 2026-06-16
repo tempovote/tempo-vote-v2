@@ -152,6 +152,7 @@ const vi: Messages = {
       newConstitution: "New Constitution",
     },
     typeChip: {
+      all: "Tất cả",
       treasuryWithdrawals: "Treasury",
       protocolParametersUpdate: "Protocol Params",
       hardForkInitiation: "Hard Fork",

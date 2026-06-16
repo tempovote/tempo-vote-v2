@@ -153,6 +153,7 @@ const ja: Messages = {
       newConstitution: "New Constitution",
     },
     typeChip: {
+      all: "すべて",
       treasuryWithdrawals: "Treasury",
       protocolParametersUpdate: "Protocol Params",
       hardForkInitiation: "Hard Fork",

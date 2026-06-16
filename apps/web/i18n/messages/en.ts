@@ -152,6 +152,7 @@ const en = {
       newConstitution: "New Constitution",
     },
     typeChip: {
+      all: "All",
       treasuryWithdrawals: "Treasury",
       protocolParametersUpdate: "Protocol Params",
       hardForkInitiation: "Hard Fork",
