@@ -47,11 +47,11 @@ export function ActionIdChip({ txHash, index, size = "sm" }: Props) {
 
   return (
     <div
-      className="flex items-center gap-2"
+      className="flex items-start gap-2"
       onClick={(e) => e.preventDefault()}
     >
       {/* Toggle pill */}
-      <div className="flex items-center bg-bg-secondary rounded-full border border-border-subtle overflow-hidden text-xs shrink-0">
+      <div className="flex items-center bg-bg-secondary rounded-full border border-border-subtle overflow-hidden text-xs shrink-0 mt-0.5">
         {(["hex", "bech32"] as const).map((m) => (
           <button
             key={m}
@@ -68,7 +68,7 @@ export function ActionIdChip({ txHash, index, size = "sm" }: Props) {
       </div>
 
       {/* Value */}
-      <span className={`font-mono text-text-secondary ${size === "md" ? "text-sm" : "text-xs"}`}>
+      <span className={`font-mono text-text-secondary min-w-0 break-all ${size === "md" ? "text-sm" : "text-xs"} mt-0.5`}>
         {display}
       </span>
 
@@ -76,7 +76,7 @@ export function ActionIdChip({ txHash, index, size = "sm" }: Props) {
       <button
         onClick={copy}
         title={t("governance.card.copyId", { mode })}
-        className="text-text-muted hover:text-accent-light transition-colors shrink-0"
+        className="text-text-muted hover:text-accent-light transition-colors shrink-0 mt-0.5"
       >
         {copied ? (
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-success">
