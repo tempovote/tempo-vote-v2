@@ -22,9 +22,7 @@ pnpm install
 cp .env.example .env
 # Điền OGMIOS_PREPROD_URL, KUPO_PREPROD_URL, DATABASE_URL
 
-# 4. Khởi động Docker runtime (Colima) + tạo PostgreSQL container
-colima start
-
+# 4. Tạo PostgreSQL container
 # Tạo named volume để dữ liệu KHÔNG bị mất khi container bị xóa
 docker volume create tempo_pg_data
 
@@ -37,9 +35,6 @@ docker run -d \
   --restart unless-stopped \
   -v tempo_pg_data:/var/lib/postgresql/data \
   postgres:16-alpine
-
-# ⚠️  KHÔNG chạy "colima delete" — sẽ xóa toàn bộ Docker data kể cả named volumes.
-#     Nếu cần reset Colima, backup volume trước: docker run --rm -v tempo_pg_data:/data alpine tar czf - /data > backup.tar.gz
 
 # 5. Chạy API (Flyway migrations chạy tự động khi start)
 ./gradlew :apps:api:run
@@ -56,10 +51,7 @@ API: http://localhost:8080
 **Thứ tự bắt buộc** — thiếu bước nào cũng sẽ lỗi DB:
 
 ```bash
-# Bước 1: Khởi động Docker runtime
-colima start
-
-# Bước 2: Khởi động PostgreSQL container
+# Bước 1: Khởi động PostgreSQL container
 docker start tempo-pg
 
 # Bước 3: Chờ PostgreSQL sẵn sàng (tùy chọn, thường xong ngay)
@@ -152,7 +144,6 @@ wscat -c ws://localhost:1337
 ### "Challenge thất bại (HTTP 500)" khi bỏ phiếu / "Please call Database.connect()"
 API start được nhưng không kết nối được PostgreSQL. Kiểm tra theo thứ tự:
 ```bash
-colima status          # phải "running"
 docker ps | grep tempo-pg  # phải "Up"
 curl http://localhost:8080/auth/challenge?stakeAddress=test&network=preprod
 # Nếu vẫn 500: kill port 8080 rồi ./gradlew :apps:api:run lại sau khi DB đã chạy

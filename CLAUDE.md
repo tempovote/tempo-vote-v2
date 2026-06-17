@@ -27,10 +27,9 @@ pnpm install && pnpm dev          # TS: cài deps + chạy web :3000
 ## Khởi động server (thứ tự bắt buộc)
 
 ```bash
-colima start                      # 1. Docker runtime (Colima)
-docker start tempo-pg             # 2. PostgreSQL container
-./gradlew :apps:api:run           # 3. API :8080 (Flyway tự migrate)
-pnpm dev                          # 4. Web :3000 (tab khác)
+docker start tempo-pg             # 1. PostgreSQL container
+./gradlew :apps:api:run           # 2. API :8080 (Flyway tự migrate)
+pnpm dev                          # 3. Web :3000 (tab khác)
 ```
 
 > API phải được khởi động **sau** khi PostgreSQL đã sẵn sàng.  
