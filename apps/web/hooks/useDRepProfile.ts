@@ -21,7 +21,6 @@ export interface DRepFullProfile {
   qualifications: string | null
   imageUrl: string | null
   references: Array<{ "@type": string; label: string; uri: string }> | null
-  adaHandle: string | null
 }
 
 interface UseDRepProfileResult {
@@ -65,7 +64,6 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
         anchorUrl: string | null
         votingPower: number | null
         stakeKeyBalance: number | null
-        adaHandle?: string | null
       }) => {
         if (cancelled) return
 
@@ -88,7 +86,6 @@ export function useDRepProfile(drepId: string, network: string): UseDRepProfileR
           qualifications: data.qualifications ?? null,
           imageUrl: data.imageUrl ?? null,
           references: data.references ?? null,
-          adaHandle: data.adaHandle ?? null,
         }
         setProfile(base)
         setIsLoading(false)

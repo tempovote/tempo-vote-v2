@@ -193,11 +193,6 @@ export function DRepProfileCard({
           <DRepAvatar drepId={profile.id} imageUrl={profile.imageUrl} name={displayName} size={64} />
           <div className="min-w-0 space-y-1">
             <p className="text-xl font-bold leading-tight break-words">{displayName}</p>
-            {profile.adaHandle && (
-              <p className="text-sm font-medium text-accent-light leading-none">
-                ${profile.adaHandle}
-              </p>
-            )}
             <div className="flex items-center gap-1.5">
               <span className="font-mono text-xs text-text-muted bg-bg-elevated px-2 py-0.5 rounded border border-border-subtle">
                 {shortDrepId(profile.id)}

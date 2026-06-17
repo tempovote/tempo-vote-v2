@@ -12,7 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
+
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import vote.tempo.db.DrepMetadataDao
@@ -770,18 +770,6 @@ private suspend fun buildDRepResponse(
     val currentEpoch = runCatching { OgmiosStateQueries(network).getCurrentEpoch() }.getOrNull()
     val isActive = mandateEpoch == null || currentEpoch == null || mandateEpoch >= currentEpoch
 
-    // ADA Handle — check cache first; fetch from api.handle.me on miss (3 s timeout, non-blocking).
-    val handleCacheKey = "${network.name}:$credentialHex"
-    val adaHandle: String? = run {
-        val cached = CardanoCache.adaHandles.getIfPresent(handleCacheKey)
-        if (cached != null) cached.takeIf { it.isNotEmpty() }
-        else {
-            val fetched = fetchAdaHandle(credentialHex, network)
-            CardanoCache.adaHandles.put(handleCacheKey, fetched ?: "")
-            fetched
-        }
-    }
-
     return buildJsonObject {
         put("isRegistered", true)
         put("active", isActive)
@@ -798,7 +786,6 @@ private suspend fun buildDRepResponse(
         put("anchorUrl", listEntry["anchorUrl"]!!)
         put("votingPower", JsonPrimitive(votingPower))
         put("stakeKeyBalance", stakeKeyBalance?.let { JsonPrimitive(it) } ?: JsonNull)
-        put("adaHandle", adaHandle?.let { JsonPrimitive(it) } ?: JsonNull)
     }
 }
 
@@ -868,23 +855,6 @@ private fun extractStakeLovelace(stakeElement: JsonElement?): Long? = when {
             ?: stakeElement["lovelace"]?.jsonPrimitive?.longOrNull
     else -> null
 }
-
-/**
- * Best-effort: fetch the ADA Handle (default_handle) for a DRep's stake address.
- * Derives stake address from credentialHex, calls api.handle.me/holders/{stakeAddr}.
- * Returns null if the DRep has no handle, or on any network/timeout error.
- */
-private suspend fun fetchAdaHandle(credentialHex: String, network: Network): String? = runCatching {
-    val stakeAddress = credentialHexToStakeAddress(credentialHex, network) ?: return@runCatching null
-    val resp = withTimeoutOrNull(3_000) {
-        httpClient.get("https://api.handle.me/holders/$stakeAddress") {
-            headers { append(HttpHeaders.Accept, "application/json") }
-        }
-    } ?: return@runCatching null
-    if (!resp.status.isSuccess()) return@runCatching null
-    val body = resp.bodyAsText()
-    Json.parseToJsonElement(body).jsonObject["default_handle"]?.jsonPrimitive?.contentOrNull
-}.getOrNull()
 
 /**
  * Best-effort: derive a stake address from the DRep's credential hex and query its
