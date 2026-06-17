@@ -61,6 +61,17 @@ data class BuildTxRequest(
     val collateral: List<String>? = null,
     // PROPOSE_PROTOCOL_PARAM_CHANGE
     val protocolParamUpdate: ProtocolParamUpdateItem? = null,
+    // MULTI_VOTE: batch of votes in a single TX
+    val votes: List<VoteItem>? = null,
+)
+
+@Serializable
+data class VoteItem(
+    val govActionTxHash: String,
+    val govActionIndex: Int = 0,
+    val voteKind: String = "ABSTAIN",
+    val rationaleUrl: String? = null,
+    val rationaleHash: String? = null,
 )
 
 @Serializable
@@ -198,6 +209,15 @@ fun Route.transactionRoutes() {
                         rationaleUrl = req.rationaleUrl,
                         rationaleHash = req.rationaleHash,
                     )
+                    "MULTI_VOTE" -> {
+                        val drepId = req.drepId ?: error("drepId required for MULTI_VOTE")
+                        val votes = req.votes?.takeIf { it.isNotEmpty() } ?: error("votes must not be empty")
+                        builder.buildMultiVote(
+                            changeAddress = req.changeAddress,
+                            drepId = drepId,
+                            votes = votes,
+                        )
+                    }
                     "DELEGATE" -> builder.buildDelegation(
                         changeAddress = req.changeAddress,
                         rewardAddress = req.rewardAddress,

@@ -46,6 +46,7 @@ import com.bloxbean.cardano.client.transaction.spec.governance.DRepVotingThresho
 import com.bloxbean.cardano.client.transaction.spec.governance.PoolVotingThresholds
 import com.bloxbean.cardano.client.spec.Rational
 import vote.tempo.routes.ProtocolParamUpdateItem
+import vote.tempo.routes.VoteItem
 import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
 import com.bloxbean.cardano.client.transaction.spec.Withdrawal
 import com.bloxbean.cardano.client.spec.UnitInterval
@@ -157,6 +158,34 @@ class TxBuilder(private val network: Network) {
             Tx().createVote(voter, govActionId, vote).from(changeAddress)
         }
         return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned transaction containing multiple votes in a single TX body.
+     * All votes are cast by the same DRep; each may carry its own optional rationale anchor.
+     */
+    fun buildMultiVote(
+        changeAddress: String,
+        drepId: String,
+        votes: List<VoteItem>,
+    ): String {
+        val voter = Voter(VoterType.DREP_KEY_HASH, drepIdToCredential(drepId))
+        var tx = Tx()
+        for (v in votes) {
+            val govActionId = GovActionId(v.govActionTxHash, v.govActionIndex)
+            val vote = when (v.voteKind.uppercase()) {
+                "YES"  -> Vote.YES
+                "NO"   -> Vote.NO
+                else   -> Vote.ABSTAIN
+            }
+            tx = if (v.rationaleUrl != null && v.rationaleHash != null) {
+                val anchor = Anchor(v.rationaleUrl, HexUtil.decodeHexString(v.rationaleHash))
+                tx.createVote(voter, govActionId, vote, anchor)
+            } else {
+                tx.createVote(voter, govActionId, vote)
+            }
+        }
+        return buildUnsigned(tx.from(changeAddress), changeAddress)
     }
 
     /**

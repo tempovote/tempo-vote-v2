@@ -4,6 +4,7 @@ import { cookies } from "next/headers"
 import Navbar from "@/components/layout/Navbar"
 import Footer from "@/components/layout/Footer"
 import { ExtensionErrorFilter } from "@/components/ExtensionErrorFilter"
+import { VoteQueuePanel, VoteQueueFab } from "@/components/governance/VoteQueuePanel"
 import LocaleProvider from "@/i18n/LocaleProvider"
 import { DEFAULT_LOCALE, isLocale, LOCALE_COOKIE } from "@/store/locale"
 import "./globals.css"
@@ -38,6 +39,8 @@ export default async function RootLayout({
           <Navbar />
           <main className="flex-1">{children}</main>
           <Footer />
+          <VoteQueuePanel />
+          <VoteQueueFab />
         </LocaleProvider>
       </body>
     </html>

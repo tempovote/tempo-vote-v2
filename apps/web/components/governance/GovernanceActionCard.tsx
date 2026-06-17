@@ -11,6 +11,7 @@ import VoteResultsPanel from "./VoteResultsPanel"
 import { normalizeActionType } from "@/lib/governance"
 import { GaStatusBadge } from "./GaStatusBadge"
 import { useT } from "@/i18n/useT"
+import { useVoteQueue, queueKey, type VoteChoice } from "@/store/voteQueue"
 
 interface Props {
   action: GovernanceAction
@@ -32,21 +33,99 @@ function MyVoteBadge({ vote }: { vote: MyVote }) {
   )
 }
 
+// ── Inline quick-vote row ──────────────────────────────────────────────────────
+
+function InlineVoteButtons({ action, proposalTitle }: { action: GovernanceAction; proposalTitle: string }) {
+  const t = useT()
+  const { addOrUpdate, remove, items } = useVoteQueue()
+  const key = queueKey(action.txHash, action.index)
+  const queued = items[key]
+
+  const CHOICES: { value: VoteChoice; label: string; cls: string; activeCls: string }[] = [
+    {
+      value: "YES",
+      label: t("governance.vote.yes"),
+      cls: "border-success/40 text-success hover:bg-success/10 hover:border-success/70",
+      activeCls: "border-success bg-success/20 text-success",
+    },
+    {
+      value: "NO",
+      label: t("governance.vote.no"),
+      cls: "border-danger/40 text-danger hover:bg-danger/10 hover:border-danger/70",
+      activeCls: "border-danger bg-danger/20 text-danger",
+    },
+    {
+      value: "ABSTAIN",
+      label: t("governance.vote.abstain"),
+      cls: "border-border-default text-text-secondary hover:bg-white/5 hover:border-border-default",
+      activeCls: "border-border-default bg-bg-elevated text-text-primary",
+    },
+  ]
+
+  function handleVote(choice: VoteChoice, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (queued?.choice === choice) {
+      remove(key)
+    } else {
+      addOrUpdate({
+        ga: {
+          txHash: action.txHash,
+          index: action.index,
+          title: proposalTitle,
+          actionType: action.actionType,
+        },
+        choice,
+        rationale: queued?.rationale ?? "",
+      })
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 pt-3 mt-1 border-t border-border-subtle"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+    >
+      <span className="text-xs text-text-muted shrink-0 mr-1">{t("governance.voteForm.castVote")}:</span>
+      <div className="flex gap-2 flex-1">
+        {CHOICES.map(({ value, label, cls, activeCls }) => {
+          const isActive = queued?.choice === value
+          return (
+            <button
+              key={value}
+              onClick={(e) => handleVote(value, e)}
+              className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${isActive ? activeCls : cls}`}
+            >
+              {isActive ? `✓ ${label}` : label}
+            </button>
+          )
+        })}
+      </div>
+      {queued && (
+        <span className="text-xs text-accent-light whitespace-nowrap shrink-0">
+          {t("governance.voteForm.inQueue")}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ── Card ──────────────────────────────────────────────────────────────────────
+
 export default function GovernanceActionCard({ action, compact = false }: Props) {
   const t = useT()
-  // Use DB title if available; fall back to anchor URL fetch (CORS-friendly hosts only)
   const anchorTitle = useAnchorTitle(action.title ? null : action.anchorUrl)
-
   const { isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
   const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
   const proposalTitle = action.title ?? anchorTitle ?? t(`governance.type.${normalizeActionType(action.actionType)}`)
+  const showVoteButtons = isDrepRegistered && action.status === "active"
 
   return (
-    <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block">
-      <div className="card-static space-y-4 animate-fade-in hover:border-border-default transition-colors cursor-pointer">
-
+    <div className="card-static animate-fade-in hover:border-border-default transition-colors">
+      {/* Navigable area */}
+      <Link href={`/governance-actions/${action.txHash}/${action.index}`} className="block space-y-4">
         {/* Header */}
         <div className="min-w-0 space-y-1.5">
           <div className="flex items-start justify-between gap-3">
@@ -77,8 +156,12 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
           <h4 className="font-semibold text-sm">{t("governance.card.voteResults")}</h4>
           <VoteResultsPanel action={action} />
         </div>
-      </div>
-    </Link>
+      </Link>
+
+      {/* Quick vote row — outside Link so clicks don't navigate */}
+      {showVoteButtons && (
+        <InlineVoteButtons action={action} proposalTitle={proposalTitle} />
+      )}
+    </div>
   )
 }
-
