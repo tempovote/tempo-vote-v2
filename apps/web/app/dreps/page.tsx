@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
@@ -93,13 +93,25 @@ export default function DRepsPage() {
   const { entries: whaleLeaders, loading: whaleLoading        } = useDRepWhaleLeaders(network, 20)
   const { entries: vpChangers,   loading: vpChangeLoading     } = useDRepVpChange(network, 20)
 
+  // Build a name+image lookup from leaderboard data already in memory (instant, no extra fetch).
+  // Covers top DReps like FIMI, HOSKY, Everstake that the API already resolved.
+  const leaderboardInfoMap = useMemo(() => {
+    const m = new Map<string, { name: string | null; imageUrl: string | null }>()
+    for (const e of [...leaderboard, ...byVp, ...whaleLeaders, ...vpChangers]) {
+      if (e.id && !m.has(e.id)) m.set(e.id, { name: e.name, imageUrl: e.imageUrl })
+    }
+    return m
+  }, [leaderboard, byVp, whaleLeaders, vpChangers])
+
   // Only fetch anchor titles for the search list — leaderboard name/imageUrl come from the API.
   const anchorUrlsForSearch = nameQ.length >= 2 ? dreps.map((d) => d.anchorUrl) : []
   const namesMap = useAnchorTitlesMap(anchorUrlsForSearch)
 
   const searchResults = nameQ
     ? dreps.filter((d) => {
-        const name = d.anchorUrl ? (namesMap.get(d.anchorUrl) ?? "") : ""
+        const lbName = leaderboardInfoMap.get(d.id)?.name ?? ""
+        const anchorName = d.anchorUrl ? (namesMap.get(d.anchorUrl) ?? "") : ""
+        const name = lbName || anchorName
         return (
           d.id.toLowerCase().includes(nameQ) ||
           d.credHex.toLowerCase().includes(nameQ) ||
@@ -207,7 +219,9 @@ export default function DRepsPage() {
             ) : (
               <div className="space-y-3">
                 {searchResults.slice(0, 30).map((drep) => {
-                  const name = drep.anchorUrl ? (namesMap.get(drep.anchorUrl) ?? null) : null
+                  const lb = leaderboardInfoMap.get(drep.id)
+                  const name = lb?.name ?? (drep.anchorUrl ? (namesMap.get(drep.anchorUrl) ?? null) : null)
+                  const imageUrl = lb?.imageUrl ?? null
                   return (
                     <Link
                       key={drep.id}
@@ -217,7 +231,7 @@ export default function DRepsPage() {
                       <div className="card flex items-center gap-4 !py-3 !px-4 hover:border-border-default transition-colors cursor-pointer">
                         <DRepAvatar
                           name={name ?? null}
-                          imageUrl={null}
+                          imageUrl={imageUrl}
                           credHex={drep.credHex}
                         />
                         <div className="flex-1 min-w-0">
