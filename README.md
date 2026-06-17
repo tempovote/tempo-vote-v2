@@ -20,10 +20,9 @@ packages/config          — TS                       — ESLint / TS / Tailwind
 ## Chạy local
 
 ```bash
-colima start                  # 1. Docker runtime
-docker start tempo-pg         # 2. PostgreSQL
-./gradlew :apps:api:run       # 3. API :8080 (Flyway tự migrate)
-pnpm install && pnpm dev      # 4. Web :3000
+docker start tempo-pg         # 1. PostgreSQL
+./gradlew :apps:api:run       # 2. API :8080 (Flyway tự migrate)
+pnpm install && pnpm dev      # 3. Web :3000
 ```
 
 > API phải khởi động **sau** khi PostgreSQL sẵn sàng.
