@@ -484,6 +484,7 @@ export default function DRepProfilePage({
   const { drepId } = use(params)
   const network = useWalletStore((s) => s.selectedNetwork)
   const delegatedDrep = useWalletStore((s) => s.delegatedDrep)
+  const isDrepRegistered = useWalletStore((s) => s.isDrepRegistered)
   const router = useRouter()
   const { drepKey, reauthenticate } = useWallet()
   const { submitTx } = useTx()
@@ -595,11 +596,13 @@ export default function DRepProfilePage({
 
   // Determine CTA button layout
   // isOwner: hide delegate, show community button (full width)
+  // registered DRep viewing any DRep: hide delegate (a DRep manages its own voting power,
+  //   delegating it away to another DRep through this UI is not a supported flow)
   // alreadyDelegatedToThis + active community: show "Your DRep Community" (full width, primary)
   // alreadyDelegatedToThis + no community: hide all buttons
   // !isOwner + !delegated + active community: [Delegate] [Your Community] side by side
   // !isOwner + !delegated + no community: [Delegate] full width
-  const showDelegateBtn = !isOwner && !alreadyDelegatedToThis
+  const showDelegateBtn = !isOwner && !alreadyDelegatedToThis && isDrepRegistered !== true
 
   return (
     <div className="page-container space-y-6 animate-fade-in">
