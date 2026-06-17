@@ -71,24 +71,34 @@ function parseRationale(data: unknown): RationaleContent {
   }
 }
 
-async function fetchRationale(rationaleUrl: string): Promise<RationaleContent> {
-  const urls = resolveAnchorUrls(rationaleUrl)
-
-  for (const url of urls) {
-    try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 8000)
-      const r = await fetch(url, { signal: controller.signal })
-      clearTimeout(timer)
-      if (!r.ok) continue
-      const data: unknown = await r.json()
-      const content = parseRationale(data)
-      // Accept if any primary text field is present (CIP-100 or CIP-136)
-      if (content.comment || content.title || content.summary || content.rationaleStatement) return content
-    } catch {
-      // try next gateway
-    }
+async function tryFetch(url: string, timeoutMs: number): Promise<RationaleContent | null> {
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const r = await fetch(url, { signal: controller.signal })
+    clearTimeout(timer)
+    if (!r.ok) return null
+    const data: unknown = await r.json()
+    const content = parseRationale(data)
+    if (content.comment || content.title || content.summary || content.rationaleStatement) return content
+  } catch {
+    // ignore
   }
+  return null
+}
+
+async function fetchRationale(rationaleUrl: string): Promise<RationaleContent> {
+  // Try all resolved URLs (IPFS gateways, direct HTTPS)
+  for (const url of resolveAnchorUrls(rationaleUrl)) {
+    const content = await tryFetch(url, 8_000)
+    if (content) return content
+  }
+
+  // Fallback: proxy through server-side route to handle shortened URLs
+  // (tinyurl, bit.ly, etc.) that have CORS restrictions on redirect chains
+  const proxyUrl = `/api/proxy-rationale?url=${encodeURIComponent(rationaleUrl)}`
+  const content = await tryFetch(proxyUrl, 14_000)
+  if (content) return content
 
   throw new Error("Rationale not available")
 }
