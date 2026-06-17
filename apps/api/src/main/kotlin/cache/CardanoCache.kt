@@ -157,4 +157,14 @@ object CardanoCache {
     val vpChangeLeaderboard = Caffeine.newBuilder()
         .expireAfterWrite(10, TimeUnit.MINUTES)
         .build<String, JsonElement>()   // key: "NETWORK:limit"
+
+    /**
+     * ADA Handle (default_handle) per DRep credential — resolved via api.handle.me.
+     * Stored as empty string when the DRep has no handle (avoids repeated re-fetch on miss).
+     * Long TTL: handle ownership changes very infrequently.
+     */
+    val adaHandles = Caffeine.newBuilder()
+        .expireAfterWrite(1, TimeUnit.HOURS)
+        .maximumSize(2_000)
+        .build<String, String>()    // key: "NETWORK:credentialHex", value: handle or "" if none
 }
