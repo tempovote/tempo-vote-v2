@@ -20,9 +20,6 @@ export default function Footer() {
           />
         </Link>
 
-        {/* Center text */}
-        <p className="text-text-muted text-sm">{t("footer.joinCommunity")}</p>
-
         {/* Social icons */}
         <div className="flex items-center gap-4">
           {/* Twitter / X */}
