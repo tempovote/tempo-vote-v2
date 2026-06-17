@@ -99,12 +99,6 @@ const en = {
       desc: "Find the right DRep, review their profile and voting history, then delegate your voting power to them.",
       cta: "Explore DReps",
     },
-    yourDrep: {
-      label: "Your DRep",
-      delegatedBadge: "Delegated",
-      viewProfile: "View Profile",
-      visitCommunity: "Visit Community",
-    },
     gaHeading: "Governance Actions",
     topDreps: "Top DReps",
     noActiveGa: "No active governance actions",

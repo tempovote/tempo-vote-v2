@@ -100,12 +100,6 @@ const ja: Messages = {
       desc: "適切なDRepを見つけ、プロフィールと投票履歴を確認し、投票権をデリゲートしましょう。",
       cta: "DRepを探す",
     },
-    yourDrep: {
-      label: "あなたのDRep",
-      delegatedBadge: "デリゲート済み",
-      viewProfile: "プロフィールを見る",
-      visitCommunity: "コミュニティへ",
-    },
     gaHeading: "ガバナンスアクション",
     topDreps: "トップDRep",
     noActiveGa: "有効なガバナンスアクションはありません",

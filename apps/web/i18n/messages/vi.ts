@@ -99,12 +99,6 @@ const vi: Messages = {
       desc: "Tìm DRep phù hợp, xem profile và lịch sử bỏ phiếu, sau đó delegate voting power của bạn cho họ.",
       cta: "Khám phá DReps",
     },
-    yourDrep: {
-      label: "DRep của bạn",
-      delegatedBadge: "Đã delegate",
-      viewProfile: "Xem Profile",
-      visitCommunity: "Vào Community",
-    },
     gaHeading: "Hành động Quản trị",
     topDreps: "Top DReps",
     noActiveGa: "Không có GA đang active",
