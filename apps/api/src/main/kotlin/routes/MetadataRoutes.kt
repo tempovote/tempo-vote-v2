@@ -38,7 +38,6 @@ data class MetadataUploadRequest(
     val qualifications: String? = null,
     val imageUrl: String? = null,
     val paymentAddress: String? = null,
-    val doNotList: Boolean = false,
     val references: List<MetadataReference> = emptyList(),
 )
 
@@ -357,7 +356,6 @@ private fun buildCip119Metadata(req: MetadataUploadRequest): JsonObject = buildJ
         put("objectives", "CIP119:objectives")
         put("qualifications", "CIP119:qualifications")
         put("paymentAddress", "CIP119:paymentAddress")
-        put("doNotList", "CIP119:doNotList")
         putJsonObject("references") {
             put("@id", "CIP119:references")
             put("@container", "@set")
@@ -371,7 +369,6 @@ private fun buildCip119Metadata(req: MetadataUploadRequest): JsonObject = buildJ
         if (req.objectives != null) put("objectives", req.objectives)
         if (req.qualifications != null) put("qualifications", req.qualifications)
         if (req.paymentAddress != null) put("paymentAddress", req.paymentAddress)
-        put("doNotList", req.doNotList)
         if (req.imageUrl != null) {
             putJsonObject("image") {
                 put("@type", "ImageObject")

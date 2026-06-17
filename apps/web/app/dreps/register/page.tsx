@@ -28,7 +28,6 @@ const EMPTY_FORM: DRepFormData = {
   imageUrl: "",
   imagePreviewUrl: "",
   paymentAddress: "",
-  doNotList: false,
   references: [],
 }
 
@@ -125,7 +124,6 @@ function ConfirmStep({
           <div className="min-w-0 flex-1">
             <p className="text-text-primary font-bold">{data.givenName}</p>
             <div className="flex flex-wrap gap-1.5 mt-1">
-              {data.doNotList && <span className="badge text-xs">{t("drepWizard.confirmBadgeDoNotList")}</span>}
               {data.paymentAddress && <span className="badge text-xs">{t("drepWizard.confirmBadgePayment")}</span>}
             </div>
           </div>
@@ -439,7 +437,6 @@ export default function RegisterDRepPage() {
             qualifications: formData.qualifications || undefined,
             imageUrl: formData.imageUrl || undefined,
             paymentAddress: formData.paymentAddress || undefined,
-            doNotList: formData.doNotList,
             references: formData.references.filter(r => r.label && r.uri),
           }),
         })

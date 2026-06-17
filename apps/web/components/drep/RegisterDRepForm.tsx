@@ -39,7 +39,6 @@ export interface DRepFormData {
   imageUrl: string
   imagePreviewUrl: string  // local blob URL for display (not stored on-chain)
   paymentAddress: string
-  doNotList: boolean
   references: { type: string; label: string; uri: string }[]
 }
 
@@ -249,24 +248,6 @@ export default function RegisterDRepForm({ data, step, onChange, onNext, onBack 
             {t("drepWizard.formPaymentHint")}
           </p>
         </div>
-
-        {/* doNotList */}
-        <label className="flex items-center gap-3 cursor-pointer select-none">
-          <div
-            className={`w-10 h-5 rounded-full transition-colors relative ${data.doNotList ? "bg-accent" : "bg-bg-elevated"}`}
-            onClick={() => set({ doNotList: !data.doNotList })}
-          >
-            <div
-              className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${data.doNotList ? "translate-x-5" : "translate-x-0.5"}`}
-            />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-text-primary">{t("drepWizard.formDoNotListLabel")}</p>
-            <p className="text-xs text-text-muted">
-              {t("drepWizard.formDoNotListHint")}
-            </p>
-          </div>
-        </label>
 
         <div className="pt-2">
           <button
