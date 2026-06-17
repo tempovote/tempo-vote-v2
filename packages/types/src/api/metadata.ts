@@ -14,7 +14,6 @@ export const MetadataUploadRequestSchema = z.object({
   qualifications: z.string().optional(),
   imageUrl: z.string().url().optional(),
   paymentAddress: z.string().optional(),
-  doNotList: z.boolean().default(false),
   references: z.array(MetadataReferenceSchema).default([]),
 })
 
