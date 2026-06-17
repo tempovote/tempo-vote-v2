@@ -8,6 +8,7 @@ export const TxTypeSchema = z.enum([
   "DREP_UPDATE",
   "DREP_RETIRE",
   "VOTE",
+  "MULTI_VOTE",
   "DELEGATE",
   "ACTIVATE_COMMUNITY",
   "PROPOSE_INFO_ACTION",
@@ -20,6 +21,15 @@ export const TxTypeSchema = z.enum([
 ])
 export type TxType = z.infer<typeof TxTypeSchema>
 
+export const VoteItemSchema = z.object({
+  govActionTxHash: z.string(),
+  govActionIndex: z.number().int().min(0),
+  voteKind: z.enum(["YES", "NO", "ABSTAIN"]),
+  rationaleUrl: z.string().url().optional(),
+  rationaleHash: z.string().optional(),
+})
+export type VoteItem = z.infer<typeof VoteItemSchema>
+
 export const BuildTxRequestSchema = z.object({
   txType: TxTypeSchema,
   network: NetworkSchema,
@@ -30,12 +40,14 @@ export const BuildTxRequestSchema = z.object({
   drepId: z.string().optional(),
   anchorUrl: z.string().optional(),
   anchorDataHash: z.string().optional(),
-  // Vote
+  // Vote (single)
   govActionTxHash: z.string().optional(),
   govActionIndex: z.number().int().min(0).optional(),
   voteKind: z.enum(["YES", "NO", "ABSTAIN"]).optional(),
   rationaleUrl: z.string().url().optional(),
   rationaleHash: z.string().optional(),
+  // Vote (multi) — MULTI_VOTE txType
+  votes: z.array(VoteItemSchema).optional(),
   // Delegation
   delegationType: z.enum(["drep", "abstain", "no_confidence"]).optional(),
   targetDrepId: z.string().optional(),
