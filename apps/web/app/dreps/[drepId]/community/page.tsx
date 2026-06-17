@@ -950,8 +950,8 @@ export default function CommunityPage({
           {canParticipate ? (
             <button
               type="button"
-              onClick={() => setIsFormOpen((v) => !v)}
-              className="flex items-center gap-2 px-4 py-3 text-sm text-accent-light hover:bg-accent/5 transition-colors border-r border-border-subtle"
+              onClick={() => setIsFormOpen((v) => { if (!v) setSearch(""); return !v })}
+              className={`flex items-center gap-2 px-4 py-3 text-sm text-accent-light hover:bg-accent/5 transition-colors ${isFormOpen ? "flex-1" : "border-r border-border-subtle"}`}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="9" cy="9" r="6"/><path d="M9 6v6M6 9h6"/>
@@ -974,18 +974,22 @@ export default function CommunityPage({
               Internal Polls
             </div>
           )}
-          <div className="flex-1 flex items-center px-4 py-3">
-            <input
-              type="text"
-              placeholder={t("community.searchPlaceholder")}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none"
-            />
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-muted shrink-0">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-          </div>
+          {/* Search filters the poll list below; hide it while the create form is open
+              (browsing and creating are mutually exclusive — keeps the toolbar uncluttered). */}
+          {!(isFormOpen && canParticipate) && (
+            <div className="flex-1 flex items-center px-4 py-3">
+              <input
+                type="text"
+                placeholder={t("community.searchPlaceholder")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none"
+              />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-muted shrink-0">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </div>
+          )}
         </div>
 
         {/* Inline create form */}
