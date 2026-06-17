@@ -27,7 +27,7 @@ export default function Footer() {
         <div className="flex items-center gap-4">
           {/* Twitter / X */}
           <a
-            href="https://twitter.com/TempoGov"
+            href="https://x.com/tempo_vote"
             target="_blank"
             rel="noopener noreferrer"
             className="text-text-muted hover:text-text-primary transition-colors"
@@ -40,7 +40,7 @@ export default function Footer() {
 
           {/* Telegram */}
           <a
-            href="https://t.me/TempoGov"
+            href="https://t.me/tempo_vote"
             target="_blank"
             rel="noopener noreferrer"
             className="text-text-muted hover:text-text-primary transition-colors"
