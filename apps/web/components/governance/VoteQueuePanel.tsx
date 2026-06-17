@@ -190,6 +190,7 @@ export function VoteQueuePanel() {
   const [signingPhase, setSigningPhase] = useState<SigningPhase>("sign")
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 })
   const [successTxHash, setSuccessTxHash] = useState<string | null>(null)
+  const [submittedCount, setSubmittedCount] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const itemList = Object.entries(items)
@@ -274,6 +275,7 @@ export function VoteQueuePanel() {
       for (const [, item] of itemList) {
         writeOptimisticVote(item.ga.txHash, item.ga.index, item.choice)
       }
+      setSubmittedCount(count)
       clearAll()
       setSuccessTxHash(txHash)
       setStep("success")
@@ -305,14 +307,31 @@ export function VoteQueuePanel() {
               </span>
             )}
           </div>
-          <button
-            onClick={closePanel}
-            className="text-text-muted hover:text-text-primary transition-colors"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            {count > 0 && step === "idle" && (
+              <button
+                onClick={clearAll}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
+                title={t("governance.voteQueue.clearAll")}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+                {t("governance.voteQueue.clearAll")}
+              </button>
+            )}
+            <button
+              onClick={closePanel}
+              className="text-text-muted hover:text-text-primary transition-colors p-1"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -330,9 +349,9 @@ export function VoteQueuePanel() {
                 <div>
                   <p className="font-semibold">{t("governance.voteQueue.successTitle")}</p>
                   <p className="text-sm text-text-muted">
-                    {count === 1
+                    {submittedCount === 1
                       ? t("governance.voteQueue.successDescSingle")
-                      : t("governance.voteQueue.successDesc", { n: count })}
+                      : t("governance.voteQueue.successDesc", { n: submittedCount })}
                   </p>
                 </div>
               </div>

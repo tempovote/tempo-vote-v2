@@ -83,24 +83,21 @@ function InlineVoteButtons({ action, proposalTitle }: { action: GovernanceAction
 
   return (
     <div
-      className="flex items-center gap-2 pt-3 mt-1 border-t border-border-subtle"
+      className="flex items-center gap-2 mt-3"
       onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
     >
-      <span className="text-xs text-text-muted shrink-0 mr-1">{t("governance.voteForm.castVote")}:</span>
-      <div className="flex gap-2 flex-1">
-        {CHOICES.map(({ value, label, cls, activeCls }) => {
-          const isActive = queued?.choice === value
-          return (
-            <button
-              key={value}
-              onClick={(e) => handleVote(value, e)}
-              className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${isActive ? activeCls : cls}`}
-            >
-              {isActive ? `✓ ${label}` : label}
-            </button>
-          )
-        })}
-      </div>
+      {CHOICES.map(({ value, label, cls, activeCls }) => {
+        const isActive = queued?.choice === value
+        return (
+          <button
+            key={value}
+            onClick={(e) => handleVote(value, e)}
+            className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${isActive ? activeCls : cls}`}
+          >
+            {isActive ? `✓ ${label}` : label}
+          </button>
+        )
+      })}
       {queued && (
         <span className="text-xs text-accent-light whitespace-nowrap shrink-0">
           {t("governance.voteForm.inQueue")}
@@ -115,7 +112,7 @@ function InlineVoteButtons({ action, proposalTitle }: { action: GovernanceAction
 export default function GovernanceActionCard({ action, compact = false }: Props) {
   const t = useT()
   const anchorTitle = useAnchorTitle(action.title ? null : action.anchorUrl)
-  const { isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
+  const { isConnected, isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
   const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
 
@@ -132,7 +129,7 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
             <h3 className={`font-semibold leading-snug ${compact ? "text-sm" : "text-base"}`}>
               {proposalTitle}
             </h3>
-            <MyVoteBadge vote={myVote} />
+            {isConnected && <MyVoteBadge vote={myVote} />}
           </div>
           <ActionIdChip txHash={action.txHash} index={action.index} size="sm" />
         </div>

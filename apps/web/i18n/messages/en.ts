@@ -243,6 +243,7 @@ const en = {
     },
     voteQueue: {
       panelTitle: "Vote Queue",
+      clearAll: "Clear all",
       submitBtn: "Submit {n} Vote",
       submitBtnPlural: "Submit {n} Votes",
       empty: "No votes queued yet.",
@@ -255,8 +256,8 @@ const en = {
       signingUpload: "Uploading rationales to IPFS… ({done}/{total})",
       signingSign: "Signing transaction in wallet…",
       successTitle: "Votes submitted!",
-      successDesc: "{n} votes recorded on-chain.",
-      successDescSingle: "Your vote was recorded on-chain.",
+      successDesc: "{n} votes submitted to the network.",
+      successDescSingle: "Your vote has been submitted to the network.",
       viewOnCardanoscan: "View on CardanoScan",
       submitAnother: "Back to queue",
       errTitle: "Submission failed",

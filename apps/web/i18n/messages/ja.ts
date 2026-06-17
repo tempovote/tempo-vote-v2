@@ -244,6 +244,7 @@ const ja: Messages = {
     },
     voteQueue: {
       panelTitle: "投票キュー",
+      clearAll: "すべて削除",
       submitBtn: "{n} 票を送信",
       submitBtnPlural: "{n} 票を送信",
       empty: "まだ投票がキューにありません。",
@@ -256,8 +257,8 @@ const ja: Messages = {
       signingUpload: "IPFS に根拠をアップロード中… ({done}/{total})",
       signingSign: "ウォレットでトランザクションに署名中…",
       successTitle: "投票が送信されました！",
-      successDesc: "{n} 票がオンチェーンに記録されました。",
-      successDescSingle: "あなたの投票がオンチェーンに記録されました。",
+      successDesc: "{n} 票がネットワークに送信されました。",
+      successDescSingle: "あなたの投票がネットワークに送信されました。",
       viewOnCardanoscan: "CardanoScan で表示",
       submitAnother: "キューに戻る",
       errTitle: "送信に失敗しました",
