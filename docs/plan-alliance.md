@@ -1,6 +1,6 @@
 # Alliance Feature — Implementation Plan
 
-> **Status:** Phase 1 ✅ DONE — Phase 2 🔄 NEXT  
+> **Status:** Phase 1 ✅ DONE — Phase 2 ✅ DONE — Phase 3 ⏳ TODO  
 > **Nguồn:** [Catalyst Fund 13 — Tempo Multi-party Alliance](https://projectcatalyst.io/funds/13/cardano-use-cases-concept/tempo-multi-party-alliance)  
 > **Last updated:** 2026-06-18  
 > **Treasury approach:** Pure Plutus SC — không dùng native multisig
@@ -411,18 +411,18 @@ Mỗi row: click → link tới trang proposal trong Alliance đó.
 - [x] Overview creator: date · avatar + name thay vì raw drepId
 - [x] Markdown preview: fix numbered/bullet list styles (Tailwind reset override)
 
-### Phase 2 — Proposals: Withdrawal + GA Stance 🔄 NEXT (1.5 tuần)
-- [ ] DB migration V20 (`alliance_proposals`, `alliance_proposal_votes`)
-- [ ] API: proposal CRUD + vote endpoint + tally calculation (dual threshold + VP cap)
-- [ ] API: `GET /governance-actions/:txHash/:index/alliance-stances`
-- [ ] Cron job: auto-close expired proposals + tính kết quả
-- [ ] FE: "GA Positions" tab + "Proposals" tab trên AllianceDetailPage
-- [ ] FE: `/alliances/[id]/proposals/new` — form chọn type (withdrawal / ga_stance)
+### Phase 2 — Proposals: Withdrawal + GA Stance ✅ DONE
+- [x] DB migration V20 (`alliance_proposals`, `alliance_proposal_votes`)
+- [x] API: proposal CRUD + vote endpoint + tally calculation (dual threshold + VP cap)
+- [x] API: `GET /governance-actions/:txHash/:index/alliance-stances`
+- [x] Cron job: auto-close expired proposals + tính kết quả (BackgroundPoller hook)
+- [x] FE: "GA Positions" tab + "Proposals" tab trên AllianceDetailPage
+- [x] FE: `/alliances/[id]/proposals/new` — form chọn type (withdrawal / ga_stance)
   - ga_stance: search + select GA từ danh sách active
   - withdrawal: nhập amount + recipient + description
-- [ ] FE: ProposalDetailPage — vote buttons + weighted tally bar + countdown
-- [ ] FE: GA detail page — "Alliance Stances" section (gọi `/alliance-stances` endpoint)
-- [ ] Vote tally hiển thị cả VP-weighted lẫn headcount
+- [x] FE: ProposalDetailPage — vote buttons + weighted tally bar + countdown
+- [x] FE: GA detail page — "Alliance Stances" section (gọi `/alliance-stances` endpoint)
+- [x] Vote tally hiển thị cả VP-weighted lẫn headcount
 
 ### Phase 3 — Treasury / Pure Plutus SC ⏳ TODO (2 tuần)
 - [ ] Viết Aiken validator: `treasury(alliance_id)` + `proposal_registry(alliance_id)`
