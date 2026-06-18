@@ -8,6 +8,13 @@ import { useT } from "@/i18n/useT"
 
 const TAG_OPTIONS = ["fiscal", "tech", "social", "environment", "education"]
 
+const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/"
+
+function resolveLogoSrc(url: string): string {
+  if (url.startsWith("ipfs://")) return IPFS_GATEWAY + url.slice(7)
+  return url
+}
+
 function AllianceCard({ alliance }: { alliance: AllianceItem }) {
   const t = useT()
   return (
@@ -16,13 +23,27 @@ function AllianceCard({ alliance }: { alliance: AllianceItem }) {
       className="card-static flex flex-col gap-3 p-5 hover:border-border-hover transition-colors"
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-text-primary truncate">{alliance.name}</h3>
-          {alliance.description && (
-            <p className="text-sm text-text-muted mt-1 line-clamp-2">{alliance.description}</p>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {alliance.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolveLogoSrc(alliance.logoUrl)}
+              alt={alliance.name}
+              className="w-10 h-10 rounded-lg object-cover border border-border-subtle shrink-0"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-lg bg-bg-card-hover shrink-0 flex items-center justify-center text-text-muted text-lg font-bold">
+              {alliance.name.charAt(0).toUpperCase()}
+            </div>
           )}
+          <div className="min-w-0">
+            <h3 className="font-semibold text-text-primary truncate">{alliance.name}</h3>
+            {alliance.description && (
+              <p className="text-sm text-text-muted mt-0.5 line-clamp-2">{alliance.description}</p>
+            )}
+          </div>
         </div>
-        <span className="text-xs text-text-muted whitespace-nowrap">
+        <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
           {alliance.memberCount === 1
             ? t("alliance.member")
             : t("alliance.members", { n: alliance.memberCount })}
@@ -77,11 +98,6 @@ export default function AlliancesPage() {
           <h1 className="text-2xl font-bold text-text-primary">{t("alliance.title")}</h1>
           <p className="text-sm text-text-muted mt-1">{t("alliance.subtitle")}</p>
         </div>
-        {isConnected && isDrepRegistered && (
-          <Link href="/alliances/new" className="btn-primary text-sm px-4 py-2">
-            {t("alliance.createBtn")}
-          </Link>
-        )}
       </div>
 
       {/* Tag filters */}

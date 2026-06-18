@@ -9,6 +9,7 @@ export interface AllianceItem {
   name: string
   description: string | null
   tags: string[]
+  logoUrl: string | null
   network: string
   memberCount: number
   createdAt: string
@@ -20,6 +21,7 @@ export interface AllianceDetail {
   description: string | null
   charter: string | null
   tags: string[]
+  logoUrl: string | null
   creatorDrepId: string
   network: string
   treasuryAddress: string | null
@@ -146,7 +148,7 @@ export function useAllianceMembers(allianceId: string, page = 1) {
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 export async function createAlliance(
-  body: { name: string; description?: string; charter?: string; tags?: string[]; network: string },
+  body: { name: string; description?: string; charter?: string; tags?: string[]; logoUrl?: string; network: string },
   token: string,
 ): Promise<{ id: string }> {
   const r = await fetch(`${API_URL}/alliances`, {

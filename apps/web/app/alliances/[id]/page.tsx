@@ -3,6 +3,11 @@
 import { useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
+
+const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/"
+function resolveLogoSrc(url: string): string {
+  return url.startsWith("ipfs://") ? IPFS_GATEWAY + url.slice(7) : url
+}
 import { useWalletStore } from "@/store/wallet"
 import {
   useAllianceDetail,
@@ -227,7 +232,20 @@ export default function AllianceDetailPage() {
     <div className="page-container py-8">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
-        <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+          {alliance.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolveLogoSrc(alliance.logoUrl)}
+              alt={alliance.name}
+              className="w-16 h-16 rounded-xl object-cover border border-border-subtle shrink-0 mt-0.5"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-xl bg-bg-card-hover shrink-0 mt-0.5 flex items-center justify-center text-2xl font-bold text-text-muted">
+              {alliance.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-text-primary">{alliance.name}</h1>
             {myMembership && <RoleBadge role={myMembership.role} />}
@@ -250,6 +268,7 @@ export default function AllianceDetailPage() {
           <div className="text-xs text-text-muted mt-2">
             {alliance.memberCount === 1 ? t("alliance.member") : t("alliance.members", { n: alliance.memberCount })}
             {" · "}{alliance.network}
+          </div>
           </div>
         </div>
 

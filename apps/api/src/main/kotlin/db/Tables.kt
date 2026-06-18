@@ -234,6 +234,7 @@ object Alliances : Table("alliances") {
     val description           = text("description").nullable()
     val charter               = text("charter").nullable()
     val tags                  = text("tags").default("[]")  // JSON array string
+    val logoUrl               = text("logo_url").nullable()
     val creatorDrepId         = varchar("creator_drep_id", 128)
     val network               = varchar("network", 10)
     val treasuryAddress       = text("treasury_address").nullable()

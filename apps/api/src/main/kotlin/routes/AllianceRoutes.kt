@@ -29,6 +29,7 @@ data class AllianceItem(
     val name: String,
     val description: String?,
     val tags: List<String>,
+    val logoUrl: String?,
     val network: String,
     val memberCount: Int,
     val createdAt: String,
@@ -41,6 +42,7 @@ data class AllianceDetail(
     val description: String?,
     val charter: String?,
     val tags: List<String>,
+    val logoUrl: String?,
     val creatorDrepId: String,
     val network: String,
     val treasuryAddress: String?,
@@ -93,6 +95,7 @@ data class CreateAllianceRequest(
     val description: String? = null,
     val charter: String? = null,
     val tags: List<String> = emptyList(),
+    val logoUrl: String? = null,
     val network: String,
 )
 
@@ -102,6 +105,7 @@ data class UpdateAllianceRequest(
     val description: String? = null,
     val charter: String? = null,
     val tags: List<String>? = null,
+    val logoUrl: String? = null,
 )
 
 @Serializable
@@ -173,6 +177,7 @@ fun Route.allianceRoutes() {
                             name        = row[Alliances.name],
                             description = row[Alliances.description],
                             tags        = parseTags(row[Alliances.tags]),
+                            logoUrl     = row[Alliances.logoUrl],
                             network     = row[Alliances.network],
                             memberCount = (memberCounts[id] ?: 0L).toInt(),
                             createdAt   = row[Alliances.createdAt].toString(),
@@ -212,6 +217,7 @@ fun Route.allianceRoutes() {
                     description           = row[Alliances.description],
                     charter               = row[Alliances.charter],
                     tags                  = parseTags(row[Alliances.tags]),
+                    logoUrl               = row[Alliances.logoUrl],
                     creatorDrepId         = row[Alliances.creatorDrepId],
                     network               = row[Alliances.network],
                     treasuryAddress       = row[Alliances.treasuryAddress],
@@ -316,6 +322,7 @@ fun Route.allianceRoutes() {
                             it[description]    = req.description?.trim()
                             it[charter]        = req.charter?.trim()
                             it[tags]           = encodeTags(req.tags)
+                            it[logoUrl]        = req.logoUrl?.trim()?.ifBlank { null }
                             it[creatorDrepId]  = jwtDrepId
                             it[Alliances.network] = req.network
                         }[Alliances.id]
@@ -364,6 +371,7 @@ fun Route.allianceRoutes() {
                         req.description?.let { v -> it[description] = v.trim().ifBlank { null } }
                         req.charter?.let { v -> it[charter] = v.trim().ifBlank { null } }
                         req.tags?.let { v -> it[tags] = encodeTags(v) }
+                        req.logoUrl?.let { v -> it[logoUrl] = v.trim().ifBlank { null } }
                     }
                     null
                 }
