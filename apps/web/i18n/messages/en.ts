@@ -968,6 +968,7 @@ const en = {
     joinBtn: "Join Alliance",
     leaveBtn: "Leave Alliance",
     joined: "Joined",
+    joinedAt: "Joined {date}",
     members: "{n} members",
     member: "1 member",
     memberRole: {

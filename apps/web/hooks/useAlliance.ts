@@ -23,6 +23,8 @@ export interface AllianceDetail {
   tags: string[]
   logoUrl: string | null
   creatorDrepId: string
+  creatorName: string | null
+  creatorImageUrl: string | null
   network: string
   treasuryAddress: string | null
   approvalThresholdVp: number
@@ -43,6 +45,8 @@ export interface AllianceMember {
   stakeAddress: string
   role: string
   joinedAt: string
+  name: string | null
+  imageUrl: string | null
 }
 
 export interface AllianceListResponse {

@@ -968,6 +968,7 @@ const vi: Messages = {
     joinBtn: "Tham gia",
     leaveBtn: "Rời Liên minh",
     joined: "Đã tham gia",
+    joinedAt: "Tham gia {date}",
     members: "{n} thành viên",
     member: "1 thành viên",
     memberRole: {

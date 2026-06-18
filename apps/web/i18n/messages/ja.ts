@@ -969,6 +969,7 @@ const ja: Messages = {
     joinBtn: "参加する",
     leaveBtn: "退出する",
     joined: "参加済み",
+    joinedAt: "{date}に参加",
     members: "{n}人のメンバー",
     member: "1人のメンバー",
     memberRole: {

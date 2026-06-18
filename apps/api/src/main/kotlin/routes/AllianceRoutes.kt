@@ -18,6 +18,7 @@ import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.db.Alliances
 import vote.tempo.db.AllianceMembers
+import vote.tempo.db.DrepMetadata
 import vote.tempo.plugins.ApiError
 import java.util.UUID
 
@@ -44,6 +45,8 @@ data class AllianceDetail(
     val tags: List<String>,
     val logoUrl: String?,
     val creatorDrepId: String,
+    val creatorName: String? = null,
+    val creatorImageUrl: String? = null,
     val network: String,
     val treasuryAddress: String?,
     val approvalThresholdVp: Int,
@@ -71,6 +74,8 @@ data class AllianceMemberItem(
     val stakeAddress: String,
     val role: String,
     val joinedAt: String,
+    val name: String? = null,
+    val imageUrl: String? = null,
 )
 
 @Serializable
@@ -211,6 +216,15 @@ fun Route.allianceRoutes() {
                         ?.let { m -> MembershipInfo(role = m[AllianceMembers.role], joinedAt = m[AllianceMembers.joinedAt].toString()) }
                 }
 
+                val network = row[Alliances.network]
+                val creatorDrepId = row[Alliances.creatorDrepId]
+                val creatorCredHex = runCatching { drepIdToCredentialHex(creatorDrepId) }.getOrNull()
+                val creatorMeta = creatorCredHex?.let {
+                    DrepMetadata.selectAll()
+                        .where { (DrepMetadata.network eq network) and (DrepMetadata.credHex eq it) }
+                        .firstOrNull()
+                }
+
                 AllianceDetail(
                     id                    = row[Alliances.id].toString(),
                     name                  = row[Alliances.name],
@@ -218,8 +232,10 @@ fun Route.allianceRoutes() {
                     charter               = row[Alliances.charter],
                     tags                  = parseTags(row[Alliances.tags]),
                     logoUrl               = row[Alliances.logoUrl],
-                    creatorDrepId         = row[Alliances.creatorDrepId],
-                    network               = row[Alliances.network],
+                    creatorDrepId         = creatorDrepId,
+                    creatorName           = creatorMeta?.get(DrepMetadata.name),
+                    creatorImageUrl       = creatorMeta?.get(DrepMetadata.imageUrl),
+                    network               = network,
                     treasuryAddress       = row[Alliances.treasuryAddress],
                     approvalThresholdVp   = row[Alliances.approvalThresholdVp],
                     approvalThresholdCount= row[Alliances.approvalThresholdCount],
@@ -246,8 +262,13 @@ fun Route.allianceRoutes() {
             val limit = 50
             val offset = ((page - 1) * limit).toLong()
 
-            val exists = transaction { Alliances.selectAll().where { Alliances.id eq id }.count() > 0 }
-            if (!exists) return@get call.respond(HttpStatusCode.NotFound, ApiError("Alliance not found"))
+            val (allianceExists, allianceNetwork) = transaction {
+                Alliances.selectAll().where { Alliances.id eq id }
+                    .firstOrNull()
+                    ?.let { true to it[Alliances.network] }
+                    ?: (false to "")
+            }
+            if (!allianceExists) return@get call.respond(HttpStatusCode.NotFound, ApiError("Alliance not found"))
 
             val (items, total) = transaction {
                 val total = AllianceMembers.selectAll()
@@ -259,12 +280,21 @@ fun Route.allianceRoutes() {
                     .orderBy(AllianceMembers.joinedAt, SortOrder.ASC)
                     .limit(limit).offset(offset)
                     .map { row ->
+                        val drepId = row[AllianceMembers.drepId]
+                        val credHex = runCatching { drepIdToCredentialHex(drepId) }.getOrNull()
+                        val meta = credHex?.let {
+                            DrepMetadata.selectAll()
+                                .where { (DrepMetadata.network eq allianceNetwork) and (DrepMetadata.credHex eq it) }
+                                .firstOrNull()
+                        }
                         AllianceMemberItem(
                             id           = row[AllianceMembers.id].toString(),
-                            drepId       = row[AllianceMembers.drepId],
+                            drepId       = drepId,
                             stakeAddress = row[AllianceMembers.stakeAddress],
                             role         = row[AllianceMembers.role],
                             joinedAt     = row[AllianceMembers.joinedAt].toString(),
+                            name         = meta?.get(DrepMetadata.name),
+                            imageUrl     = meta?.get(DrepMetadata.imageUrl),
                         )
                     }
                 rows to total

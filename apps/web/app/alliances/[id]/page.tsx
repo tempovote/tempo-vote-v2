@@ -17,6 +17,7 @@ import {
   type AllianceMember,
 } from "@/hooks/useAlliance"
 import { useT } from "@/i18n/useT"
+import DRepAvatar from "@/components/drep/DRepAvatar"
 
 type Tab = "overview" | "members"
 
@@ -64,17 +65,29 @@ function MembersTab({ allianceId }: { allianceId: string }) {
           key={member.id}
           className="flex items-center justify-between px-4 py-3 rounded-lg bg-bg-card hover:bg-bg-card-hover transition-colors"
         >
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <Link
-              href={`/dreps/${encodeURIComponent(member.drepId)}`}
-              className="text-sm font-mono text-accent-light hover:underline truncate"
-            >
-              {member.drepId.slice(0, 20)}…{member.drepId.slice(-8)}
-            </Link>
-            <span className="text-xs text-text-muted">
-              Joined {new Date(member.joinedAt).toLocaleDateString()}
-            </span>
-          </div>
+          <Link
+            href={`/dreps/${encodeURIComponent(member.drepId)}`}
+            className="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity"
+          >
+            <DRepAvatar
+              name={member.name ?? null}
+              imageUrl={member.imageUrl ?? null}
+              credHex={member.drepId}
+              size="sm"
+            />
+            <div className="flex flex-col gap-0.5 min-w-0">
+              {member.name ? (
+                <span className="text-sm font-medium text-text-primary truncate">{member.name}</span>
+              ) : (
+                <span className="text-sm font-mono text-accent-light truncate">
+                  {member.drepId.slice(0, 20)}…{member.drepId.slice(-8)}
+                </span>
+              )}
+              <span className="text-xs text-text-muted">
+                {t("alliance.joinedAt", { date: new Date(member.joinedAt).toLocaleDateString() })}
+              </span>
+            </div>
+          </Link>
           <RoleBadge role={member.role} />
         </div>
       ))}
@@ -143,13 +156,22 @@ function OverviewTab({ alliance }: { alliance: ReturnType<typeof useAllianceDeta
       </div>
 
       {/* Creator */}
-      <div className="text-sm text-text-muted">
-        {t("alliance.overview.createdBy")}:{" "}
+      <div className="flex items-center gap-3 text-sm text-text-muted">
+        <span>{new Date(alliance.createdAt).toLocaleDateString()}</span>
+        <span>·</span>
         <Link
           href={`/dreps/${encodeURIComponent(alliance.creatorDrepId)}`}
-          className="text-accent-light hover:underline font-mono"
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
         >
-          {alliance.creatorDrepId.slice(0, 20)}…
+          <DRepAvatar
+            name={alliance.creatorName ?? null}
+            imageUrl={alliance.creatorImageUrl ?? null}
+            credHex={alliance.creatorDrepId}
+            size="sm"
+          />
+          <span className={alliance.creatorName ? "text-text-primary font-medium" : "font-mono text-accent-light"}>
+            {alliance.creatorName ?? `${alliance.creatorDrepId.slice(0, 20)}…`}
+          </span>
         </Link>
       </div>
     </div>
