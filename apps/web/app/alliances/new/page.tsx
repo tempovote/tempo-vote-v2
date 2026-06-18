@@ -7,6 +7,7 @@ import { createAlliance } from "@/hooks/useAlliance"
 import { useT } from "@/i18n/useT"
 import { authHeader, getJwt } from "@/lib/api"
 import { useWallet } from "@/hooks/useWallet"
+import { RationaleEditor } from "@/components/governance/RationaleEditor"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -266,16 +267,14 @@ export default function CreateAlliancePage() {
 
         <div className="space-y-1.5">
           <label className={LABEL}>Charter {OPTIONAL}</label>
-          <textarea
-            className={`${INPUT} resize-y font-mono text-xs`}
-            rows={7}
+          <RationaleEditor
+            label=""
+            description="Describe governance rules, values, and procedures."
             placeholder={t("alliance.create.charterPlaceholder")}
+            height={200}
             value={charter}
-            onChange={(e) => setCharter(e.target.value)}
+            onChange={setCharter}
           />
-          <p className="text-xs text-text-muted">
-            Supports plain text. Describe governance rules, values, and procedures.
-          </p>
         </div>
 
         {/* ── Identity ────────────────────────────────────────────────────── */}
