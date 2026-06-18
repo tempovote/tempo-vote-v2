@@ -224,6 +224,46 @@ object IdxGovernanceProposals : Table("idx_governance_proposals") {
     override val primaryKey = PrimaryKey(network, txHash, index)
 }
 
+// =============================================================================
+// Alliance tables — Phase 1
+// =============================================================================
+
+object Alliances : Table("alliances") {
+    val id                    = uuid("id").autoGenerate()
+    val name                  = varchar("name", 100)
+    val description           = text("description").nullable()
+    val charter               = text("charter").nullable()
+    val tags                  = text("tags").default("[]")  // JSON array string
+    val creatorDrepId         = varchar("creator_drep_id", 128)
+    val network               = varchar("network", 10)
+    val treasuryAddress       = text("treasury_address").nullable()
+    val treasuryScriptHash    = varchar("treasury_script_hash", 64).nullable()
+    val approvalThresholdVp   = integer("approval_threshold_vp").default(60)
+    val approvalThresholdCount= integer("approval_threshold_count").default(50)
+    val quorumThreshold       = integer("quorum_threshold").default(30)
+    val vpCapPct              = integer("vp_cap_pct").default(20)
+    val timelockHours         = integer("timelock_hours").default(48)
+    val maxWithdrawalPct      = integer("max_withdrawal_pct").default(30)
+    val proposalDurationDays  = integer("proposal_duration_days").default(7)
+    val createdAt             = datetime("created_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(id)
+    init { uniqueIndex(name, network) }
+}
+
+object AllianceMembers : Table("alliance_members") {
+    val id           = uuid("id").autoGenerate()
+    val allianceId   = uuid("alliance_id").references(Alliances.id)
+    val drepId       = varchar("drep_id", 128)
+    val stakeAddress = varchar("stake_address", 128)
+    val network      = varchar("network", 10)
+    val role         = varchar("role", 20).default("member")  // owner | admin | member
+    val joinedAt     = datetime("joined_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(id)
+    init { uniqueIndex(drepId, network) }
+}
+
 object AuthSessions : Table("auth_sessions") {
     val id           = uuid("id").autoGenerate()
     val stakeAddress = varchar("stake_address", 128)

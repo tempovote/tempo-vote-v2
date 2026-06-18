@@ -16,6 +16,7 @@ const navLinks = [
   { href: "/dapp-ranking", key: "nav.dappRanking" },
   { href: "/dreps", key: "nav.dreps" },
   { href: "/governance-actions", key: "nav.governanceActions" },
+  { href: "/alliances", key: "nav.alliances" },
 ]
 
 const othersLinks = [
