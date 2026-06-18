@@ -997,6 +997,7 @@ const ja: Messages = {
     },
     create: {
       title: "アライアンスを作成",
+      subtitle: "ガバナンスの姿勢を調整するDRepコアリションを結成",
       nameLabel: "名前",
       namePlaceholder: "アライアンス名",
       descPlaceholder: "アライアンスのミッションを説明...",

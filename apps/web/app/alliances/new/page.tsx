@@ -4,6 +4,7 @@ import { useState, useRef, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { useWalletStore } from "@/store/wallet"
 import { createAlliance } from "@/hooks/useAlliance"
+import Link from "next/link"
 import { useT } from "@/i18n/useT"
 import { authHeader, getJwt } from "@/lib/api"
 import { useWallet } from "@/hooks/useWallet"
@@ -205,10 +206,27 @@ export default function CreateAlliancePage() {
   const logoSrc = logoPreview || (logoUrl ? toDisplaySrc(logoUrl, logoGwIdx) : null)
 
   return (
-    <div className="page-container py-8 max-w-2xl">
-      <h1 className="text-2xl font-bold text-text-primary mb-6">{t("alliance.create.title")}</h1>
+    <main className="page-container py-10">
+      <div className="max-w-2xl mx-auto">
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs text-text-muted mb-3">
+        <Link href="/alliances" className="hover:text-accent-light transition-colors">
+          {t("alliance.title")}
+        </Link>
+        <span>/</span>
+        <span>{t("alliance.create.title")}</span>
+      </div>
+
+      {/* Title */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-text-primary">{t("alliance.create.title")}</h1>
+        <p className="text-sm text-text-secondary mt-1">{t("alliance.create.subtitle")}</p>
+      </div>
+
+      {/* Form card */}
+      <div className="card-static">
+      <form onSubmit={handleSubmit} className="space-y-6">
 
         {/* ── Content ─────────────────────────────────────────────────────── */}
         <SectionDivider
@@ -509,6 +527,8 @@ export default function CreateAlliancePage() {
         </div>
 
       </form>
-    </div>
+      </div>{/* /card-static */}
+      </div>{/* /max-w-2xl */}
+    </main>
   )
 }

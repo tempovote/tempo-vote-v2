@@ -996,6 +996,7 @@ const en = {
     },
     create: {
       title: "Create Alliance",
+      subtitle: "Form a DRep coalition to coordinate governance stances",
       nameLabel: "Name",
       namePlaceholder: "Alliance name",
       descPlaceholder: "Describe your alliance's mission...",

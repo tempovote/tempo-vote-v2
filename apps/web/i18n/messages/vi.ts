@@ -996,6 +996,7 @@ const vi: Messages = {
     },
     create: {
       title: "Tạo Liên minh",
+      subtitle: "Thành lập liên minh DRep để phối hợp lập trường quản trị",
       nameLabel: "Tên",
       namePlaceholder: "Tên Liên minh",
       descPlaceholder: "Mô tả sứ mệnh của Liên minh...",
