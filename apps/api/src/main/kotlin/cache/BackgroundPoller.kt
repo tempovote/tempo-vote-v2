@@ -25,6 +25,7 @@ import vote.tempo.cardano.blockfrostProjectId
 import vote.tempo.cardano.fetchDRepDelegatorsBlockfrost
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
+import vote.tempo.routes.autoCloseExpiredProposals
 
 private val logger = KotlinLogging.logger("BackgroundPoller")
 
@@ -61,6 +62,8 @@ fun Application.startBackgroundPoller() {
         logger.info { "BackgroundPoller first poll starting" }
         while (isActive) {
             pollAllNetworks()
+            runCatching { autoCloseExpiredProposals() }
+                .onFailure { logger.warn { "autoCloseExpiredProposals failed: ${it.message}" } }
             delay(POLL_INTERVAL_MS)
         }
     }

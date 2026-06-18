@@ -16,10 +16,14 @@ import {
   leaveAlliance,
   type AllianceMember,
 } from "@/hooks/useAlliance"
+import {
+  useAllianceProposals,
+  type ProposalItem,
+} from "@/hooks/useAllianceProposals"
 import { useT } from "@/i18n/useT"
 import DRepAvatar from "@/components/drep/DRepAvatar"
 
-type Tab = "overview" | "members"
+type Tab = "overview" | "members" | "ga_positions" | "proposals"
 
 // ─── Role badge ───────────────────────────────────────────────────────────────
 
@@ -108,6 +112,264 @@ function MembersTab({ allianceId }: { allianceId: string }) {
             Next →
           </button>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Status chip ──────────────────────────────────────────────────────────────
+
+function StatusChip({ status }: { status: string }) {
+  const t = useT()
+  const colors: Record<string, string> = {
+    voting:           "bg-accent/20 text-accent-light",
+    approved_pending: "bg-yellow-500/20 text-yellow-300",
+    approved:         "bg-green-500/20 text-green-300",
+    passed:           "bg-green-500/20 text-green-300",
+    rejected:         "bg-danger/20 text-danger",
+    failed:           "bg-danger/20 text-danger",
+    executed:         "bg-blue-500/20 text-blue-300",
+    cancelled:        "bg-bg-card-hover text-text-muted",
+  }
+  const key = `alliance.proposal.status.${status}` as Parameters<typeof t>[0]
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] ?? colors.voting}`}>
+      {t(key)}
+    </span>
+  )
+}
+
+// ─── Vote badge ────────────────────────────────────────────────────────────────
+
+function VoteBadge({ vote }: { vote: string }) {
+  const colors = { YES: "text-vote-bar-yes", NO: "text-vote-bar-no", ABSTAIN: "text-text-muted" }
+  return (
+    <span className={`text-xs font-bold ${colors[vote as keyof typeof colors] ?? "text-text-muted"}`}>
+      {vote}
+    </span>
+  )
+}
+
+// ─── Tally bar ────────────────────────────────────────────────────────────────
+
+function TallyBar({ tally }: { tally: ProposalItem["tally"] }) {
+  const t = useT()
+  const total = tally.yesCount + tally.noCount + tally.abstainCount
+  if (total === 0) return (
+    <div className="h-1.5 w-full rounded-full bg-bg-card-hover" />
+  )
+  const yesPct   = (tally.yesCount   / total) * 100
+  const noPct    = (tally.noCount    / total) * 100
+
+  return (
+    <div className="space-y-0.5">
+      <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-bg-card-hover">
+        <div style={{ width: `${yesPct}%` }}   className="bg-vote-bar-yes" />
+        <div style={{ width: `${noPct}%` }}    className="bg-vote-bar-no" />
+      </div>
+      <div className="flex items-center gap-3 text-xs text-text-muted">
+        <span className="text-vote-bar-yes">{tally.yesCount} {t("alliance.proposal.tally.yes")}</span>
+        <span className="text-vote-bar-no">{tally.noCount} {t("alliance.proposal.tally.no")}</span>
+        <span>{tally.abstainCount} {t("alliance.proposal.tally.abstain")}</span>
+        <span className="ml-auto">
+          {t("alliance.proposal.tally.voted", { n: String(tally.totalVoted), total: String(tally.totalMembers) })}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Proposal card ────────────────────────────────────────────────────────────
+
+function ProposalCard({ proposal, allianceId }: { proposal: ProposalItem; allianceId: string }) {
+  const t = useT()
+  const isActive = proposal.status === "voting"
+  const endsAt = new Date(proposal.votingEndsAt)
+  const now = new Date()
+
+  return (
+    <Link
+      href={`/alliances/${allianceId}/proposals/${proposal.id}`}
+      className="block bg-bg-card hover:bg-bg-card-hover transition-colors rounded-xl p-4 border border-border-subtle"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <StatusChip status={proposal.status} />
+            {proposal.myVote && <VoteBadge vote={proposal.myVote} />}
+          </div>
+          <h4 className="text-sm font-semibold text-text-primary truncate">{proposal.title}</h4>
+          {proposal.proposerName && (
+            <p className="text-xs text-text-muted mt-0.5">by {proposal.proposerName}</p>
+          )}
+        </div>
+        {proposal.proposalType === "withdrawal" && proposal.amountLovelace && (
+          <div className="text-right shrink-0">
+            <div className="text-sm font-bold text-accent-light">
+              {(proposal.amountLovelace / 1_000_000).toLocaleString()} ₳
+            </div>
+          </div>
+        )}
+      </div>
+      <TallyBar tally={proposal.tally} />
+      <div className="mt-2 text-xs text-text-muted">
+        {isActive && endsAt > now
+          ? t("alliance.proposal.ends", { date: endsAt.toLocaleDateString() })
+          : t("alliance.proposal.ended", { date: endsAt.toLocaleDateString() })}
+      </div>
+    </Link>
+  )
+}
+
+// ─── Proposals tab ────────────────────────────────────────────────────────────
+
+function ProposalsTab({
+  allianceId,
+  drepId,
+  myMemberRole,
+}: {
+  allianceId: string
+  drepId?: string
+  myMemberRole?: string
+}) {
+  const t = useT()
+  const [page, setPage] = useState(1)
+  const { data, isLoading } = useAllianceProposals(allianceId, {
+    type: "withdrawal",
+    drepId,
+    page,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-24 rounded-xl bg-bg-card-hover animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {myMemberRole && (
+        <div className="flex justify-end">
+          <Link
+            href={`/alliances/${allianceId}/proposals/new?type=withdrawal`}
+            className="btn-primary px-4 py-2 text-sm"
+          >
+            {t("alliance.proposal.createBtn")}
+          </Link>
+        </div>
+      )}
+
+      {!data || data.items.length === 0 ? (
+        <div className="py-8 text-center">
+          <p className="text-text-muted text-sm">{t("alliance.proposal.empty")}</p>
+          {myMemberRole && (
+            <p className="text-text-muted text-xs mt-1">{t("alliance.proposal.emptyHint")}</p>
+          )}
+        </div>
+      ) : (
+        <>
+          {data.items.map((p) => (
+            <ProposalCard key={p.id} proposal={p} allianceId={allianceId} />
+          ))}
+          {data.total > data.items.length && (
+            <div className="flex justify-center gap-2 pt-2">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="px-3 py-1 rounded text-sm bg-bg-card text-text-muted disabled:opacity-40 hover:bg-bg-card-hover"
+              >
+                ← Prev
+              </button>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                className="px-3 py-1 rounded text-sm bg-bg-card text-text-muted hover:bg-bg-card-hover"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── GA Positions tab ─────────────────────────────────────────────────────────
+
+function GAPositionsTab({
+  allianceId,
+  drepId,
+  myMemberRole,
+}: {
+  allianceId: string
+  drepId?: string
+  myMemberRole?: string
+}) {
+  const t = useT()
+  const [page, setPage] = useState(1)
+  const { data, isLoading } = useAllianceProposals(allianceId, {
+    type: "ga_stance",
+    drepId,
+    page,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-20 rounded-xl bg-bg-card-hover animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {myMemberRole && (
+        <div className="flex justify-end">
+          <Link
+            href={`/alliances/${allianceId}/proposals/new?type=ga_stance`}
+            className="btn-primary px-4 py-2 text-sm"
+          >
+            {t("alliance.proposal.createBtn")}
+          </Link>
+        </div>
+      )}
+
+      {!data || data.items.length === 0 ? (
+        <div className="py-8 text-center">
+          <p className="text-text-muted text-sm">{t("alliance.gaPositions.empty")}</p>
+          {myMemberRole && (
+            <p className="text-text-muted text-xs mt-1">{t("alliance.gaPositions.emptyHint")}</p>
+          )}
+        </div>
+      ) : (
+        <>
+          {data.items.map((p) => (
+            <ProposalCard key={p.id} proposal={p} allianceId={allianceId} />
+          ))}
+          {data.total > data.items.length && (
+            <div className="flex justify-center gap-2 pt-2">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="px-3 py-1 rounded text-sm bg-bg-card text-text-muted disabled:opacity-40 hover:bg-bg-card-hover"
+              >
+                ← Prev
+              </button>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                className="px-3 py-1 rounded text-sm bg-bg-card text-text-muted hover:bg-bg-card-hover"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -226,8 +488,10 @@ export default function AllianceDetailPage() {
   }
 
   const TABS: { key: Tab; label: string }[] = [
-    { key: "overview", label: t("alliance.tabs.overview") },
-    { key: "members",  label: t("alliance.tabs.members") },
+    { key: "overview",     label: t("alliance.tabs.overview") },
+    { key: "members",      label: t("alliance.tabs.members") },
+    { key: "ga_positions", label: t("alliance.tabs.gaPositions") },
+    { key: "proposals",    label: t("alliance.tabs.proposals") },
   ]
 
   if (isLoading) {
@@ -341,6 +605,20 @@ export default function AllianceDetailPage() {
       {/* Tab content */}
       {activeTab === "overview" && <OverviewTab alliance={alliance} />}
       {activeTab === "members" && <MembersTab allianceId={params.id} />}
+      {activeTab === "ga_positions" && (
+        <GAPositionsTab
+          allianceId={params.id}
+          drepId={drepId}
+          myMemberRole={myMembership?.role}
+        />
+      )}
+      {activeTab === "proposals" && (
+        <ProposalsTab
+          allianceId={params.id}
+          drepId={drepId}
+          myMemberRole={myMembership?.role}
+        />
+      )}
     </div>
   )
 }

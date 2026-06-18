@@ -1,6 +1,6 @@
 # Alliance Feature — Implementation Plan
 
-> **Status:** READY FOR APPROVAL — tất cả câu hỏi đã chốt  
+> **Status:** Phase 1 ✅ DONE — Phase 2 🔄 NEXT  
 > **Nguồn:** [Catalyst Fund 13 — Tempo Multi-party Alliance](https://projectcatalyst.io/funds/13/cardano-use-cases-concept/tempo-multi-party-alliance)  
 > **Last updated:** 2026-06-18  
 > **Treasury approach:** Pure Plutus SC — không dùng native multisig
@@ -398,15 +398,21 @@ Mỗi row: click → link tới trang proposal trong Alliance đó.
 
 ## 7. Phân kỳ Thực hiện
 
-### Phase 1 — Alliance Core (1 tuần)
-- [ ] DB migration V18 (`alliances`, `alliance_members`)
-- [ ] API: CRUD alliance + join/leave + list members
-- [ ] FE: `/alliances` list, `/alliances/new`, `/alliances/[id]` (Overview + Members tabs)
-- [ ] Validate DRep registration khi join (query Ogmios)
-- [ ] i18n: EN + VI + JA
+### Phase 1 — Alliance Core ✅ DONE
+- [x] DB migration V18 (`alliances`, `alliance_members`) + V19 (`logo_url` column)
+- [x] API: CRUD alliance + join/leave + list members
+- [x] FE: `/alliances` list, `/alliances/new`, `/alliances/[id]` (Overview + Members tabs)
+- [x] Validate DRep registration khi join (query Ogmios)
+- [x] i18n: EN + VI + JA
+- [x] Charter field: RationaleEditor (full markdown toolbar, Edit/Split/Preview)
+- [x] Create Alliance page: layout chuẩn (breadcrumb, card-static, max-w-2xl)
+- [x] Navbar: Alliance → Others dropdown
+- [x] Members tab: DRep avatar + name từ `drep_metadata` (join by credHex)
+- [x] Overview creator: date · avatar + name thay vì raw drepId
+- [x] Markdown preview: fix numbered/bullet list styles (Tailwind reset override)
 
-### Phase 2 — Proposals: Withdrawal + GA Stance (1.5 tuần)
-- [ ] DB migration V19 (`alliance_proposals`, `alliance_proposal_votes`)
+### Phase 2 — Proposals: Withdrawal + GA Stance 🔄 NEXT (1.5 tuần)
+- [ ] DB migration V20 (`alliance_proposals`, `alliance_proposal_votes`)
 - [ ] API: proposal CRUD + vote endpoint + tally calculation (dual threshold + VP cap)
 - [ ] API: `GET /governance-actions/:txHash/:index/alliance-stances`
 - [ ] Cron job: auto-close expired proposals + tính kết quả
@@ -418,7 +424,7 @@ Mỗi row: click → link tới trang proposal trong Alliance đó.
 - [ ] FE: GA detail page — "Alliance Stances" section (gọi `/alliance-stances` endpoint)
 - [ ] Vote tally hiển thị cả VP-weighted lẫn headcount
 
-### Phase 3 — Treasury / Pure Plutus SC (2 tuần)
+### Phase 3 — Treasury / Pure Plutus SC ⏳ TODO (2 tuần)
 - [ ] Viết Aiken validator: `treasury(alliance_id)` + `proposal_registry(alliance_id)`
 - [ ] Unit test validator (Aiken built-in test framework)
 - [ ] Deploy + test trên preprod: contribute, finalize, execute

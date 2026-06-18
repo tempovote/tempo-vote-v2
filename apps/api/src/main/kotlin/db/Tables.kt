@@ -265,6 +265,49 @@ object AllianceMembers : Table("alliance_members") {
     init { uniqueIndex(drepId, network) }
 }
 
+// =============================================================================
+// Alliance tables — Phase 2
+// =============================================================================
+
+object AllianceProposals : Table("alliance_proposals") {
+    val id                  = uuid("id").autoGenerate()
+    val allianceId          = uuid("alliance_id").references(Alliances.id)
+    val proposerDrepId      = varchar("proposer_drep_id", 128)
+    val proposalType        = varchar("proposal_type", 20).default("ga_stance")  // withdrawal | ga_stance
+    val title               = varchar("title", 255)
+    val description         = text("description").nullable()
+    // withdrawal-only
+    val amountLovelace      = long("amount_lovelace").nullable()
+    val recipientAddress    = text("recipient_address").nullable()
+    val recipientLabel      = text("recipient_label").nullable()
+    val approvedAt          = datetime("approved_at").nullable()
+    val executableAt        = datetime("executable_at").nullable()
+    val finalizationTxHash  = varchar("finalization_tx_hash", 64).nullable()
+    val executedTxHash      = varchar("executed_tx_hash", 64).nullable()
+    // ga_stance-only
+    val govActionTxHash     = varchar("gov_action_tx_hash", 64).nullable()
+    val govActionIndex      = integer("gov_action_index").nullable()
+    // common
+    val status              = varchar("status", 30).default("voting")
+    val votingEndsAt        = datetime("voting_ends_at")
+    val createdAt           = datetime("created_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object AllianceProposalVotes : Table("alliance_proposal_votes") {
+    val id            = uuid("id").autoGenerate()
+    val proposalId    = uuid("proposal_id").references(AllianceProposals.id)
+    val drepId        = varchar("drep_id", 128)
+    val stakeAddress  = varchar("stake_address", 128)
+    val vote          = varchar("vote", 10)      // YES | NO | ABSTAIN
+    val votingPower   = long("voting_power").default(0)
+    val createdAt     = datetime("created_at").defaultExpression(CurrentDateTime)
+
+    override val primaryKey = PrimaryKey(id)
+    init { uniqueIndex(proposalId, drepId) }
+}
+
 object AuthSessions : Table("auth_sessions") {
     val id           = uuid("id").autoGenerate()
     val stakeAddress = varchar("stake_address", 128)

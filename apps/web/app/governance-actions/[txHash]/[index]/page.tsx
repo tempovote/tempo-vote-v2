@@ -17,6 +17,7 @@ import VoteResultsPanel from "@/components/governance/VoteResultsPanel"
 import { ActionDetailCard } from "@/components/governance/ActionDetailCard"
 import { GaStatusBadge } from "@/components/governance/GaStatusBadge"
 import { GaDetailTabs } from "@/components/governance/GaDetailTabs"
+import { AllianceStancesPanel } from "@/components/alliance/AllianceStancesPanel"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -264,6 +265,9 @@ export default function GovernanceActionDetailPage({
             <h2 className="font-semibold text-base">{t("governance.card.voteResults")}</h2>
             <VoteResultsPanel action={action} />
           </div>
+
+          {/* Alliance Stances */}
+          <AllianceStancesPanel txHash={action.txHash} index={action.index} />
 
           {/* Vote history + Metadata tabs */}
           <GaDetailTabs action={action} />
