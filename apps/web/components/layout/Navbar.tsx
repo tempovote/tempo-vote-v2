@@ -16,10 +16,10 @@ const navLinks = [
   { href: "/dapp-ranking", key: "nav.dappRanking" },
   { href: "/dreps", key: "nav.dreps" },
   { href: "/governance-actions", key: "nav.governanceActions" },
-  { href: "/alliances", key: "nav.alliances" },
 ]
 
 const othersLinks = [
+  { href: "/alliances",           key: "nav.alliances" },
   { href: "/treasury-projection", key: "nav.treasuryProjection" },
   { href: "/user-guides",         key: "nav.userGuides" },
   { href: "/about",               key: "nav.about" },
@@ -165,6 +165,14 @@ export default function Navbar() {
                             : "text-text-secondary hover:text-text-primary hover:bg-white/5"
                         }`}
                       >
+                        {link.href === "/alliances" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          </svg>
+                        )}
                         {link.href === "/treasury-projection" && (
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                             <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
