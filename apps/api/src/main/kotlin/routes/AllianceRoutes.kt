@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
+import vote.tempo.cardano.AllianceScripts
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.networkFromString
 import vote.tempo.cardano.drepIdToCredentialHex
@@ -345,16 +346,22 @@ fun Route.allianceRoutes() {
                     return@post call.respond(HttpStatusCode.Conflict, ApiError("DRep is already a member of an alliance"))
                 }
 
+                val resolvedNetwork = network
+                val treasuryAddr   = AllianceScripts.treasuryAddress(resolvedNetwork)
+                val treasuryHash   = AllianceScripts.TREASURY_SCRIPT_HASH
+
                 val result = runCatching {
                     transaction {
                         val allianceId = Alliances.insert {
-                            it[name]           = req.name.trim()
-                            it[description]    = req.description?.trim()
-                            it[charter]        = req.charter?.trim()
-                            it[tags]           = encodeTags(req.tags)
-                            it[logoUrl]        = req.logoUrl?.trim()?.ifBlank { null }
-                            it[creatorDrepId]  = jwtDrepId
-                            it[Alliances.network] = req.network
+                            it[name]                = req.name.trim()
+                            it[description]         = req.description?.trim()
+                            it[charter]             = req.charter?.trim()
+                            it[tags]                = encodeTags(req.tags)
+                            it[logoUrl]             = req.logoUrl?.trim()?.ifBlank { null }
+                            it[creatorDrepId]       = jwtDrepId
+                            it[Alliances.network]   = req.network
+                            it[treasuryAddress]     = treasuryAddr
+                            it[treasuryScriptHash]  = treasuryHash
                         }[Alliances.id]
 
                         AllianceMembers.insert {

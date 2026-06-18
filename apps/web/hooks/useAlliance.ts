@@ -187,3 +187,50 @@ export async function leaveAlliance(allianceId: string, token: string): Promise<
     throw new Error((data as { error?: string }).error ?? `HTTP ${r.status}`)
   }
 }
+
+export interface TreasuryUtxo {
+  txHash: string
+  outputIndex: number
+  lovelace: number
+}
+
+export interface TreasuryBalance {
+  treasuryAddress: string
+  balanceLovelace: number
+  utxos: TreasuryUtxo[]
+}
+
+export function useTreasuryBalance(allianceId: string) {
+  const [data, setData] = useState<TreasuryBalance | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!allianceId) return
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+    fetch(`${API_URL}/alliances/${allianceId}/treasury`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((d: TreasuryBalance) => { if (!cancelled) setData(d) })
+      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : "Failed") })
+      .finally(() => { if (!cancelled) setIsLoading(false) })
+    return () => { cancelled = true }
+  }, [allianceId, tick])
+
+  return { data, isLoading, error, refetch: () => setTick((t) => t + 1) }
+}
+
+export async function triggerFinalization(allianceId: string, proposalId: string, token: string): Promise<string> {
+  const r = await fetch(`${API_URL}/alliances/${allianceId}/proposals/${proposalId}/finalize`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${r.status}`)
+  return (data as { txHash: string }).txHash
+}

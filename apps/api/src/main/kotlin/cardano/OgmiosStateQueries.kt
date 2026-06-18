@@ -7,6 +7,8 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 
@@ -285,6 +287,48 @@ class OgmiosStateQueries(private val network: Network) {
 
     suspend fun getTreasury(): JsonObject {
         return queryRaw("queryLedgerState/treasury", buildJsonObject {}).jsonObject
+    }
+
+    /**
+     * Get the current chain tip slot number.
+     * Used to convert POSIX time to slot for TX validity intervals.
+     * In Conway era, 1 slot = 1 second.
+     */
+    suspend fun getCurrentTipSlot(): Long {
+        val result = queryRaw("queryNetwork/tip", buildJsonObject {})
+        return result.jsonObject["slot"]?.jsonPrimitive?.long
+            ?: error("queryNetwork/tip returned no slot")
+    }
+
+    /**
+     * Convert a POSIX timestamp (ms) to an approximate chain slot.
+     * Uses the current tip to establish the slot ↔ time mapping.
+     * Accurate in Conway era where 1 slot = 1 second.
+     */
+    suspend fun posixMsToSlot(posixMs: Long): Long {
+        val currentSlot = getCurrentTipSlot()
+        val currentPosixMs = System.currentTimeMillis()
+        val deltaSec = (posixMs - currentPosixMs) / 1000
+        return currentSlot + deltaSec
+    }
+
+    /**
+     * Query Kupo for UTxOs at a script address.
+     * Returns a list of (txHash, outputIndex, lovelace) triples.
+     */
+    suspend fun getScriptUtxos(scriptAddress: String): List<Triple<String, Int, Long>> {
+        return withContext(Dispatchers.IO) {
+            val response = client.get("$kupoUrl/matches/$scriptAddress?unspent")
+            val text = response.bodyAsText()
+            val arr = json.parseToJsonElement(text).jsonArray
+            arr.mapNotNull { elem ->
+                val obj = elem.jsonObject
+                val txHash = obj["transaction_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val idx = obj["output_index"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                val coins = obj["value"]?.jsonObject?.get("coins")?.jsonPrimitive?.long ?: 0L
+                Triple(txHash, idx, coins)
+            }
+        }
     }
 
     suspend fun getProtocolParameters(): JsonObject {

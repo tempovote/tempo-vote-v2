@@ -12,6 +12,8 @@ import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
+import vote.tempo.cardano.AllianceScripts
+import vote.tempo.cardano.FinalizationTxSubmitter
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.drepIdToCredentialHex
 import vote.tempo.cardano.networkFromString
@@ -63,6 +65,8 @@ data class ProposalItem(
     val approvedAt: String? = null,
     val executableAt: String? = null,
     val executedTxHash: String? = null,
+    val finalizationTxHash: String? = null,
+    val finalizationTxIndex: Int? = null,
     val createdAt: String,
     val tally: ProposalTally,
     val myVote: String? = null,
@@ -96,6 +100,20 @@ data class CastAllianceVoteRequest(
 @Serializable
 data class MarkExecutedRequest(
     val txHash: String,
+)
+
+@Serializable
+data class TreasuryUtxoItem(
+    val txHash: String,
+    val outputIndex: Int,
+    val lovelace: Long,
+)
+
+@Serializable
+data class TreasuryBalanceResponse(
+    val treasuryAddress: String,
+    val balanceLovelace: Long,
+    val utxos: List<TreasuryUtxoItem>,
 )
 
 @Serializable
@@ -221,8 +239,10 @@ private fun rowToProposalItem(
     status           = row[AllianceProposals.status],
     votingEndsAt     = row[AllianceProposals.votingEndsAt].toString(),
     approvedAt       = row[AllianceProposals.approvedAt]?.toString(),
-    executableAt     = row[AllianceProposals.executableAt]?.toString(),
-    executedTxHash   = row[AllianceProposals.executedTxHash],
+    executableAt          = row[AllianceProposals.executableAt]?.toString(),
+    executedTxHash        = row[AllianceProposals.executedTxHash],
+    finalizationTxHash    = row[AllianceProposals.finalizationTxHash],
+    finalizationTxIndex   = if (row[AllianceProposals.finalizationTxHash] != null) 0 else null,
     createdAt        = row[AllianceProposals.createdAt].toString(),
     tally            = tally,
     myVote           = myVote,
@@ -680,6 +700,88 @@ fun Route.allianceProposalRoutes() {
                     else            -> call.respond(HttpStatusCode.InternalServerError, ApiError(error))
                 }
             }
+        }
+    }
+
+    // ─── Treasury routes ───────────────────────────────────────────────────────
+
+    // GET /alliances/:id/treasury — current UTxO set + total balance
+    get("/alliances/{id}/treasury") {
+        val allianceId = requireUuid(call.parameters["id"], "id")
+            ?: return@get call.respond(HttpStatusCode.BadRequest, ApiError("Invalid alliance id"))
+
+        val (allianceNetwork, treasuryAddr) = transaction {
+            Alliances.selectAll().where { Alliances.id eq allianceId }
+                .firstOrNull()
+                ?.let { it[Alliances.network] to it[Alliances.treasuryAddress] }
+        } ?: return@get call.respond(HttpStatusCode.NotFound, ApiError("Alliance not found"))
+
+        val network = networkFromString(allianceNetwork)
+        val resolvedAddr = treasuryAddr ?: AllianceScripts.treasuryAddress(network)
+
+        val utxos = runCatching {
+            vote.tempo.cardano.OgmiosStateQueries(network).getScriptUtxos(resolvedAddr)
+        }.getOrElse { emptyList() }
+
+        val balanceLovelace = utxos.sumOf { it.third }
+        call.respond(TreasuryBalanceResponse(
+            treasuryAddress = resolvedAddr,
+            balanceLovelace = balanceLovelace,
+            utxos = utxos.map { (hash, idx, lovelace) ->
+                TreasuryUtxoItem(txHash = hash, outputIndex = idx, lovelace = lovelace)
+            }
+        ))
+    }
+
+    // POST /alliances/:id/proposals/:pid/finalize — member-triggered Finalization TX
+    authenticate("jwt") {
+        post("/alliances/{id}/proposals/{pid}/finalize") {
+            val principal  = call.principal<JWTPrincipal>()!!
+            val jwtDrepId  = principal.payload.getClaim("drepId")?.asString()
+                ?: return@post call.respond(HttpStatusCode.Forbidden, ApiError("DRep ID required"))
+            val allianceId = requireUuid(call.parameters["id"], "id")
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ApiError("Invalid alliance id"))
+            val pid        = requireUuid(call.parameters["pid"], "pid")
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ApiError("Invalid proposal id"))
+
+            // Verify caller is a member
+            val isMember = transaction {
+                AllianceMembers.selectAll()
+                    .where { (AllianceMembers.allianceId eq allianceId) and (AllianceMembers.drepId eq jwtDrepId) }
+                    .count() > 0
+            }
+            if (!isMember) return@post call.respond(HttpStatusCode.Forbidden, ApiError("Alliance membership required"))
+
+            val (proposalRow, allianceRow) = transaction {
+                val p = AllianceProposals.selectAll()
+                    .where { (AllianceProposals.id eq pid) and (AllianceProposals.allianceId eq allianceId) }
+                    .firstOrNull() ?: return@transaction null to null
+                val a = Alliances.selectAll().where { Alliances.id eq allianceId }.firstOrNull()
+                p to a
+            }
+
+            if (proposalRow == null || allianceRow == null)
+                return@post call.respond(HttpStatusCode.NotFound, ApiError("Proposal not found"))
+            if (proposalRow[AllianceProposals.proposalType] != "withdrawal")
+                return@post call.respond(HttpStatusCode.BadRequest, ApiError("Only withdrawal proposals can be finalized"))
+            if (proposalRow[AllianceProposals.status] != "approved")
+                return@post call.respond(HttpStatusCode.Conflict, ApiError("Proposal must be in 'approved' status"))
+            if (proposalRow[AllianceProposals.finalizationTxHash] != null)
+                return@post call.respond(HttpStatusCode.Conflict, ApiError("Finalization TX already submitted"))
+
+            val network = networkFromString(allianceRow[Alliances.network])
+            val txHash = FinalizationTxSubmitter.submitFinalizationTx(
+                proposalId       = pid,
+                allianceId       = allianceId,
+                result           = "approved",
+                amountLovelace   = proposalRow[AllianceProposals.amountLovelace] ?: 0L,
+                recipientAddress = proposalRow[AllianceProposals.recipientAddress] ?: "",
+                timelockHours    = allianceRow[Alliances.timelockHours],
+                network          = network,
+            )
+
+            if (txHash != null) call.respond(mapOf("txHash" to txHash))
+            else call.respond(HttpStatusCode.InternalServerError, ApiError("Finalization TX failed — SERVICE_WALLET_MNEMONIC may not be set"))
         }
     }
 }

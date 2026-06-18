@@ -63,6 +63,18 @@ data class BuildTxRequest(
     val protocolParamUpdate: ProtocolParamUpdateItem? = null,
     // MULTI_VOTE: batch of votes in a single TX
     val votes: List<VoteItem>? = null,
+    // ALLIANCE_TREASURY_CONTRIBUTE
+    val allianceId: String? = null,
+    val amountLovelace: Long? = null,
+    // ALLIANCE_WITHDRAW
+    val proposalId: String? = null,
+    val treasuryUtxoTxHash: String? = null,
+    val treasuryUtxoIndex: Int? = null,
+    val treasuryUtxoLovelace: Long? = null,
+    val finalizationTxHash: String? = null,
+    val finalizationTxIndex: Int? = null,
+    val recipientAddress: String? = null,
+    val executableAtMs: Long? = null,
 )
 
 @Serializable
@@ -301,6 +313,25 @@ fun Route.transactionRoutes() {
                             lovelace = 2_000_000L,
                         )
                     }
+                    "ALLIANCE_TREASURY_CONTRIBUTE" -> builder.buildAllianceTreasuryContribute(
+                        changeAddress = req.changeAddress,
+                        allianceId = java.util.UUID.fromString(req.allianceId ?: error("allianceId required")),
+                        amountLovelace = req.amountLovelace ?: error("amountLovelace required"),
+                    )
+                    "ALLIANCE_WITHDRAW" -> builder.buildAllianceWithdraw(
+                        changeAddress = req.changeAddress,
+                        collateral = req.collateral ?: emptyList(),
+                        allianceId = java.util.UUID.fromString(req.allianceId ?: error("allianceId required")),
+                        proposalId = java.util.UUID.fromString(req.proposalId ?: error("proposalId required")),
+                        treasuryUtxoTxHash = req.treasuryUtxoTxHash ?: error("treasuryUtxoTxHash required"),
+                        treasuryUtxoIndex = req.treasuryUtxoIndex ?: error("treasuryUtxoIndex required"),
+                        treasuryUtxoLovelace = req.treasuryUtxoLovelace ?: error("treasuryUtxoLovelace required"),
+                        finalizationTxHash = req.finalizationTxHash ?: error("finalizationTxHash required"),
+                        finalizationTxIndex = req.finalizationTxIndex ?: 0,
+                        recipientAddress = req.recipientAddress ?: error("recipientAddress required"),
+                        amountLovelace = req.amountLovelace ?: error("amountLovelace required"),
+                        executableAtMs = req.executableAtMs ?: error("executableAtMs required"),
+                    )
                     else -> error("Unknown txType: ${req.txType}")
                 }
             }.fold(

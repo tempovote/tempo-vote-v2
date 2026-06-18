@@ -10,7 +10,8 @@ import {
   cancelProposal,
   type ProposalItem,
 } from "@/hooks/useAllianceProposals"
-import { useAllianceDetail } from "@/hooks/useAlliance"
+import { useAllianceDetail, useTreasuryBalance } from "@/hooks/useAlliance"
+import { useTx } from "@/hooks/useTx"
 import { useT } from "@/i18n/useT"
 
 // ─── Countdown ────────────────────────────────────────────────────────────────
@@ -209,6 +210,101 @@ function VotePanel({
   )
 }
 
+// ─── Execute panel ────────────────────────────────────────────────────────────
+
+function ExecutePanel({
+  proposal,
+  allianceId,
+  isMember,
+  onExecuted,
+}: {
+  proposal: ProposalItem
+  allianceId: string
+  isMember: boolean
+  onExecuted: () => void
+}) {
+  const t = useT()
+  const { submitTx } = useTx()
+  const { data: treasury } = useTreasuryBalance(allianceId)
+  const [loading, setLoading] = useState(false)
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  if (proposal.proposalType !== "withdrawal") return null
+  if (proposal.status !== "approved_pending" && proposal.status !== "approved") return null
+  if (!proposal.finalizationTxHash || proposal.finalizationTxIndex == null) {
+    return (
+      <div className="notice-warning text-xs py-2 px-3 rounded-lg">
+        {t("alliance.treasury.finalizationPending")}
+      </div>
+    )
+  }
+
+  const executableAt = proposal.executableAt ? new Date(proposal.executableAt) : null
+  const now = new Date()
+  const timelockActive = executableAt && executableAt > now
+
+  if (timelockActive) {
+    return (
+      <div className="card-static rounded-xl px-4 py-3 text-sm text-text-muted">
+        {t("alliance.treasury.timelockActive", { date: executableAt!.toLocaleString() })}
+      </div>
+    )
+  }
+
+  if (txHash) {
+    return (
+      <div className="notice-success text-sm">
+        {t("alliance.treasury.executeSuccess", { txHash: `${txHash.slice(0, 16)}…` })}
+      </div>
+    )
+  }
+
+  const treasuryUtxo = treasury?.utxos[0]
+
+  async function handleExecute() {
+    if (!treasuryUtxo || !proposal.finalizationTxHash || proposal.finalizationTxIndex == null) return
+    setLoading(true)
+    setError(null)
+    try {
+      const hash = await submitTx("ALLIANCE_WITHDRAW", {
+        allianceId,
+        proposalId: proposal.id,
+        treasuryUtxoTxHash:   treasuryUtxo.txHash,
+        treasuryUtxoIndex:    treasuryUtxo.outputIndex,
+        treasuryUtxoLovelace: treasuryUtxo.lovelace,
+        finalizationTxHash:   proposal.finalizationTxHash,
+        finalizationTxIndex:  proposal.finalizationTxIndex,
+        recipientAddress:     proposal.recipientAddress ?? undefined,
+        amountLovelace:       proposal.amountLovelace ?? undefined,
+        executableAtMs:       executableAt?.getTime() ?? undefined,
+      })
+      setTxHash(hash)
+      setTimeout(onExecuted, 4000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t("alliance.treasury.executeError"))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {!treasuryUtxo && (
+        <p className="text-xs text-text-muted">{t("alliance.treasury.noTreasuryUtxo")}</p>
+      )}
+      <button
+        onClick={handleExecute}
+        disabled={loading || !treasuryUtxo || !isMember}
+        className="btn-primary px-4 py-2 text-sm self-start disabled:opacity-50"
+      >
+        {loading ? t("alliance.treasury.executing") : t("alliance.treasury.executeBtn")}
+      </button>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ProposalDetailPage() {
@@ -366,6 +462,14 @@ export default function ProposalDetailPage() {
 
         {/* Tally */}
         <TallySection proposal={proposal} />
+
+        {/* Execute (treasury withdrawal) */}
+        <ExecutePanel
+          proposal={proposal}
+          allianceId={params.id}
+          isMember={isMember}
+          onExecuted={refetch}
+        />
 
         {/* Cancel */}
         {canCancel && (

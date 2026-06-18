@@ -12,18 +12,21 @@ import { useWalletStore } from "@/store/wallet"
 import {
   useAllianceDetail,
   useAllianceMembers,
+  useTreasuryBalance,
   joinAlliance,
   leaveAlliance,
   type AllianceMember,
+  type TreasuryUtxo,
 } from "@/hooks/useAlliance"
 import {
   useAllianceProposals,
   type ProposalItem,
 } from "@/hooks/useAllianceProposals"
 import { useT } from "@/i18n/useT"
+import { useTx } from "@/hooks/useTx"
 import DRepAvatar from "@/components/drep/DRepAvatar"
 
-type Tab = "overview" | "members" | "ga_positions" | "proposals"
+type Tab = "overview" | "members" | "ga_positions" | "proposals" | "treasury"
 
 // ─── Role badge ───────────────────────────────────────────────────────────────
 
@@ -375,6 +378,118 @@ function GAPositionsTab({
   )
 }
 
+// ─── Treasury tab ─────────────────────────────────────────────────────────────
+
+function TreasuryTab({ allianceId, isMember }: { allianceId: string; isMember: boolean }) {
+  const t = useT()
+  const { submitTx } = useTx()
+  const { data, isLoading, error, refetch } = useTreasuryBalance(allianceId)
+  const [showContribute, setShowContribute] = useState(false)
+  const [contributeAda, setContributeAda] = useState("")
+  const [txStatus, setTxStatus] = useState<string | null>(null)
+  const [txError, setTxError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function handleContribute() {
+    const lovelace = Math.round(parseFloat(contributeAda) * 1_000_000)
+    if (!lovelace || lovelace < 2_000_000) return
+    setLoading(true)
+    setTxError(null)
+    setTxStatus(null)
+    try {
+      const txHash = await submitTx("ALLIANCE_TREASURY_CONTRIBUTE", {
+        allianceId,
+        amountLovelace: lovelace,
+      })
+      setTxStatus(t("alliance.treasury.contributeSuccess", { txHash: `${txHash.slice(0, 16)}…` }))
+      setShowContribute(false)
+      setContributeAda("")
+      setTimeout(refetch, 4000)
+    } catch (e: unknown) {
+      setTxError(e instanceof Error ? e.message : t("alliance.treasury.contributeError"))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (isLoading) return <div className="h-32 rounded-xl bg-bg-card-hover animate-pulse" />
+  if (error) return <div className="notice-warning text-sm">{error}</div>
+
+  const balanceAda = ((data?.balanceLovelace ?? 0) / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 })
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Balance card */}
+      <div className="card-static rounded-xl p-5 flex items-center justify-between gap-4">
+        <div>
+          <div className="text-xs text-text-muted mb-1">{t("alliance.treasury.balance")}</div>
+          <div className="text-2xl font-bold text-text-primary">{balanceAda} ₳</div>
+          {data?.treasuryAddress && (
+            <div className="text-xs text-text-muted mt-1 font-mono break-all">
+              {data.treasuryAddress.slice(0, 24)}…{data.treasuryAddress.slice(-8)}
+            </div>
+          )}
+        </div>
+        {isMember && (
+          <button
+            onClick={() => setShowContribute(!showContribute)}
+            className="btn-primary px-4 py-2 text-sm shrink-0"
+          >
+            {t("alliance.treasury.contributeBtn")}
+          </button>
+        )}
+      </div>
+
+      {/* Contribute form */}
+      {showContribute && (
+        <div className="card-static rounded-xl p-4 flex flex-col gap-3">
+          <h4 className="text-sm font-semibold text-text-secondary">{t("alliance.treasury.contributeTitle")}</h4>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min="2"
+              step="1"
+              placeholder={t("alliance.treasury.contributeAmountLabel")}
+              value={contributeAda}
+              onChange={(e) => setContributeAda(e.target.value)}
+              className="flex-1 bg-bg-card border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary"
+            />
+            <button
+              onClick={handleContribute}
+              disabled={loading || !contributeAda || parseFloat(contributeAda) < 2}
+              className="btn-primary px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {loading ? "…" : t("alliance.treasury.contributeSubmit")}
+            </button>
+          </div>
+          {txError && <div className="text-xs text-danger">{txError}</div>}
+        </div>
+      )}
+
+      {txStatus && <div className="notice-success text-sm">{txStatus}</div>}
+
+      {/* UTxO list */}
+      {!data?.utxos.length ? (
+        <p className="text-text-muted text-sm py-4 text-center">{t("alliance.treasury.noUtxos")}</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {data.utxos.map((u: TreasuryUtxo) => (
+            <div key={`${u.txHash}#${u.outputIndex}`}
+              className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-bg-card border border-border-subtle text-sm">
+              <span className="font-mono text-xs text-text-muted">
+                {u.txHash.slice(0, 16)}…#{u.outputIndex}
+              </span>
+              <span className="font-semibold text-text-primary">
+                {(u.lovelace / 1_000_000).toLocaleString()} ₳
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Overview tab ─────────────────────────────────────────────────────────────
 
 function OverviewTab({ alliance }: { alliance: ReturnType<typeof useAllianceDetail>["alliance"] }) {
@@ -492,6 +607,7 @@ export default function AllianceDetailPage() {
     { key: "members",      label: t("alliance.tabs.members") },
     { key: "ga_positions", label: t("alliance.tabs.gaPositions") },
     { key: "proposals",    label: t("alliance.tabs.proposals") },
+    { key: "treasury",     label: t("alliance.tabs.treasury") },
   ]
 
   if (isLoading) {
@@ -617,6 +733,12 @@ export default function AllianceDetailPage() {
           allianceId={params.id}
           drepId={drepId}
           myMemberRole={myMembership?.role}
+        />
+      )}
+      {activeTab === "treasury" && (
+        <TreasuryTab
+          allianceId={params.id}
+          isMember={!!myMembership}
         />
       )}
     </div>

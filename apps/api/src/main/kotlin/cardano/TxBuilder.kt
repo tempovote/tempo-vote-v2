@@ -15,8 +15,10 @@ import com.bloxbean.cardano.client.plutus.spec.PlutusV3Script
 import com.bloxbean.cardano.client.plutus.spec.Redeemer
 import com.bloxbean.cardano.client.plutus.spec.RedeemerTag
 import com.bloxbean.cardano.client.plutus.util.ScriptDataHashGenerator
+import com.bloxbean.cardano.client.api.model.Utxo
 import com.bloxbean.cardano.client.quicktx.AbstractTx
 import com.bloxbean.cardano.client.quicktx.QuickTxBuilder
+import com.bloxbean.cardano.client.quicktx.ScriptTx
 import com.bloxbean.cardano.client.quicktx.Tx
 import com.bloxbean.cardano.client.spec.Era
 import com.bloxbean.cardano.client.transaction.spec.TransactionInput
@@ -47,6 +49,7 @@ import com.bloxbean.cardano.client.transaction.spec.governance.PoolVotingThresho
 import com.bloxbean.cardano.client.spec.Rational
 import vote.tempo.routes.ProtocolParamUpdateItem
 import vote.tempo.routes.VoteItem
+import java.util.UUID
 import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
 import com.bloxbean.cardano.client.transaction.spec.Withdrawal
 import com.bloxbean.cardano.client.spec.UnitInterval
@@ -615,6 +618,140 @@ class TxBuilder(private val network: Network) {
             .build()
         val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
         return buildUnsigned(tx, changeAddress)
+    }
+
+    // -------------------------------------------------------------------------
+    // Alliance treasury functions
+    // -------------------------------------------------------------------------
+
+    /**
+     * Build an unsigned ALLIANCE_TREASURY_CONTRIBUTE TX.
+     * Pays ADA to the shared treasury script address with an inline TreasuryDatum
+     * so the treasury validator can identify which alliance owns the UTXO.
+     */
+    fun buildAllianceTreasuryContribute(
+        changeAddress: String,
+        allianceId: UUID,
+        amountLovelace: Long,
+    ): String {
+        val datum = FinalizationTxSubmitter.buildTreasuryDatum(allianceId)
+        val treasuryAddr = AllianceScripts.treasuryAddress(network)
+        val tx = Tx()
+            .payToContract(treasuryAddr, Amount.lovelace(BigInteger.valueOf(amountLovelace)), datum)
+            .from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned ALLIANCE_WITHDRAW TX.
+     * Spends a treasury UTXO using the treasury validator.
+     * Requires:
+     *  - treasuryUtxo{TxHash,Index,Lovelace}: the specific UTXO to spend
+     *  - finalization{TxHash,TxIndex}: reference input with ProposalResult datum
+     *  - executableAtMs: POSIX ms from the finalization datum (for validity range lower bound)
+     *  - collateral: wallet ADA-only UTxO forfeited if script fails
+     */
+    suspend fun buildAllianceWithdraw(
+        changeAddress: String,
+        collateral: List<String>,
+        allianceId: UUID,
+        proposalId: UUID,
+        treasuryUtxoTxHash: String,
+        treasuryUtxoIndex: Int,
+        treasuryUtxoLovelace: Long,
+        finalizationTxHash: String,
+        finalizationTxIndex: Int,
+        recipientAddress: String,
+        amountLovelace: Long,
+        executableAtMs: Long,
+    ): String {
+        val treasuryScript = AllianceScripts.treasuryScript()
+        val treasuryAddr   = AllianceScripts.treasuryAddress(network)
+        val datum          = FinalizationTxSubmitter.buildTreasuryDatum(allianceId)
+        val redeemer       = buildExecuteRedeemer(proposalId)
+
+        val treasuryUtxo = Utxo.builder()
+            .txHash(treasuryUtxoTxHash)
+            .outputIndex(treasuryUtxoIndex)
+            .address(treasuryAddr)
+            .amount(listOf(Amount.lovelace(BigInteger.valueOf(treasuryUtxoLovelace))))
+            .build()
+
+        val scriptTx = ScriptTx()
+            .collectFrom(treasuryUtxo, datum, redeemer)
+            .readFrom(finalizationTxHash, finalizationTxIndex)
+            .payToAddress(recipientAddress, Amount.lovelace(BigInteger.valueOf(amountLovelace)))
+            .attachSpendingValidator(treasuryScript)
+
+        val tx = Tx().from(changeAddress)
+
+        val transaction = QuickTxBuilder(backendService)
+            .compose(scriptTx, tx)
+            .feePayer(changeAddress)
+            .build()
+
+        // Set validity range lower bound so the validator's timelock check passes.
+        // In Conway era, 1 slot = 1 second; we convert executableAtMs to a slot.
+        val executableAtSlot = OgmiosStateQueries(network).posixMsToSlot(executableAtMs)
+        transaction.body.validityStartInterval = executableAtSlot
+
+        // Set TTL (upper bound) = 2 hours from now to limit TX window
+        val ttlSlot = OgmiosStateQueries(network).posixMsToSlot(System.currentTimeMillis() + 2 * 3600 * 1000L)
+        transaction.body.ttl = ttlSlot
+
+        // Attach collateral inputs (required for Plutus spending TX)
+        val collateralInputs = collateral.mapNotNull { utxoCbor ->
+            runCatching {
+                val items = co.nstant.`in`.cbor.CborDecoder(java.io.ByteArrayInputStream(HexUtil.decodeHexString(utxoCbor))).decode()
+                val utxoArr = items.first() as co.nstant.`in`.cbor.model.Array
+                val inputArr = utxoArr.dataItems[0] as co.nstant.`in`.cbor.model.Array
+                val txHash2 = HexUtil.encodeHexString((inputArr.dataItems[0] as co.nstant.`in`.cbor.model.ByteString).bytes)
+                val txIndex2 = (inputArr.dataItems[1] as co.nstant.`in`.cbor.model.UnsignedInteger).value.toInt()
+                TransactionInput.builder().transactionId(txHash2).index(txIndex2).build()
+            }.getOrNull()
+        }
+        if (collateralInputs.isNotEmpty()) {
+            transaction.body.collateral = collateralInputs
+        } else {
+            transaction.body.inputs?.firstOrNull()?.let { transaction.body.collateral = listOf(it) }
+        }
+
+        // Compute and attach scriptDataHash (TX body field 11) for the Plutus spend
+        val costMdls = com.bloxbean.cardano.client.plutus.spec.CostMdls()
+        runCatching {
+            val pp = backendService.epochService.getProtocolParameters().value
+            com.bloxbean.cardano.client.api.util.CostModelUtil.getCostModelFromProtocolParams(pp, com.bloxbean.cardano.client.plutus.spec.Language.PLUTUS_V3).ifPresent { costMdls.add(it) }
+        }
+        if (costMdls.isEmpty) costMdls.add(com.bloxbean.cardano.client.api.util.CostModelUtil.PlutusV3CostModel)
+
+        // Attach script to witness set (ScriptTx.compose handles this via QuickTxBuilder normally;
+        // but we need the explicit spend redeemer with execution budget)
+        val spendRedeemer = Redeemer.builder()
+            .tag(RedeemerTag.Spend)
+            .index(0)
+            .data(redeemer)
+            .exUnits(ExUnits.builder()
+                .mem(BigInteger.valueOf(2_000_000L))
+                .steps(BigInteger.valueOf(2_000_000_000L))
+                .build())
+            .build()
+
+        val scriptDataHash = ScriptDataHashGenerator.generate(
+            Era.Conway, listOf(spendRedeemer), emptyList(), costMdls
+        )
+        transaction.body.scriptDataHash = scriptDataHash
+
+        val ws = transaction.witnessSet ?: TransactionWitnessSet()
+        val existing = ws.redeemers?.filter { it.tag != RedeemerTag.Spend } ?: emptyList()
+        ws.redeemers = existing + listOf(spendRedeemer)
+        transaction.witnessSet = ws
+
+        println("[TxBuilder] AllianceWithdraw TX: " +
+            "treasury=${treasuryUtxoTxHash.take(16)}#$treasuryUtxoIndex " +
+            "ref=${finalizationTxHash.take(16)}#$finalizationTxIndex " +
+            "executableSlot=$executableAtSlot fee=${transaction.body.fee}")
+
+        return transaction.serializeToHex()
     }
 
     // -------------------------------------------------------------------------

@@ -25,6 +25,7 @@ import vote.tempo.cardano.blockfrostProjectId
 import vote.tempo.cardano.fetchDRepDelegatorsBlockfrost
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
+import vote.tempo.cardano.FinalizationTxSubmitter
 import vote.tempo.routes.autoCloseExpiredProposals
 
 private val logger = KotlinLogging.logger("BackgroundPoller")
@@ -64,6 +65,8 @@ fun Application.startBackgroundPoller() {
             pollAllNetworks()
             runCatching { autoCloseExpiredProposals() }
                 .onFailure { logger.warn { "autoCloseExpiredProposals failed: ${it.message}" } }
+            runCatching { FinalizationTxSubmitter.submitPendingFinalizations() }
+                .onFailure { logger.warn { "submitPendingFinalizations failed: ${it.message}" } }
             delay(POLL_INTERVAL_MS)
         }
     }

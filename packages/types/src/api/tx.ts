@@ -18,6 +18,8 @@ export const TxTypeSchema = z.enum([
   "PROPOSE_TREASURY_WITHDRAWAL",
   "PROPOSE_UPDATE_COMMITTEE",
   "PROPOSE_PROTOCOL_PARAM_CHANGE",
+  "ALLIANCE_TREASURY_CONTRIBUTE",
+  "ALLIANCE_WITHDRAW",
 ])
 export type TxType = z.infer<typeof TxTypeSchema>
 
@@ -71,6 +73,18 @@ export const BuildTxRequestSchema = z.object({
   })).optional(),
   // Collateral inputs — required when the TX executes Plutus scripts (e.g. guardrails)
   collateral: z.array(z.string()).optional(),
+  // ALLIANCE_TREASURY_CONTRIBUTE
+  allianceId: z.string().uuid().optional(),
+  amountLovelace: z.number().int().positive().optional(),
+  // ALLIANCE_WITHDRAW
+  proposalId: z.string().uuid().optional(),
+  treasuryUtxoTxHash: z.string().optional(),
+  treasuryUtxoIndex: z.number().int().min(0).optional(),
+  treasuryUtxoLovelace: z.number().int().positive().optional(),
+  finalizationTxHash: z.string().optional(),
+  finalizationTxIndex: z.number().int().min(0).optional(),
+  recipientAddress: z.string().optional(),
+  executableAtMs: z.number().int().positive().optional(),
   // PROPOSE_UPDATE_COMMITTEE: members to remove/add and new quorum threshold
   committeeRemove: z.array(z.string()).optional(),
   committeeAdd: z.array(z.object({

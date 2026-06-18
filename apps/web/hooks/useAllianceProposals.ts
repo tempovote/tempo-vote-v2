@@ -35,6 +35,8 @@ export interface ProposalItem {
   approvedAt: string | null
   executableAt: string | null
   executedTxHash: string | null
+  finalizationTxHash: string | null
+  finalizationTxIndex: number | null
   createdAt: string
   tally: ProposalTally
   myVote: string | null
