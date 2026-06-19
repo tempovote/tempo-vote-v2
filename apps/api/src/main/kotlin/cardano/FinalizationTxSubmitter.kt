@@ -82,7 +82,9 @@ object FinalizationTxSubmitter {
      * Returns null if the env var is not set.
      */
     fun getServiceAccount(network: Network): Account? {
-        val mnemonic = System.getenv("SERVICE_WALLET_MNEMONIC") ?: return null
+        val raw = System.getenv("SERVICE_WALLET_MNEMONIC") ?: return null
+        val mnemonic = raw.trim()
+        logger.info { "SERVICE_WALLET_MNEMONIC loaded: ${mnemonic.split(" ").size} words, first=${mnemonic.split(" ").first()}, last=${mnemonic.split(" ").last()}" }
         val cardanoNetwork = if (network == Network.MAINNET) Networks.mainnet() else Networks.testnet()
         return Account(cardanoNetwork, mnemonic)
     }
@@ -147,7 +149,9 @@ object FinalizationTxSubmitter {
         logger.info { "Finalization TX submitted: $txHash for proposal $proposalId (executableAt ${executableAtMs}ms)" }
         txHash
     }.onFailure { e ->
-        logger.error { "Finalization TX failed for proposal $proposalId: ${e.message}" }
+        val chain = generateSequence(e) { it.cause }.joinToString(" → ") { "${it.javaClass.simpleName}: ${it.message}" }
+        logger.error { "Finalization TX failed for proposal $proposalId: $chain" }
+        e.printStackTrace()
     }.getOrNull()
 
     /**
