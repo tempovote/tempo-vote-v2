@@ -389,10 +389,22 @@ function cardanoscanTxUrl(txHash: string, network: string) {
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   function handleCopy() {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => execCopy())
+    } else {
+      execCopy()
+    }
+    function execCopy() {
+      const el = document.createElement("textarea")
+      el.value = text
+      el.style.cssText = "position:fixed;opacity:0"
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand("copy")
+      document.body.removeChild(el)
+      done()
+    }
   }
   return (
     <button
@@ -413,10 +425,15 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+type HistoryEntry =
+  | { kind: "contribute"; txHash: string; outputIndex: number; lovelace: number }
+  | { kind: "withdraw"; txHash: string; lovelace: number; recipientAddress: string | null; title: string; date: string | null }
+
 function TreasuryTab({ allianceId, isMember, network }: { allianceId: string; isMember: boolean; network: string }) {
   const t = useT()
   const { submitTx } = useTx()
   const { data, isLoading, error, refetch } = useTreasuryBalance(allianceId)
+  const { data: proposalData } = useAllianceProposals(allianceId, { type: "withdrawal" })
   const [showContribute, setShowContribute] = useState(false)
   const [contributeAda, setContributeAda] = useState("")
   const [successTxHash, setSuccessTxHash] = useState<string | null>(null)
@@ -535,24 +552,80 @@ function TreasuryTab({ allianceId, isMember, network }: { allianceId: string; is
         </div>
       )}
 
-      {/* UTxO list */}
-      {!data?.utxos.length ? (
-        <p className="text-text-muted text-sm py-4 text-center">{t("alliance.treasury.noUtxos")}</p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {data.utxos.map((u: TreasuryUtxo) => (
-            <div key={`${u.txHash}#${u.outputIndex}`}
-              className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-bg-card border border-border-subtle text-sm">
-              <span className="font-mono text-xs text-text-muted">
-                {u.txHash.slice(0, 16)}…#{u.outputIndex}
-              </span>
-              <span className="font-semibold text-text-primary">
-                {(u.lovelace / 1_000_000).toLocaleString()} ₳
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Transaction history — bank statement style */}
+      {(() => {
+        const contributions: HistoryEntry[] = (data?.utxos ?? []).map((u: TreasuryUtxo) => ({
+          kind: "contribute",
+          txHash: u.txHash,
+          outputIndex: u.outputIndex,
+          lovelace: u.lovelace,
+        }))
+        const withdrawals: HistoryEntry[] = (proposalData?.items ?? [])
+          .filter((p: ProposalItem) => !!p.finalizationTxHash)
+          .map((p: ProposalItem) => ({
+            kind: "withdraw",
+            txHash: p.finalizationTxHash!,
+            lovelace: p.amountLovelace ?? 0,
+            recipientAddress: p.recipientAddress,
+            title: p.title,
+            date: p.approvedAt ?? p.createdAt,
+          }))
+        const history: HistoryEntry[] = [...withdrawals, ...contributions]
+        if (!history.length) {
+          return <p className="text-text-muted text-sm py-4 text-center">{t("alliance.treasury.noUtxos")}</p>
+        }
+        return (
+          <div className="flex flex-col gap-1.5">
+            <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">{t("alliance.treasury.historyTitle")}</h4>
+            {history.map((entry, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-card border border-border-subtle">
+                {/* Direction icon */}
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold ${
+                  entry.kind === "contribute" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+                }`}>
+                  {entry.kind === "contribute" ? "↙" : "↗"}
+                </div>
+                {/* Details */}
+                <div className="flex-1 min-w-0">
+                  {entry.kind === "contribute" ? (
+                    <>
+                      <div className="text-xs text-text-muted">{t("alliance.treasury.historyContribute")}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="font-mono text-xs text-text-muted">{entry.txHash.slice(0, 14)}…#{entry.outputIndex}</span>
+                        <a href={cardanoscanTxUrl(entry.txHash, network)} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-text-muted hover:text-text-secondary transition-colors" title="View on Cardanoscan">↗</a>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-text-muted truncate">
+                        {t("alliance.treasury.historyWithdraw")}
+                        {entry.recipientAddress && (
+                          <span className="font-mono"> → {entry.recipientAddress.slice(0, 14)}…{entry.recipientAddress.slice(-6)}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="font-mono text-xs text-text-muted">{entry.txHash.slice(0, 14)}…</span>
+                        <a href={cardanoscanTxUrl(entry.txHash, network)} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-text-muted hover:text-text-secondary transition-colors" title="View on Cardanoscan">↗</a>
+                        {entry.date && (
+                          <span className="text-xs text-text-muted ml-1">
+                            {new Date(entry.date).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Amount */}
+                <span className={`font-bold text-sm shrink-0 ${entry.kind === "contribute" ? "text-success" : "text-danger"}`}>
+                  {entry.kind === "contribute" ? "+" : "−"}{(entry.lovelace / 1_000_000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₳
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
     </div>
   )
 }
