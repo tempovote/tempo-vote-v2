@@ -4,6 +4,7 @@ import { useState, useMemo } from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
+import { useWallet } from "@/hooks/useWallet"
 import { createProposal } from "@/hooks/useAllianceProposals"
 import { useGovernanceActions } from "@/hooks/useGovernanceActions"
 import { useT } from "@/i18n/useT"
@@ -21,6 +22,7 @@ export default function CreateProposalPage() {
   const initialType = (searchParams.get("type") ?? "ga_stance") as ProposalType
 
   const { jwt, selectedNetwork, isConnected, isDrepRegistered } = useWalletStore()
+  const { reauthenticate } = useWallet()
 
   const [proposalType, setProposalType] = useState<ProposalType>(initialType)
   const [title, setTitle] = useState("")
@@ -53,7 +55,6 @@ export default function CreateProposalPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!jwt) return
     if (!title.trim()) { setError(t("alliance.proposal.titleLabel") + " required"); return }
 
     if (proposalType === "withdrawal") {
@@ -69,6 +70,12 @@ export default function CreateProposalPage() {
     setError(null)
 
     try {
+      let token = jwt
+      if (!token) {
+        token = await reauthenticate()
+        if (!token) { setError("Authentication required. Please reconnect your wallet."); setSubmitting(false); return }
+      }
+
       const body: Parameters<typeof createProposal>[1] = {
         proposalType,
         title: title.trim(),
@@ -84,7 +91,7 @@ export default function CreateProposalPage() {
         body.govActionIndex  = selectedGa.index
       }
 
-      const { id } = await createProposal(params.id, body, jwt)
+      const { id } = await createProposal(params.id, body, token)
       router.push(`/alliances/${params.id}/proposals/${id}`)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed")
