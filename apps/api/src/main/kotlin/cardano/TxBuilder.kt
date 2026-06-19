@@ -724,32 +724,46 @@ class TxBuilder(private val network: Network) {
         }
         if (costMdls.isEmpty) costMdls.add(com.bloxbean.cardano.client.api.util.CostModelUtil.PlutusV3CostModel)
 
-        // Attach script to witness set (ScriptTx.compose handles this via QuickTxBuilder normally;
-        // but we need the explicit spend redeemer with execution budget)
-        val spendRedeemer = Redeemer.builder()
+        // Attach spend redeemer with generous budget so QuickTxBuilder can compute fee
+        fun makeSpendRedeemer(memUnits: Long, cpuUnits: Long) = Redeemer.builder()
             .tag(RedeemerTag.Spend)
             .index(0)
             .data(redeemer)
             .exUnits(ExUnits.builder()
-                .mem(BigInteger.valueOf(2_000_000L))
-                .steps(BigInteger.valueOf(2_000_000_000L))
+                .mem(BigInteger.valueOf(memUnits))
+                .steps(BigInteger.valueOf(cpuUnits))
                 .build())
             .build()
 
-        val scriptDataHash = ScriptDataHashGenerator.generate(
-            Era.Conway, listOf(spendRedeemer), emptyList(), costMdls
-        )
-        transaction.body.scriptDataHash = scriptDataHash
+        fun attachRedeemer(r: Redeemer) {
+            val dataHash = ScriptDataHashGenerator.generate(Era.Conway, listOf(r), emptyList(), costMdls)
+            transaction.body.scriptDataHash = dataHash
+            val ws = transaction.witnessSet ?: TransactionWitnessSet()
+            ws.redeemers = (ws.redeemers?.filter { it.tag != RedeemerTag.Spend } ?: emptyList()) + r
+            transaction.witnessSet = ws
+        }
 
-        val ws = transaction.witnessSet ?: TransactionWitnessSet()
-        val existing = ws.redeemers?.filter { it.tag != RedeemerTag.Spend } ?: emptyList()
-        ws.redeemers = existing + listOf(spendRedeemer)
-        transaction.witnessSet = ws
+        // 1. Attach with generous placeholder so the TX is well-formed for evaluateTx
+        attachRedeemer(makeSpendRedeemer(2_000_000L, 2_000_000_000L))
+
+        // 2. Try Ogmios evaluateTx to get actual execution units, then update redeemer
+        val txForEval = transaction.serializeToHex()
+        val realExUnits = runCatching {
+            OgmiosStateQueries(network).evaluateTx(txForEval)["spend:0"]
+        }.getOrNull()
+
+        if (realExUnits != null) {
+            // Add 20% headroom over evaluated ExUnits to account for minor CBOR size differences
+            val mem  = (realExUnits.first  * 1.2).toLong()
+            val cpu  = (realExUnits.second * 1.2).toLong()
+            attachRedeemer(makeSpendRedeemer(mem, cpu))
+        }
 
         println("[TxBuilder] AllianceWithdraw TX: " +
             "treasury=${treasuryUtxoTxHash.take(16)}#$treasuryUtxoIndex " +
             "ref=${finalizationTxHash.take(16)}#$finalizationTxIndex " +
-            "executableSlot=$executableAtSlot fee=${transaction.body.fee}")
+            "executableSlot=$executableAtSlot " +
+            "exUnits=${realExUnits ?: "placeholder"} fee=${transaction.body.fee}")
 
         return transaction.serializeToHex()
     }

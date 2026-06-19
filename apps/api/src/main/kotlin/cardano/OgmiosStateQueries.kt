@@ -312,11 +312,14 @@ class OgmiosStateQueries(private val network: Network) {
         return currentSlot + deltaSec
     }
 
+    data class KupoUtxo(val txHash: String, val outputIndex: Int, val lovelace: Long, val datumHash: String?)
+
     /**
      * Query Kupo for UTxOs at a script address.
-     * Returns a list of (txHash, outputIndex, lovelace) triples.
+     * Optionally filter by datum hash (blake2b-256 of the inline datum CBOR).
+     * Use PlutusData.getDatumHash() to compute the expected hash for filtering.
      */
-    suspend fun getScriptUtxos(scriptAddress: String): List<Triple<String, Int, Long>> {
+    suspend fun getScriptUtxos(scriptAddress: String, filterDatumHash: String? = null): List<KupoUtxo> {
         return withContext(Dispatchers.IO) {
             val response = client.get("$kupoUrl/matches/$scriptAddress?unspent")
             val text = response.bodyAsText()
@@ -326,9 +329,36 @@ class OgmiosStateQueries(private val network: Network) {
                 val txHash = obj["transaction_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                 val idx = obj["output_index"]?.jsonPrimitive?.int ?: return@mapNotNull null
                 val coins = obj["value"]?.jsonObject?.get("coins")?.jsonPrimitive?.long ?: 0L
-                Triple(txHash, idx, coins)
+                val datumHash = obj["datum_hash"]?.jsonPrimitive?.content
+                KupoUtxo(txHash, idx, coins, datumHash)
+            }.filter { filterDatumHash == null || it.datumHash == filterDatumHash }
+        }
+    }
+
+    /**
+     * Evaluate a transaction via Ogmios to get actual execution units for each script.
+     * Returns a map from "purpose:index" (e.g. "spend:0") to (mem, cpu) pair.
+     * Throws on evaluation failure (script error) so the caller can propagate the error.
+     */
+    suspend fun evaluateTx(txCbor: String): Map<String, Pair<Long, Long>> {
+        val result = queryRaw("evaluateTx", buildJsonObject {
+            putJsonObject("transaction") { put("cbor", txCbor) }
+            putJsonArray("additionalUtxo") {}
+        }, timeoutMs = 30_000L)
+
+        if (result is JsonArray) {
+            return result.associate { elem ->
+                val obj = elem.jsonObject
+                val validator = obj["validator"]?.jsonObject
+                val purpose = validator?.get("purpose")?.jsonPrimitive?.content ?: "unknown"
+                val index = validator?.get("index")?.jsonPrimitive?.int ?: 0
+                val budget = obj["budget"]?.jsonObject
+                val mem  = budget?.get("memory")?.jsonPrimitive?.long ?: 0L
+                val cpu  = budget?.get("cpu")?.jsonPrimitive?.long ?: 0L
+                "$purpose:$index" to (mem to cpu)
             }
         }
+        return emptyMap()
     }
 
     suspend fun getProtocolParameters(): JsonObject {

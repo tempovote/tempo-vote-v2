@@ -719,16 +719,21 @@ fun Route.allianceProposalRoutes() {
         val network = networkFromString(allianceNetwork)
         val resolvedAddr = treasuryAddr ?: AllianceScripts.treasuryAddress(network)
 
+        // Filter by datum hash so UTxOs from other alliances sharing the script address are excluded
+        val expectedDatumHash = runCatching {
+            FinalizationTxSubmitter.buildTreasuryDatum(allianceId).getDatumHash()
+        }.getOrNull()
+
         val utxos = runCatching {
-            vote.tempo.cardano.OgmiosStateQueries(network).getScriptUtxos(resolvedAddr)
+            vote.tempo.cardano.OgmiosStateQueries(network).getScriptUtxos(resolvedAddr, expectedDatumHash)
         }.getOrElse { emptyList() }
 
-        val balanceLovelace = utxos.sumOf { it.third }
+        val balanceLovelace = utxos.sumOf { it.lovelace }
         call.respond(TreasuryBalanceResponse(
             treasuryAddress = resolvedAddr,
             balanceLovelace = balanceLovelace,
-            utxos = utxos.map { (hash, idx, lovelace) ->
-                TreasuryUtxoItem(txHash = hash, outputIndex = idx, lovelace = lovelace)
+            utxos = utxos.map { u ->
+                TreasuryUtxoItem(txHash = u.txHash, outputIndex = u.outputIndex, lovelace = u.lovelace)
             }
         ))
     }
