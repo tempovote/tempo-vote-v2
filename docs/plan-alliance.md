@@ -1,8 +1,8 @@
 # Alliance Feature — Implementation Plan
 
-> **Status:** Phase 1 ✅ DONE — Phase 2 ✅ DONE — Phase 3 ⏳ TODO  
+> **Status:** Phase 1 ✅ DONE — Phase 2 ✅ DONE — Phase 3 ✅ DONE  
 > **Nguồn:** [Catalyst Fund 13 — Tempo Multi-party Alliance](https://projectcatalyst.io/funds/13/cardano-use-cases-concept/tempo-multi-party-alliance)  
-> **Last updated:** 2026-06-18  
+> **Last updated:** 2026-06-19  
 > **Treasury approach:** Pure Plutus SC — không dùng native multisig
 
 ---
@@ -424,17 +424,17 @@ Mỗi row: click → link tới trang proposal trong Alliance đó.
 - [x] FE: GA detail page — "Alliance Stances" section (gọi `/alliance-stances` endpoint)
 - [x] Vote tally hiển thị cả VP-weighted lẫn headcount
 
-### Phase 3 — Treasury / Pure Plutus SC ⏳ TODO (2 tuần)
-- [ ] Viết Aiken validator: `treasury(alliance_id)` + `proposal_registry(alliance_id)`
-- [ ] Unit test validator (Aiken built-in test framework)
-- [ ] Deploy + test trên preprod: contribute, finalize, execute
-- [ ] Service wallet setup: `SERVICE_WALLET_MNEMONIC` env var + `FinalizationTxSubmitter.kt`
-- [ ] `buildAllianceWithdraw` trong TxBuilder.kt (Plutus unlock: input Treasury + ref Finalization UTXO)
-- [ ] API: `POST /alliances/:id/proposals/:pid/finalize` (member-trigger fallback)
-- [ ] Cron/hook: auto-submit Finalization TX khi voting_ends_at qua + approved
-- [ ] FE: Treasury tab (balance + contributions + pending executions) + Execute button
-- [ ] FE: Deploy Treasury button khi tạo Alliance (compile + submit script deployment TX)
-- [ ] Lưu `treasury_address` + `treasury_script_hash` vào alliance record sau deploy
+### Phase 3 — Treasury / Pure Plutus SC ✅ DONE
+- [x] Viết Aiken validator: `treasury(alliance_id)` + `proposal_registry(alliance_id)` — compiled scripts lưu trong `AllianceScripts.kt`
+- [x] Unit test validator (Aiken built-in test framework)
+- [x] Deploy + test trên preprod: contribute, finalize, execute — TX preprod xác nhận thành công
+- [x] Service wallet setup: `SERVICE_WALLET_MNEMONIC` env var + `FinalizationTxSubmitter.kt`
+- [x] `buildAllianceWithdraw` trong TxBuilder.kt (Plutus unlock: input Treasury + ref Finalization UTXO)
+- [x] API: `POST /alliances/:id/proposals/:pid/finalize` (member-trigger fallback)
+- [x] Cron/hook: `BackgroundPoller` auto-submit Finalization TX khi voting_ends_at qua + approved; auto-close expired proposals
+- [x] FE: Treasury tab (balance + UTxOs + pending executions) + Execute button
+- [x] Treasury address được gán tự động từ compiled script hash lúc tạo Alliance (không cần deploy TX riêng)
+- [x] `treasury_address` + `treasury_script_hash` lưu vào alliance record ngay khi tạo
 
 ---
 
