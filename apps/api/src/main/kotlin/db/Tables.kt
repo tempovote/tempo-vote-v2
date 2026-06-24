@@ -288,9 +288,10 @@ object AllianceProposals : Table("alliance_proposals") {
     val govActionTxHash     = varchar("gov_action_tx_hash", 64).nullable()
     val govActionIndex      = integer("gov_action_index").nullable()
     // common
-    val status              = varchar("status", 30).default("voting")
-    val votingEndsAt        = datetime("voting_ends_at")
-    val createdAt           = datetime("created_at").defaultExpression(CurrentDateTime)
+    val status                  = varchar("status", 30).default("voting")
+    val votingEndsAt            = datetime("voting_ends_at")
+    val snapshotMemberCount     = integer("snapshot_member_count").nullable()
+    val createdAt               = datetime("created_at").defaultExpression(CurrentDateTime)
 
     override val primaryKey = PrimaryKey(id)
 }

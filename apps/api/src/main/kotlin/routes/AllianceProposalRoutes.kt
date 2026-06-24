@@ -135,6 +135,25 @@ data class AllianceStanceItem(
     val votingEndsAt: String,
 )
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Returns memberCount for a proposal tally.
+ * Uses snapshotMemberCount when available (proposal closed, members may have left).
+ * Falls back to counting members who joined on or before votingEndsAt (active proposals).
+ * Must be called inside an Exposed transaction.
+ */
+private fun resolveMemberCount(
+    snapshotMemberCount: Int?,
+    allianceId: UUID,
+    votingEndsAt: kotlinx.datetime.LocalDateTime,
+): Int = snapshotMemberCount ?: AllianceMembers.selectAll()
+    .where {
+        (AllianceMembers.allianceId eq allianceId) and
+        (AllianceMembers.joinedAt lessEq votingEndsAt)
+    }
+    .count().toInt()
+
 // ─── Tally ────────────────────────────────────────────────────────────────────
 
 private fun computeTally(
@@ -303,6 +322,7 @@ fun autoCloseExpiredProposals() {
         transaction {
             AllianceProposals.update({ AllianceProposals.id eq proposalId }) {
                 it[status] = newStatus
+                it[snapshotMemberCount] = memberCount
                 if (newStatus == "approved_pending") {
                     val approvedNow = Clock.System.now()
                     it[approvedAt]   = approvedNow.toLocalDateTime(TimeZone.UTC)
@@ -353,13 +373,11 @@ fun Route.allianceProposalRoutes() {
                         .firstOrNull() ?: return@mapNotNull null
 
                     val proposalId = row[AllianceProposals.id]
-                    val proposalVotingEndsAt = row[AllianceProposals.votingEndsAt]
-                    val memberCount = AllianceMembers.selectAll()
-                        .where {
-                            (AllianceMembers.allianceId eq allianceId) and
-                            (AllianceMembers.joinedAt lessEq proposalVotingEndsAt)
-                        }
-                        .count().toInt()
+                    val memberCount = resolveMemberCount(
+                        row[AllianceProposals.snapshotMemberCount],
+                        allianceId,
+                        row[AllianceProposals.votingEndsAt],
+                    )
 
                     val votes = AllianceProposalVotes.selectAll()
                         .where { AllianceProposalVotes.proposalId eq proposalId }
@@ -424,13 +442,11 @@ fun Route.allianceProposalRoutes() {
 
                 val items = rows.map { row ->
                     val pid = row[AllianceProposals.id]
-                    val rowVotingEndsAt = row[AllianceProposals.votingEndsAt]
-                    val memberCount = AllianceMembers.selectAll()
-                        .where {
-                            (AllianceMembers.allianceId eq allianceId) and
-                            (AllianceMembers.joinedAt lessEq rowVotingEndsAt)
-                        }
-                        .count().toInt()
+                    val memberCount = resolveMemberCount(
+                        row[AllianceProposals.snapshotMemberCount],
+                        allianceId,
+                        row[AllianceProposals.votingEndsAt],
+                    )
                     val tally = computeTally(pid, memberCount,
                         allianceRow[Alliances.vpCapPct], allianceRow[Alliances.quorumThreshold],
                         allianceRow[Alliances.approvalThresholdVp], allianceRow[Alliances.approvalThresholdCount])
@@ -469,13 +485,11 @@ fun Route.allianceProposalRoutes() {
                     .where { (AllianceProposals.id eq pid) and (AllianceProposals.allianceId eq allianceId) }
                     .firstOrNull() ?: return@transaction null
 
-                val pidVotingEndsAt = row[AllianceProposals.votingEndsAt]
-                val memberCount = AllianceMembers.selectAll()
-                    .where {
-                        (AllianceMembers.allianceId eq allianceId) and
-                        (AllianceMembers.joinedAt lessEq pidVotingEndsAt)
-                    }
-                    .count().toInt()
+                val memberCount = resolveMemberCount(
+                    row[AllianceProposals.snapshotMemberCount],
+                    allianceId,
+                    row[AllianceProposals.votingEndsAt],
+                )
 
                 val tally = computeTally(pid, memberCount,
                     allianceRow[Alliances.vpCapPct], allianceRow[Alliances.quorumThreshold],
