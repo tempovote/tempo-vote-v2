@@ -617,10 +617,11 @@ fun Route.drepRoutes() {
             val credentialHex = drepIdToCredentialHex(drepId)
             val cacheKey = "${network.name}:$credentialHex"
 
-            // 1. drepInfo cache — only use full profile entries (those with isRegistered).
-            //    Partial entries written by the leaderboard (name+imageUrl only) are skipped.
+            // 1. drepInfo cache — only serve confirmed-registered entries.
+            //    isRegistered:false entries are never cached (DRep may register at any time).
+            //    Partial entries written by the leaderboard (no isRegistered key) are also skipped.
             CardanoCache.drepInfo.getIfPresent(cacheKey)
-                ?.takeIf { it.containsKey("isRegistered") }
+                ?.takeIf { it["isRegistered"]?.jsonPrimitive?.booleanOrNull == true }
                 ?.let { cached ->
                     call.respond(cached)
                     return@get
@@ -728,7 +729,7 @@ fun Route.stakeRoutes() {
  * means the IPFS/metadata fetch failed transiently. The next request will retry.
  */
 private fun nameResolved(response: JsonObject, listEntry: JsonObject?): Boolean {
-    if (listEntry == null) return true  // "not found" is a stable negative result
+    if (listEntry == null) return false  // negative results are NOT stable — DRep may register later
     val hasAnchor = listEntry["anchorUrl"]?.takeIf { it !is JsonNull }
         ?.jsonPrimitive?.contentOrNull != null
     val hasName = response["name"]?.takeIf { it !is JsonNull }

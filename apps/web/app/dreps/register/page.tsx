@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { marked } from "marked"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
 import { useWalletStore } from "@/store/wallet"
@@ -142,7 +143,11 @@ function ConfirmStep({
           {profileSections.map(({ label, text }) => (
             <div key={label}>
               <p className="text-text-secondary text-sm font-semibold mb-1">{label}</p>
-              <p className="text-text-secondary text-sm leading-relaxed">{text}</p>
+              {/* eslint-disable-next-line react/no-danger */}
+              <div
+                className="text-text-secondary text-sm leading-relaxed markdown-preview"
+                dangerouslySetInnerHTML={{ __html: marked.parse(text, { async: false }) as string }}
+              />
             </div>
           ))}
           {data.references.length > 0 && (
@@ -386,7 +391,7 @@ export default function RegisterDRepPage() {
     )
   }
 
-  if (isDrepRegistered === true && wizardStep !== "success") {
+  if (isDrepRegistered === true && wizardStep !== "success" && wizardStep !== "signing" && wizardStep !== "uploading") {
     return (
       <main className="page-container py-16 text-center">
         <div className="max-w-md mx-auto space-y-4">
@@ -415,14 +420,16 @@ export default function RegisterDRepPage() {
     try {
       let anchor = anchorCache
 
+      // Obtain (or refresh) JWT once — reuse throughout the entire flow including
+      // community activation so the token is consistent and definitely has drepId.
+      setStatusLabel(t("drepWizard.statusAuthenticating"))
+      let jwt = getJwt()
+      if (!jwt) jwt = await reauthenticate()
+      if (!jwt) throw new Error("auth failed — cannot get JWT")
+
       if (!anchor) {
         // Upload metadata to IPFS only if not already done (first attempt or form changed)
         setWizardStep("uploading")
-        setStatusLabel(t("drepWizard.statusAuthenticating"))
-
-        let jwt = getJwt()
-        if (!jwt) jwt = await reauthenticate()
-        if (!jwt) throw new Error("auth failed — cannot get JWT")
 
         setStatusLabel(t("drepWizard.statusUploadingMeta"))
 
@@ -481,15 +488,15 @@ export default function RegisterDRepPage() {
           const communityTxHash = await submitTx("ACTIVATE_COMMUNITY", {})
           await fetch(`${API_URL}/communities/${drepId}/activate`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", ...authHeader(getJwt()) },
+            headers: { "Content-Type": "application/json", ...authHeader(jwt) },
             body: JSON.stringify({
               network: networkId === 1 ? "mainnet" : "preprod",
               txHash: communityTxHash,
             }),
           })
-        } catch {
-          // Community activation is optional — don't block success
-          console.warn("[DRep Register] Community activation failed (non-blocking)")
+        } catch (communityErr) {
+          // Community activation is optional — don't block success, but log clearly
+          console.warn("[DRep Register] Community activation failed (non-blocking):", communityErr)
         }
       }
 

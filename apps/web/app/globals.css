@@ -736,6 +736,8 @@ body {
   padding-left: 1.4em;
   margin: 0.4em 0;
 }
+.markdown-preview ul { list-style-type: disc; }
+.markdown-preview ol { list-style-type: decimal; }
 .markdown-preview li { margin: 0.2em 0; }
 .markdown-preview a { color: var(--color-accent); text-decoration: underline; }
 .markdown-preview code {
@@ -770,6 +772,8 @@ body {
   padding-left: 1.4em;
   margin: 0.4em 0;
 }
+.prose-metadata ul { list-style-type: disc; }
+.prose-metadata ol { list-style-type: decimal; }
 .prose-metadata li { margin: 0.2em 0; }
 .prose-metadata a { color: var(--color-accent-light); text-decoration: underline; }
 .prose-metadata a:hover { opacity: 0.8; }
