@@ -239,12 +239,15 @@ fun Route.metadataRoutes() {
             }
 
             val metadata = buildCip119Metadata(req)
-            val metadataJsonString = json.encodeToString(metadata)
-
-            val anchorDataHash = blake2b256Hex(metadataJsonString.toByteArray(Charsets.UTF_8))
+            // Serialize to exact bytes FIRST, hash those bytes, then upload the exact
+            // same bytes as a file. Using pinJSONToIPFS risks Pinata re-serializing the
+            // JSON (different whitespace/key order) → IPFS bytes ≠ hashed bytes → anchor
+            // hash mismatch, wallets/explorers reject the metadata.
+            val metadataBytes = json.encodeToString(metadata).toByteArray(Charsets.UTF_8)
+            val anchorDataHash = blake2b256Hex(metadataBytes)
 
             val ipfsHash = try {
-                uploadToPinata(pinataJwt, req.drepId, metadata)
+                uploadMetadataBytesToPinata(pinataJwt, req.drepId, metadataBytes)
             } catch (e: Exception) {
                 return@post call.respond(
                     HttpStatusCode.BadGateway,
@@ -343,6 +346,8 @@ fun Route.metadataRoutes() {
 }
 
 private fun buildCip119Metadata(req: MetadataUploadRequest): JsonObject = buildJsonObject {
+    // CIP-119 requires field term definitions to be scoped inside body.@context,
+    // not at the root @context. Root @context only maps CIP100/CIP119 prefixes.
     putJsonObject("@context") {
         put("@language", "en")
         put("CIP100", "https://github.com/cardano-foundation/CIPs/blob/master/CIP-0100/README.md#")
@@ -350,17 +355,24 @@ private fun buildCip119Metadata(req: MetadataUploadRequest): JsonObject = buildJ
         put("hashAlgorithm", "CIP100:hashAlgorithm")
         putJsonObject("body") {
             put("@id", "CIP119:body")
+            putJsonObject("@context") {
+                put("givenName", "CIP119:givenName")
+                put("motivations", "CIP119:motivations")
+                put("objectives", "CIP119:objectives")
+                put("qualifications", "CIP119:qualifications")
+                put("paymentAddress", "CIP119:paymentAddress")
+                put("image", "CIP119:image")
+                put("doNotList", "CIP119:doNotList")
+                putJsonObject("references") {
+                    put("@id", "CIP119:references")
+                    put("@container", "@set")
+                }
+            }
         }
-        put("givenName", "CIP119:givenName")
-        put("motivations", "CIP119:motivations")
-        put("objectives", "CIP119:objectives")
-        put("qualifications", "CIP119:qualifications")
-        put("paymentAddress", "CIP119:paymentAddress")
-        putJsonObject("references") {
-            put("@id", "CIP119:references")
+        putJsonObject("authors") {
+            put("@id", "CIP100:authors")
             put("@container", "@set")
         }
-        put("image", "CIP119:image")
     }
     put("hashAlgorithm", "blake2b-256")
     putJsonObject("body") {
@@ -484,6 +496,40 @@ private fun uploadJsonToPinata(jwt: String, metadata: JsonObject, name: String):
 
 private fun uploadToPinata(jwt: String, drepId: String, metadata: JsonObject): String =
     uploadJsonToPinata(jwt, metadata, "drep-$drepId-metadata")
+
+/**
+ * Upload exact bytes to Pinata via pinFileToIPFS so the CID is derived from
+ * the same bytes that were hashed for the anchor. pinJSONToIPFS may re-serialize
+ * the JSON (different byte order), which would break the blake2b-256 anchor check.
+ */
+private fun uploadMetadataBytesToPinata(jwt: String, drepId: String, bytes: ByteArray): String {
+    val body = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart(
+            "file",
+            "metadata.jsonld",
+            bytes.toRequestBody("application/ld+json".toMediaType()),
+        )
+        .addFormDataPart(
+            "pinataMetadata",
+            null,
+            buildJsonObject { put("name", "drep-$drepId-metadata") }.toString()
+                .toRequestBody("application/json".toMediaType()),
+        )
+        .build()
+
+    val request = Request.Builder()
+        .url("https://api.pinata.cloud/pinning/pinFileToIPFS")
+        .header("Authorization", "Bearer $jwt")
+        .post(body)
+        .build()
+
+    val response = okHttp.newCall(request).execute()
+    val responseBody = response.body?.string() ?: throw Exception("Empty response from Pinata")
+    if (!response.isSuccessful) throw Exception("HTTP ${response.code}: $responseBody")
+    return Json.parseToJsonElement(responseBody).jsonObject["IpfsHash"]?.jsonPrimitive?.content
+        ?: throw Exception("IpfsHash missing from Pinata response")
+}
 
 private fun buildCip108Metadata(req: ProposalUploadRequest): JsonObject = buildJsonObject {
     putJsonObject("@context") {

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { marked } from "marked"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
 import { useDRepProfile } from "@/hooks/useDRepProfile"
@@ -123,7 +124,11 @@ function ConfirmUpdateStep({
           {profileSections.map(({ label, text }) => (
             <div key={label}>
               <p className="text-text-secondary text-sm font-semibold mb-1">{label}</p>
-              <p className="text-text-secondary text-sm leading-relaxed">{text}</p>
+              {/* eslint-disable-next-line react/no-danger */}
+              <div
+                className="text-text-secondary text-sm leading-relaxed markdown-preview"
+                dangerouslySetInnerHTML={{ __html: marked.parse(text, { async: false }) as string }}
+              />
             </div>
           ))}
           {data.references.length > 0 && (
@@ -239,7 +244,7 @@ export default function UpdateDRepPage() {
       objectives: profile.objectives ?? "",
       qualifications: profile.qualifications ?? "",
       imageUrl: profile.imageUrl ?? "",
-      imagePreviewUrl: profile.imageUrl ?? "",
+      imagePreviewUrl: "",  // Local blob preview only — don't use IPFS URL here (browser can't load ipfs://)
       paymentAddress: "",
       references: (profile.references ?? []).map(r => ({
         type: r["@type"] ?? "Other",
