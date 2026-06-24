@@ -47,12 +47,32 @@ object AllianceScripts {
     val PROPOSAL_REGISTRY_SCRIPT_CBOR: String by lazy { compiledCode("proposal_registry.proposal_registry.spend") }
     val PROPOSAL_REGISTRY_SCRIPT_HASH: String by lazy { scriptHash("proposal_registry.proposal_registry.spend") }
 
+    // V1 treasury script (deployed before the change-back security fix).
+    // Kept so existing UTxOs at the V1 address can still be spent and migrated
+    // to the current treasury address via normal withdrawal TXs.
+    const val TREASURY_V1_SCRIPT_HASH = "ac8a0b8790483c05502dd3aa0d9896755a47920de8978dfd39c025e3"
+    private val TREASURY_V1_SCRIPT_CBOR: String by lazy {
+        val raw = AllianceScripts::class.java.getResourceAsStream("/plutus-alliance-v1.json")
+            ?.bufferedReader()?.readText()
+            ?: error("plutus-alliance-v1.json not found on classpath")
+        json.parseToJsonElement(raw).jsonObject["validators"]!!.jsonArray
+            .first { it.jsonObject["title"]?.jsonPrimitive?.content == "treasury.treasury.spend" }
+            .jsonObject["compiledCode"]!!.jsonPrimitive.content
+    }
+
     /**
      * Derive the Alliance treasury bech32 address for the given network.
      * All alliances share this address; UTxOs are identified by their inline datum alliance_id.
      */
     fun treasuryAddress(network: Network): String {
         val scriptHashBytes = HexUtil.decodeHexString(TREASURY_SCRIPT_HASH)
+        val cardanoNetwork = if (network == Network.MAINNET) Networks.mainnet() else Networks.testnet()
+        return AddressProvider.getEntAddress(Credential.fromScript(scriptHashBytes), cardanoNetwork).toBech32()
+    }
+
+    /** V1 treasury address — used to detect legacy UTxOs that need migration. */
+    fun treasuryV1Address(network: Network): String {
+        val scriptHashBytes = HexUtil.decodeHexString(TREASURY_V1_SCRIPT_HASH)
         val cardanoNetwork = if (network == Network.MAINNET) Networks.mainnet() else Networks.testnet()
         return AddressProvider.getEntAddress(Credential.fromScript(scriptHashBytes), cardanoNetwork).toBech32()
     }
@@ -67,16 +87,13 @@ object AllianceScripts {
         return AddressProvider.getEntAddress(Credential.fromScript(scriptHashBytes), cardanoNetwork).toBech32()
     }
 
-    /**
-     * Build a PlutusV3Script from compiledCode hex.
-     * Aiken's compiledCode is Level-2 CBOR; the witness set needs double-encoded bytes.
-     */
     fun buildPlutusScript(compiledCodeHex: String): PlutusV3Script {
         val len = compiledCodeHex.length / 2
         val lenHex = "%04x".format(len)
         return PlutusV3Script.builder().cborHex("59$lenHex$compiledCodeHex").build()
     }
 
+    fun treasuryV1Script(): PlutusV3Script = buildPlutusScript(TREASURY_V1_SCRIPT_CBOR)
     fun treasuryScript(): PlutusV3Script = buildPlutusScript(TREASURY_SCRIPT_CBOR)
     fun proposalRegistryScript(): PlutusV3Script = buildPlutusScript(PROPOSAL_REGISTRY_SCRIPT_CBOR)
 

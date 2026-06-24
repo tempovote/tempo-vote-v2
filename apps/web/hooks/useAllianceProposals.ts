@@ -188,6 +188,28 @@ export async function castVote(
   }
 }
 
+/**
+ * Mark an approved withdrawal proposal as executed after its on-chain Execute TX is submitted.
+ * This flips the proposal to `executed` status server-side, which hides the Execute button and
+ * blocks any further withdrawal TX from being built for it (treasury drain prevention).
+ */
+export async function markProposalExecuted(
+  allianceId: string,
+  proposalId: string,
+  txHash: string,
+  token: string,
+): Promise<void> {
+  const r = await fetch(`${API_URL}/alliances/${allianceId}/proposals/${proposalId}/execute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ txHash }),
+  })
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? `HTTP ${r.status}`)
+  }
+}
+
 export async function cancelProposal(allianceId: string, proposalId: string, token: string): Promise<void> {
   const r = await fetch(`${API_URL}/alliances/${allianceId}/proposals/${proposalId}`, {
     method: "DELETE",

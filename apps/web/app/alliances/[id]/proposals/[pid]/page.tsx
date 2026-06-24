@@ -4,15 +4,28 @@ import { useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
+import { useWallet } from "@/hooks/useWallet"
 import {
   useProposalDetail,
   castVote,
   cancelProposal,
+  markProposalExecuted,
   type ProposalItem,
 } from "@/hooks/useAllianceProposals"
 import { useAllianceDetail, useTreasuryBalance } from "@/hooks/useAlliance"
 import { useTx } from "@/hooks/useTx"
 import { useT } from "@/i18n/useT"
+
+function jwtHasDrepId(token: string): boolean {
+  try {
+    const part = token.split(".")[1]
+    if (!part) return false
+    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")))
+    return typeof payload.drepId === "string" && payload.drepId.length > 0
+  } catch {
+    return false
+  }
+}
 
 // ─── Countdown ────────────────────────────────────────────────────────────────
 
@@ -212,25 +225,79 @@ function VotePanel({
 
 // ─── Execute panel ────────────────────────────────────────────────────────────
 
+function cardanoscanTxUrl(txHash: string, network: string) {
+  return network === "mainnet"
+    ? `https://cardanoscan.io/transaction/${txHash}`
+    : `https://preprod.cardanoscan.io/transaction/${txHash}`
+}
+
+function ExecuteSuccessCard({ txHash, network }: { txHash: string; network: string }) {
+  const t = useT()
+  return (
+    <div className="card-static rounded-xl p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-full bg-success/15 flex items-center justify-center shrink-0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-success">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-text-primary">{t("alliance.treasury.executeSuccessTitle")}</p>
+          <p className="text-xs text-text-muted">{t("alliance.treasury.executeSuccessDesc")}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 bg-bg-secondary rounded-lg px-3 py-2">
+        <span className="font-mono text-xs text-text-muted flex-1 break-all">{txHash}</span>
+      </div>
+      <a
+        href={cardanoscanTxUrl(txHash, network)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="btn-outline text-sm flex items-center justify-center gap-2"
+      >
+        {t("alliance.treasury.viewOnCardanoscan")}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+        </svg>
+      </a>
+    </div>
+  )
+}
+
 function ExecutePanel({
   proposal,
   allianceId,
-  isMember,
+  isOwnerOrAdmin,
+  network,
   onExecuted,
 }: {
   proposal: ProposalItem
   allianceId: string
-  isMember: boolean
+  isOwnerOrAdmin: boolean
+  network: string
   onExecuted: () => void
 }) {
   const t = useT()
   const { submitTx } = useTx()
+  const { isConnected, jwt: storedJwt } = useWalletStore()
+  const { reauthenticate } = useWallet()
   const { data: treasury } = useTreasuryBalance(allianceId)
   const [loading, setLoading] = useState(false)
-  const [txHash, setTxHash] = useState<string | null>(null)
+  const [txHash, setTxHash] = useState<string | null>(proposal.executedTxHash)
   const [error, setError] = useState<string | null>(null)
 
+  async function ensureJwt(): Promise<string | null> {
+    if (storedJwt && jwtHasDrepId(storedJwt)) return storedJwt
+    return await reauthenticate().catch(() => null)
+  }
+
   if (proposal.proposalType !== "withdrawal") return null
+  // Already executed → show the result card, never the Execute button (drain prevention).
+  if (proposal.status === "executed" || proposal.executedTxHash) {
+    const hash = proposal.executedTxHash ?? txHash
+    return hash ? <ExecuteSuccessCard txHash={hash} network={network} /> : null
+  }
   if (proposal.status !== "approved_pending" && proposal.status !== "approved") return null
   if (!proposal.finalizationTxHash || proposal.finalizationTxIndex == null) {
     return (
@@ -252,32 +319,55 @@ function ExecutePanel({
     )
   }
 
-  if (txHash) {
+  if (!isConnected) {
     return (
-      <div className="notice-success text-sm">
-        {t("alliance.treasury.executeSuccess", { txHash: `${txHash.slice(0, 16)}…` })}
+      <div className="card-static rounded-xl px-4 py-3 text-sm text-text-muted">
+        {t("alliance.treasury.connectWalletToExecute")}
       </div>
     )
+  }
+
+  if (!isOwnerOrAdmin) {
+    return (
+      <div className="card-static rounded-xl px-4 py-3 text-sm text-text-muted">
+        {t("alliance.treasury.ownerAdminRequired")}
+      </div>
+    )
+  }
+
+  if (txHash) {
+    return <ExecuteSuccessCard txHash={txHash} network={network} />
   }
 
   const treasuryUtxo = treasury?.utxos[0]
 
   async function handleExecute() {
     if (!treasuryUtxo || !proposal.finalizationTxHash || proposal.finalizationTxIndex == null) return
+    const jwt = await ensureJwt()
+    if (!jwt) {
+      setError(t("alliance.treasury.authRequired"))
+      return
+    }
     setLoading(true)
     setError(null)
     try {
       const hash = await submitTx("ALLIANCE_WITHDRAW", {
         allianceId,
         proposalId: proposal.id,
-        treasuryUtxoTxHash:   treasuryUtxo.txHash,
-        treasuryUtxoIndex:    treasuryUtxo.outputIndex,
-        treasuryUtxoLovelace: treasuryUtxo.lovelace,
-        finalizationTxHash:   proposal.finalizationTxHash,
-        finalizationTxIndex:  proposal.finalizationTxIndex,
-        recipientAddress:     proposal.recipientAddress ?? undefined,
-        amountLovelace:       proposal.amountLovelace ?? undefined,
-        executableAtMs:       executableAt?.getTime() ?? undefined,
+        treasuryUtxoTxHash:    treasuryUtxo.txHash,
+        treasuryUtxoIndex:     treasuryUtxo.outputIndex,
+        treasuryUtxoLovelace:  treasuryUtxo.lovelace,
+        treasuryUtxoAddress:   treasury?.treasuryAddress,
+        finalizationTxHash:    proposal.finalizationTxHash,
+        finalizationTxIndex:   proposal.finalizationTxIndex,
+        recipientAddress:      proposal.recipientAddress ?? undefined,
+        amountLovelace:        proposal.amountLovelace ?? undefined,
+        executableAtMs:        executableAt?.getTime() ?? undefined,
+      }, jwt)
+      // Mark executed server-side: flips status to `executed`, which hides this button and blocks
+      // any further withdrawal TX for this proposal. Critical for treasury drain prevention.
+      await markProposalExecuted(allianceId, proposal.id, hash, jwt).catch((e: unknown) => {
+        console.error("Failed to mark proposal executed:", e)
       })
       setTxHash(hash)
       setTimeout(onExecuted, 4000)
@@ -295,7 +385,7 @@ function ExecutePanel({
       )}
       <button
         onClick={handleExecute}
-        disabled={loading || !treasuryUtxo || !isMember}
+        disabled={loading || !treasuryUtxo || !isOwnerOrAdmin || !isConnected}
         className="btn-primary px-4 py-2 text-sm self-start disabled:opacity-50"
       >
         {loading ? t("alliance.treasury.executing") : t("alliance.treasury.executeBtn")}
@@ -319,6 +409,7 @@ export default function ProposalDetailPage() {
 
   const myMembership = alliance?.myMembership
   const isMember = !!myMembership
+  const isOwnerOrAdmin = myMembership?.role === "owner" || myMembership?.role === "admin"
 
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
@@ -467,7 +558,8 @@ export default function ProposalDetailPage() {
         <ExecutePanel
           proposal={proposal}
           allianceId={params.id}
-          isMember={isMember}
+          isOwnerOrAdmin={isOwnerOrAdmin}
+          network={alliance?.network ?? "preprod"}
           onExecuted={refetch}
         />
 

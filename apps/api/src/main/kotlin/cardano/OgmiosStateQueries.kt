@@ -1,5 +1,6 @@
 package vote.tempo.cardano
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -11,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+
+private val ogmiosLogger = KotlinLogging.logger("OgmiosStateQueries")
 
 // Raw JSON element (may be object or array)
 typealias JsonResult = JsonElement
@@ -336,6 +339,47 @@ class OgmiosStateQueries(private val network: Network) {
     }
 
     /**
+     * Reconstruct the alliance's contribution history from Kupo — including outputs already spent
+     * by later withdrawals. Needed because the treasury address holds BOTH contributions and the
+     * change-back outputs of withdrawals (same address + datum), so a live-UTxO view can't tell
+     * them apart and would mislabel withdrawal change as a contribution.
+     *
+     * Classification (DB-free, robust): a treasury output is CHANGE iff its creating transaction
+     * also SPENT a treasury UTxO of this alliance (a withdrawal consumes a treasury UTxO and pays
+     * change back). A pure contribution pays in from a wallet and spends no treasury UTxO. So the
+     * set of "spender" tx hashes = every output's spent_at.transaction_id; any output whose own
+     * creating tx is in that set is change and is excluded.
+     *
+     * Returns real contributions (spent or unspent), newest first.
+     */
+    suspend fun getScriptContributions(scriptAddress: String, filterDatumHash: String? = null): List<KupoUtxo> {
+        return withContext(Dispatchers.IO) {
+            val response = client.get("$kupoUrl/matches/$scriptAddress")  // all matches: spent + unspent
+            val text = response.bodyAsText()
+            val arr = json.parseToJsonElement(text).jsonArray
+
+            data class Match(val utxo: KupoUtxo, val createdSlot: Long, val spentByTx: String?)
+            val matches = arr.mapNotNull { elem ->
+                val obj = elem.jsonObject
+                val txHash = obj["transaction_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val idx = obj["output_index"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                val coins = obj["value"]?.jsonObject?.get("coins")?.jsonPrimitive?.long ?: 0L
+                val datumHash = obj["datum_hash"]?.jsonPrimitive?.content
+                // spent_at is `null` (JsonNull) for unspent matches — use `as?` so a JsonNull
+                // doesn't throw on .jsonObject. created_at is always an object but guard it too.
+                val createdSlot = (obj["created_at"] as? JsonObject)?.get("slot_no")?.jsonPrimitive?.long ?: 0L
+                val spentByTx = (obj["spent_at"] as? JsonObject)?.get("transaction_id")?.jsonPrimitive?.content
+                Match(KupoUtxo(txHash, idx, coins, datumHash), createdSlot, spentByTx)
+            }.filter { filterDatumHash == null || it.utxo.datumHash == filterDatumHash }
+
+            val spenderTxs = matches.mapNotNull { it.spentByTx }.toSet()
+            matches.filter { it.utxo.txHash !in spenderTxs }
+                .sortedByDescending { it.createdSlot }
+                .map { it.utxo }
+        }
+    }
+
+    /**
      * Evaluate a transaction via Ogmios to get actual execution units for each script.
      * Returns a map from "purpose:index" (e.g. "spend:0") to (mem, cpu) pair.
      * Throws on evaluation failure (script error) so the caller can propagate the error.
@@ -358,6 +402,8 @@ class OgmiosStateQueries(private val network: Network) {
                 "$purpose:$index" to (mem to cpu)
             }
         }
+        // Ogmios returned an error (JSON-RPC error response) or unexpected shape — log full body
+        ogmiosLogger.warn { "evaluateTx: Ogmios returned non-array result: ${result.toString().take(500)}" }
         return emptyMap()
     }
 
@@ -443,7 +489,13 @@ class OgmiosStateQueries(private val network: Network) {
                 setBody(body)
             }
             val text = response.bodyAsText()
-            json.parseToJsonElement(text).jsonObject["result"] ?: buildJsonObject {}
+            val parsed = json.parseToJsonElement(text).jsonObject
+            parsed["result"] ?: run {
+                if (method == "evaluateTx") {
+                    ogmiosLogger.warn { "evaluateTx Ogmios response (no result field): ${text.take(600)}" }
+                }
+                buildJsonObject {}
+            }
         }
     }
 

@@ -114,6 +114,9 @@ data class TreasuryBalanceResponse(
     val treasuryAddress: String,
     val balanceLovelace: Long,
     val utxos: List<TreasuryUtxoItem>,
+    // Real contribution transactions (spent or unspent), reconstructed from on-chain history.
+    // Distinct from `utxos` (current state) — withdrawal change-back outputs are excluded here.
+    val contributions: List<TreasuryUtxoItem> = emptyList(),
 )
 
 @Serializable
@@ -304,20 +307,17 @@ fun autoCloseExpiredProposals() {
                 }
             }
         }
+    }
 
-        // Promote approved_pending → approved after timelock passes
-        transaction {
-            AllianceProposals.selectAll()
-                .where {
-                    (AllianceProposals.status eq "approved_pending") and
-                    (AllianceProposals.executableAt lessEq now)
-                }
-                .toList()
-                .forEach { pendingRow ->
-                    AllianceProposals.update({ AllianceProposals.id eq pendingRow[AllianceProposals.id] }) {
-                        it[status] = "approved"
-                    }
-                }
+    // Promote approved_pending → approved once the timelock has elapsed. This runs on EVERY
+    // poll, independent of whether any proposal just expired — otherwise approved_pending
+    // proposals would stay stuck (and the Execute flow couldn't mark them executed).
+    transaction {
+        AllianceProposals.update({
+            (AllianceProposals.status eq "approved_pending") and
+            (AllianceProposals.executableAt lessEq now)
+        }) {
+            it[status] = "approved"
         }
     }
 }
@@ -672,6 +672,7 @@ fun Route.allianceProposalRoutes() {
                 if (req.txHash.isBlank())
                     return@post call.respond(HttpStatusCode.BadRequest, ApiError("txHash required"))
 
+                val now = Clock.System.now().toLocalDateTime(TimeZone.UTC)
                 val error = transaction {
                     val membership = AllianceMembers.selectAll()
                         .where { (AllianceMembers.allianceId eq allianceId) and (AllianceMembers.drepId eq jwtDrepId) }
@@ -682,7 +683,18 @@ fun Route.allianceProposalRoutes() {
                         .where { (AllianceProposals.id eq pid) and (AllianceProposals.allianceId eq allianceId) }
                         .firstOrNull() ?: return@transaction "not_found"
                     if (proposalRow[AllianceProposals.proposalType] != "withdrawal") return@transaction "not_withdrawal"
-                    if (proposalRow[AllianceProposals.status] != "approved") return@transaction "not_approved"
+
+                    // Drain guard: an already-executed proposal must never be marked again.
+                    if (proposalRow[AllianceProposals.status] == "executed" ||
+                        proposalRow[AllianceProposals.executedTxHash] != null) return@transaction "already_executed"
+
+                    // Accept both 'approved' and 'approved_pending' (timelock elapsed). The poller
+                    // promotes pending→approved only every few minutes, so a freshly-executable
+                    // proposal may still read 'approved_pending' here — gate on executableAt instead.
+                    val st = proposalRow[AllianceProposals.status]
+                    if (st != "approved" && st != "approved_pending") return@transaction "not_approved"
+                    val execAt = proposalRow[AllianceProposals.executableAt]
+                    if (execAt == null || execAt > now) return@transaction "timelock_active"
 
                     AllianceProposals.update({ AllianceProposals.id eq pid }) {
                         it[status] = "executed"
@@ -692,12 +704,14 @@ fun Route.allianceProposalRoutes() {
                 }
 
                 when (error) {
-                    null            -> call.respond(HttpStatusCode.OK, mapOf("status" to "executed"))
-                    "not_found"     -> call.respond(HttpStatusCode.NotFound, ApiError("Proposal not found"))
-                    "forbidden"     -> call.respond(HttpStatusCode.Forbidden, ApiError("Owner or admin required"))
-                    "not_withdrawal"-> call.respond(HttpStatusCode.BadRequest, ApiError("Only withdrawal proposals can be executed"))
-                    "not_approved"  -> call.respond(HttpStatusCode.Conflict, ApiError("Proposal must be in 'approved' status"))
-                    else            -> call.respond(HttpStatusCode.InternalServerError, ApiError(error))
+                    null              -> call.respond(HttpStatusCode.OK, mapOf("status" to "executed"))
+                    "not_found"       -> call.respond(HttpStatusCode.NotFound, ApiError("Proposal not found"))
+                    "forbidden"       -> call.respond(HttpStatusCode.Forbidden, ApiError("Owner or admin required"))
+                    "not_withdrawal"  -> call.respond(HttpStatusCode.BadRequest, ApiError("Only withdrawal proposals can be executed"))
+                    "already_executed"-> call.respond(HttpStatusCode.Conflict, ApiError("Proposal already executed"))
+                    "timelock_active" -> call.respond(HttpStatusCode.Conflict, ApiError("Timelock has not elapsed yet"))
+                    "not_approved"    -> call.respond(HttpStatusCode.Conflict, ApiError("Proposal must be approved before execution"))
+                    else              -> call.respond(HttpStatusCode.InternalServerError, ApiError(error))
                 }
             }
         }
@@ -724,8 +738,13 @@ fun Route.allianceProposalRoutes() {
             FinalizationTxSubmitter.buildTreasuryDatum(allianceId).getDatumHash()
         }.getOrNull()
 
+        val queries = vote.tempo.cardano.OgmiosStateQueries(network)
         val utxos = runCatching {
-            vote.tempo.cardano.OgmiosStateQueries(network).getScriptUtxos(resolvedAddr, expectedDatumHash)
+            queries.getScriptUtxos(resolvedAddr, expectedDatumHash)
+        }.getOrElse { emptyList() }
+        // Full contribution history (spent + unspent), withdrawal change-back excluded.
+        val contributions = runCatching {
+            queries.getScriptContributions(resolvedAddr, expectedDatumHash)
         }.getOrElse { emptyList() }
 
         val balanceLovelace = utxos.sumOf { it.lovelace }
@@ -734,7 +753,10 @@ fun Route.allianceProposalRoutes() {
             balanceLovelace = balanceLovelace,
             utxos = utxos.map { u ->
                 TreasuryUtxoItem(txHash = u.txHash, outputIndex = u.outputIndex, lovelace = u.lovelace)
-            }
+            },
+            contributions = contributions.map { u ->
+                TreasuryUtxoItem(txHash = u.txHash, outputIndex = u.outputIndex, lovelace = u.lovelace)
+            },
         ))
     }
 

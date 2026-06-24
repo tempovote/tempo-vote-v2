@@ -81,6 +81,7 @@ export const BuildTxRequestSchema = z.object({
   treasuryUtxoTxHash: z.string().optional(),
   treasuryUtxoIndex: z.number().int().min(0).optional(),
   treasuryUtxoLovelace: z.number().int().positive().optional(),
+  treasuryUtxoAddress: z.string().optional(),
   finalizationTxHash: z.string().optional(),
   finalizationTxIndex: z.number().int().min(0).optional(),
   recipientAddress: z.string().optional(),

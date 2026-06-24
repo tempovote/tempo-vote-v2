@@ -188,6 +188,40 @@ export async function leaveAlliance(allianceId: string, token: string): Promise<
   }
 }
 
+export async function updateMemberRole(
+  allianceId: string,
+  drepId: string,
+  role: "admin" | "member",
+  token: string,
+): Promise<void> {
+  const r = await fetch(`${API_URL}/alliances/${allianceId}/members/${encodeURIComponent(drepId)}/role`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ role }),
+  })
+  if (!r.ok) {
+    const text = await r.text().catch(() => "")
+    console.error("[updateMemberRole] status:", r.status, "body:", text)
+    let msg = `HTTP ${r.status}`
+    try { msg = (JSON.parse(text) as { error?: string }).error ?? msg } catch { /* not JSON */ }
+    throw new Error(msg)
+  }
+}
+
+export async function removeMember(allianceId: string, drepId: string, token: string): Promise<void> {
+  const r = await fetch(`${API_URL}/alliances/${allianceId}/members/${encodeURIComponent(drepId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!r.ok) {
+    const text = await r.text().catch(() => "")
+    console.error("[removeMember] status:", r.status, "body:", text)
+    let msg = `HTTP ${r.status}`
+    try { msg = (JSON.parse(text) as { error?: string }).error ?? msg } catch { /* not JSON */ }
+    throw new Error(msg)
+  }
+}
+
 export interface TreasuryUtxo {
   txHash: string
   outputIndex: number
@@ -198,6 +232,8 @@ export interface TreasuryBalance {
   treasuryAddress: string
   balanceLovelace: number
   utxos: TreasuryUtxo[]
+  // Real contributions (spent + unspent) reconstructed on-chain; excludes withdrawal change-back.
+  contributions: TreasuryUtxo[]
 }
 
 export function useTreasuryBalance(allianceId: string) {

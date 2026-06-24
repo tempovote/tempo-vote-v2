@@ -8,13 +8,27 @@ const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/"
 function resolveLogoSrc(url: string): string {
   return url.startsWith("ipfs://") ? IPFS_GATEWAY + url.slice(7) : url
 }
+
+function jwtHasDrepId(token: string): boolean {
+  try {
+    const part = token.split(".")[1]
+    if (!part) return false
+    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")))
+    return typeof payload.drepId === "string" && payload.drepId.length > 0
+  } catch {
+    return false
+  }
+}
 import { useWalletStore } from "@/store/wallet"
+import { useWallet } from "@/hooks/useWallet"
 import {
   useAllianceDetail,
   useAllianceMembers,
   useTreasuryBalance,
   joinAlliance,
   leaveAlliance,
+  updateMemberRole,
+  removeMember,
   type AllianceMember,
   type TreasuryUtxo,
 } from "@/hooks/useAlliance"
@@ -46,10 +60,62 @@ function RoleBadge({ role }: { role: string }) {
 
 // ─── Members tab ──────────────────────────────────────────────────────────────
 
-function MembersTab({ allianceId }: { allianceId: string }) {
+function MembersTab({
+  allianceId,
+  myMemberRole,
+  myDrepId,
+}: {
+  allianceId: string
+  myMemberRole?: string
+  myDrepId?: string
+}) {
   const t = useT()
+  const { jwt: storedJwt } = useWalletStore()
+  const { reauthenticate } = useWallet()
   const [page, setPage] = useState(1)
-  const { data, isLoading } = useAllianceMembers(allianceId, page)
+  const { data, isLoading, refetch } = useAllianceMembers(allianceId, page)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const canManage = myMemberRole === "owner" || myMemberRole === "admin"
+
+  async function ensureJwt(): Promise<string | null> {
+    // JWT without drepId claim → API returns 403; always reauthenticate in that case
+    if (storedJwt && jwtHasDrepId(storedJwt)) return storedJwt
+    return await reauthenticate().catch(() => null)
+  }
+
+  async function handleRoleChange(member: AllianceMember) {
+    const jwt = await ensureJwt()
+    if (!jwt) return
+    const newRole = member.role === "admin" ? "member" : "admin"
+    setActionLoading(member.drepId)
+    setActionError(null)
+    try {
+      await updateMemberRole(allianceId, member.drepId, newRole, jwt)
+      refetch()
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : t("alliance.memberActionError"))
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleKick(member: AllianceMember) {
+    if (!confirm(t("alliance.kickConfirm"))) return
+    const jwt = await ensureJwt()
+    if (!jwt) return
+    setActionLoading(member.drepId)
+    setActionError(null)
+    try {
+      await removeMember(allianceId, member.drepId, jwt)
+      refetch()
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : t("alliance.memberActionError"))
+    } finally {
+      setActionLoading(null)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -67,37 +133,70 @@ function MembersTab({ allianceId }: { allianceId: string }) {
 
   return (
     <div className="flex flex-col gap-1">
-      {data.items.map((member: AllianceMember) => (
-        <div
-          key={member.id}
-          className="flex items-center justify-between px-4 py-3 rounded-lg bg-bg-card hover:bg-bg-card-hover transition-colors"
-        >
-          <Link
-            href={`/dreps/${encodeURIComponent(member.drepId)}`}
-            className="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity"
+      {actionError && (
+        <div className="notice-warning text-xs px-3 py-2 rounded-lg mb-2">{actionError}</div>
+      )}
+      {data.items.map((member: AllianceMember) => {
+        const isOwner = member.role === "owner"
+        const isSelf = member.drepId === myDrepId
+        const showActions = canManage && !isOwner && !isSelf
+        const busy = actionLoading === member.drepId
+
+        return (
+          <div
+            key={member.id}
+            className="flex items-center justify-between px-4 py-3 rounded-lg bg-bg-card hover:bg-bg-card-hover transition-colors gap-3"
           >
-            <DRepAvatar
-              name={member.name ?? null}
-              imageUrl={member.imageUrl ?? null}
-              credHex={member.drepId}
-              size="sm"
-            />
-            <div className="flex flex-col gap-0.5 min-w-0">
-              {member.name ? (
-                <span className="text-sm font-medium text-text-primary truncate">{member.name}</span>
-              ) : (
-                <span className="text-sm font-mono text-accent-light truncate">
-                  {member.drepId.slice(0, 20)}…{member.drepId.slice(-8)}
+            <Link
+              href={`/dreps/${encodeURIComponent(member.drepId)}`}
+              className="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity flex-1"
+            >
+              <DRepAvatar
+                name={member.name ?? null}
+                imageUrl={member.imageUrl ?? null}
+                credHex={member.drepId}
+                size="sm"
+              />
+              <div className="flex flex-col gap-0.5 min-w-0">
+                {member.name ? (
+                  <span className="text-sm font-medium text-text-primary truncate">{member.name}</span>
+                ) : (
+                  <span className="text-sm font-mono text-accent-light truncate">
+                    {member.drepId.slice(0, 20)}…{member.drepId.slice(-8)}
+                  </span>
+                )}
+                <span className="text-xs text-text-muted">
+                  {t("alliance.joinedAt", { date: new Date(member.joinedAt).toLocaleDateString() })}
                 </span>
+              </div>
+            </Link>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <RoleBadge role={member.role} />
+              {showActions && (
+                <>
+                  <button
+                    onClick={() => handleRoleChange(member)}
+                    disabled={busy}
+                    title={member.role === "admin" ? t("alliance.demoteToMember") : t("alliance.makeAdmin")}
+                    className="px-2.5 py-1 rounded-lg text-xs border border-border-subtle text-text-muted hover:text-text-secondary hover:border-text-muted transition-colors disabled:opacity-40"
+                  >
+                    {busy ? "…" : member.role === "admin" ? t("alliance.demoteToMember") : t("alliance.makeAdmin")}
+                  </button>
+                  <button
+                    onClick={() => handleKick(member)}
+                    disabled={busy}
+                    title={t("alliance.kickMember")}
+                    className="px-2.5 py-1 rounded-lg text-xs border border-border-subtle text-text-muted hover:text-danger hover:border-danger transition-colors disabled:opacity-40"
+                  >
+                    {t("alliance.kickMember")}
+                  </button>
+                </>
               )}
-              <span className="text-xs text-text-muted">
-                {t("alliance.joinedAt", { date: new Date(member.joinedAt).toLocaleDateString() })}
-              </span>
             </div>
-          </Link>
-          <RoleBadge role={member.role} />
-        </div>
-      ))}
+          </div>
+        )
+      })}
 
       {data.total > data.items.length && (
         <div className="flex justify-center gap-2 pt-4">
@@ -554,17 +653,21 @@ function TreasuryTab({ allianceId, isMember, network }: { allianceId: string; is
 
       {/* Transaction history — bank statement style */}
       {(() => {
-        const contributions: HistoryEntry[] = (data?.utxos ?? []).map((u: TreasuryUtxo) => ({
+        // Use reconstructed contribution history (not live UTxOs): withdrawal change-back outputs
+        // live at the same address+datum and would otherwise show as bogus contributions.
+        const contributions: HistoryEntry[] = (data?.contributions ?? []).map((u: TreasuryUtxo) => ({
           kind: "contribute",
           txHash: u.txHash,
           outputIndex: u.outputIndex,
           lovelace: u.lovelace,
         }))
+        // Use the EXECUTE tx (executedTxHash) — that's when funds actually leave the treasury.
+        // The finalization tx only records the on-chain ProposalResult; no ADA moves there.
         const withdrawals: HistoryEntry[] = (proposalData?.items ?? [])
-          .filter((p: ProposalItem) => !!p.finalizationTxHash)
+          .filter((p: ProposalItem) => !!p.executedTxHash)
           .map((p: ProposalItem) => ({
             kind: "withdraw",
-            txHash: p.finalizationTxHash!,
+            txHash: p.executedTxHash!,
             lovelace: p.amountLovelace ?? 0,
             recipientAddress: p.recipientAddress,
             title: p.title,
@@ -701,7 +804,8 @@ export default function AllianceDetailPage() {
   const t = useT()
   const router = useRouter()
   const params = useParams<{ id: string }>()
-  const { isConnected, isDrepRegistered, drepKey, selectedNetwork, jwt } = useWalletStore()
+  const { isConnected, isDrepRegistered, drepKey, selectedNetwork, jwt: storedJwt } = useWalletStore()
+  const { reauthenticate } = useWallet()
   const [activeTab, setActiveTab] = useState<Tab>("overview")
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -712,7 +816,13 @@ export default function AllianceDetailPage() {
   const myMembership = alliance?.myMembership
   const canJoin = isConnected && isDrepRegistered && !myMembership
 
+  async function ensureJwtPage(): Promise<string | null> {
+    if (storedJwt && jwtHasDrepId(storedJwt)) return storedJwt
+    return await reauthenticate().catch(() => null)
+  }
+
   async function handleJoin() {
+    const jwt = await ensureJwtPage()
     if (!jwt) return
     setActionLoading(true)
     setActionError(null)
@@ -727,7 +837,9 @@ export default function AllianceDetailPage() {
   }
 
   async function handleLeave() {
-    if (!jwt || !confirm(t("alliance.leaveConfirm"))) return
+    if (!confirm(t("alliance.leaveConfirm"))) return
+    const jwt = await ensureJwtPage()
+    if (!jwt) return
     setActionLoading(true)
     setActionError(null)
     try {
@@ -860,7 +972,13 @@ export default function AllianceDetailPage() {
 
       {/* Tab content */}
       {activeTab === "overview" && <OverviewTab alliance={alliance} />}
-      {activeTab === "members" && <MembersTab allianceId={params.id} />}
+      {activeTab === "members" && (
+        <MembersTab
+          allianceId={params.id}
+          myMemberRole={myMembership?.role}
+          myDrepId={drepId}
+        />
+      )}
       {activeTab === "ga_positions" && (
         <GAPositionsTab
           allianceId={params.id}
