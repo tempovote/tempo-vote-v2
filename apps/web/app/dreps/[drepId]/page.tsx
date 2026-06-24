@@ -1,6 +1,7 @@
 "use client"
 
 import { use, useState, useEffect } from "react"
+import { marked } from "marked"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useWalletStore } from "@/store/wallet"
@@ -157,7 +158,11 @@ function AboutSection({ title, content, isLoading }: {
           <div className="h-3 bg-bg-elevated rounded animate-pulse w-4/5" />
         </div>
       ) : (
-        <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{content}</p>
+        // eslint-disable-next-line react/no-danger
+        <div
+          className="text-sm text-text-secondary leading-relaxed markdown-preview"
+          dangerouslySetInnerHTML={{ __html: marked.parse(content ?? "", { async: false }) as string }}
+        />
       )}
     </div>
   )
@@ -387,7 +392,8 @@ export default function DRepProfilePage({
         })
 
       let res = await doActivate(jwt)
-      if (res.status === 401) {
+      // 401 = token expired; 403 = token missing drepId claim — reauthenticate for both
+      if (res.status === 401 || res.status === 403) {
         const newJwt = await reauthenticate()
         res = await doActivate(newJwt)
       }
