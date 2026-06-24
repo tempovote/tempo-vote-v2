@@ -274,9 +274,13 @@ fun autoCloseExpiredProposals() {
             Alliances.selectAll().where { Alliances.id eq allianceId }.firstOrNull()
         } ?: continue
 
+        val votingEndsAt = row[AllianceProposals.votingEndsAt]
         val memberCount = transaction {
             AllianceMembers.selectAll()
-                .where { AllianceMembers.allianceId eq allianceId }
+                .where {
+                    (AllianceMembers.allianceId eq allianceId) and
+                    (AllianceMembers.joinedAt lessEq votingEndsAt)
+                }
                 .count().toInt()
         }
 
@@ -349,8 +353,12 @@ fun Route.allianceProposalRoutes() {
                         .firstOrNull() ?: return@mapNotNull null
 
                     val proposalId = row[AllianceProposals.id]
+                    val proposalVotingEndsAt = row[AllianceProposals.votingEndsAt]
                     val memberCount = AllianceMembers.selectAll()
-                        .where { AllianceMembers.allianceId eq allianceId }
+                        .where {
+                            (AllianceMembers.allianceId eq allianceId) and
+                            (AllianceMembers.joinedAt lessEq proposalVotingEndsAt)
+                        }
                         .count().toInt()
 
                     val votes = AllianceProposalVotes.selectAll()
@@ -414,12 +422,15 @@ fun Route.allianceProposalRoutes() {
                 val rows  = query.orderBy(AllianceProposals.createdAt, SortOrder.DESC)
                     .limit(limit).offset(offset).toList()
 
-                val memberCount = AllianceMembers.selectAll()
-                    .where { AllianceMembers.allianceId eq allianceId }
-                    .count().toInt()
-
                 val items = rows.map { row ->
                     val pid = row[AllianceProposals.id]
+                    val rowVotingEndsAt = row[AllianceProposals.votingEndsAt]
+                    val memberCount = AllianceMembers.selectAll()
+                        .where {
+                            (AllianceMembers.allianceId eq allianceId) and
+                            (AllianceMembers.joinedAt lessEq rowVotingEndsAt)
+                        }
+                        .count().toInt()
                     val tally = computeTally(pid, memberCount,
                         allianceRow[Alliances.vpCapPct], allianceRow[Alliances.quorumThreshold],
                         allianceRow[Alliances.approvalThresholdVp], allianceRow[Alliances.approvalThresholdCount])
@@ -458,8 +469,12 @@ fun Route.allianceProposalRoutes() {
                     .where { (AllianceProposals.id eq pid) and (AllianceProposals.allianceId eq allianceId) }
                     .firstOrNull() ?: return@transaction null
 
+                val pidVotingEndsAt = row[AllianceProposals.votingEndsAt]
                 val memberCount = AllianceMembers.selectAll()
-                    .where { AllianceMembers.allianceId eq allianceId }
+                    .where {
+                        (AllianceMembers.allianceId eq allianceId) and
+                        (AllianceMembers.joinedAt lessEq pidVotingEndsAt)
+                    }
                     .count().toInt()
 
                 val tally = computeTally(pid, memberCount,
