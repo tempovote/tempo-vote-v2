@@ -121,3 +121,32 @@ git push origin feature/[desc]   # sau đó tạo PR
 ```
 
 Conventional Commits: `feat` · `fix` · `refactor` · `style` · `chore` · `docs`
+
+## Supergraph Workflow (monorepo-aware)
+
+Plugin detect cả 2 stacks qua `bin/detect-project.sh`. `.supergraph-env` có 2 bộ command:
+
+| Var | Command | Khi dùng |
+|-----|---------|----------|
+| `TEST_CMD` | `pnpm test` | Thay đổi TS/TSX (apps/web, packages/*) |
+| `TEST_CMD_KOTLIN` | `./gradlew :apps:api:test` | Thay đổi .kt (apps/api) |
+| `TEST_CMD_ALL` | `bin/test-all.sh` | Trước merge — chạy cả 2 suite |
+| `LINT_CMD` | `pnpm lint && pnpm typecheck` | TS files |
+| `LINT_CMD_KOTLIN` | `./gradlew :apps:api:build` | .kt files (build = compilation check) |
+
+**Quy tắc chọn command** — đọc `git diff --name-only` trước:
+- Toàn bộ file thay đổi là `.kt` → dùng `TEST_CMD_KOTLIN` / `LINT_CMD_KOTLIN`
+- Toàn bộ file thay đổi là `.ts/.tsx` → dùng `TEST_CMD` / `LINT_CMD`
+- Mix cả 2 → dùng `TEST_CMD_ALL` (chạy cả hai)
+
+**TDD focused command cho Kotlin:**
+```bash
+# RED/GREEN — focused test một class
+./gradlew :apps:api:test --tests "vote.tempo.<package>.<ClassName>*"
+
+# Ví dụ:
+./gradlew :apps:api:test --tests "vote.tempo.cardano.TxBuilderTest*"
+./gradlew :apps:api:test --tests "vote.tempo.routes.AllianceProposalRoutesTest*"
+```
+
+**Chú ý:** Kotlin tests dùng Testcontainers (PostgreSQL) — cần Docker daemon đang chạy.
