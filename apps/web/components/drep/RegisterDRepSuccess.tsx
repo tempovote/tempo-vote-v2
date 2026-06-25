@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useT } from "@/i18n/useT"
 
 interface Props {
@@ -91,9 +92,9 @@ export default function RegisterDRepSuccess({
         >
           {t("drepWizard.successViewCardanoscan")}
         </a>
-        <a href="/dreps" className="btn-primary flex-1 text-center">
+        <Link href="/dreps" className="btn-primary flex-1 text-center">
           {t("drepWizard.successDrepListBtn")}
-        </a>
+        </Link>
       </div>
     </div>
   )

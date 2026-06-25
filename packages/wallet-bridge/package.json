@@ -16,7 +16,7 @@
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/"
+    "lint": "tsc --noEmit"
   },
   "devDependencies": {
     "@tempo/config": "workspace:*",

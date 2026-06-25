@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
 import { useWalletStore } from "@/store/wallet"
@@ -87,7 +88,7 @@ export default function RetireDRepPage() {
           <p className="text-text-secondary text-sm">
             {!hasCip95 ? t("drepWizard.cantProceedNoCip95") : t("drepWizard.cantProceedNotDrep")}
           </p>
-          <a href="/dreps" className="btn-outline inline-block">{t("drepWizard.cantProceedBackBtn")}</a>
+          <Link href="/dreps" className="btn-outline inline-block">{t("drepWizard.cantProceedBackBtn")}</Link>
         </div>
       </main>
     )
@@ -158,9 +159,9 @@ export default function RetireDRepPage() {
               >
                 {t("drepWizard.retireViewCardanoscan")}
               </a>
-              <a href="/" className="btn-primary flex-1 text-center">
+              <Link href="/" className="btn-primary flex-1 text-center">
                 {t("drepWizard.retireHomeBtn")}
-              </a>
+              </Link>
             </div>
           </div>
         )}
@@ -266,9 +267,9 @@ export default function RetireDRepPage() {
 
               {/* Actions */}
               <div className="flex gap-3 pt-1">
-                <a href="/dreps" className="btn-outline flex-1 text-center" aria-disabled={isLoading}>
+                <Link href="/dreps" className="btn-outline flex-1 text-center" aria-disabled={isLoading}>
                   {t("drepWizard.retireCancelBtn")}
-                </a>
+                </Link>
                 <button
                   className="flex-1 py-2.5 px-4 rounded-xl bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleRetire}

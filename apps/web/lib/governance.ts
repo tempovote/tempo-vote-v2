@@ -231,8 +231,17 @@ export function govActionIdToBech32(txHash: string, index: number): string {
   }
 }
 
+type ThresholdKey =
+  | "treasuryWithdrawals"
+  | "protocolParametersUpdate"
+  | "hardForkInitiation"
+  | "noConfidence"
+  | "updateCommittee"
+  | "newConstitution"
+  | "infoAction"
+
 // Static Conway-era vote thresholds (fraction, e.g. 0.67 = 67%)
-export const VOTE_THRESHOLDS: Record<string, { drep?: number; spo?: number; cc?: number }> = {
+export const VOTE_THRESHOLDS: Record<ThresholdKey, { drep?: number; spo?: number; cc?: number }> = {
   treasuryWithdrawals:      { drep: 0.67, cc: 0.60 },
   protocolParametersUpdate: { drep: 0.75, cc: 0.60 },
   hardForkInitiation:       { drep: 0.60, spo: 0.51, cc: 0.60 },

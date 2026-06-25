@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { marked } from "marked"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
@@ -404,9 +405,9 @@ export default function RegisterDRepPage() {
           <p className="text-text-secondary text-sm">
             {t("drepWizard.alreadyDrepDesc")}
           </p>
-          <a href="/dreps" className="btn-primary inline-block">
+          <Link href="/dreps" className="btn-primary inline-block">
             {t("drepWizard.viewDrepListBtn")}
-          </a>
+          </Link>
         </div>
       </main>
     )
