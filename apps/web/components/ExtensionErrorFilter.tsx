@@ -13,8 +13,9 @@ export function ExtensionErrorFilter() {
 
     const orig = console.error.bind(console)
     console.error = (...args: unknown[]) => {
-      const msg = String(args[0] ?? "")
-      // Eternl wallet internal DOM communication errors
+      const first = args[0]
+      const msg = (first instanceof Error ? first.message : String(first ?? "")).toLowerCase()
+      // Eternl wallet internal DOM communication errors ("dom:" or "DOM:")
       if (msg.startsWith("dom:")) return
       orig(...args)
     }
