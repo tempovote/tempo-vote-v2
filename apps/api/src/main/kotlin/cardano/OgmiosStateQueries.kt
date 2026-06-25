@@ -172,6 +172,9 @@ fun credentialHexToDrepIdCip105(credentialHex: String): String? =
 private const val HTTP_TIMEOUT_MS = 20_000L
 // delegateRepresentatives returns ~8 MB on mainnet (10k+ DReps) and takes ~2 min to download.
 private const val HEAVY_QUERY_TIMEOUT_MS = 300_000L
+// governanceProposals grows with the number of active votes — on mainnet with thousands of DRep
+// votes per proposal, the response can easily exceed 20 s. Use a 2-min cap like other large queries.
+private const val GOV_PROPOSALS_TIMEOUT_MS = 120_000L
 
 class OgmiosStateQueries(private val network: Network) {
 
@@ -203,7 +206,7 @@ class OgmiosStateQueries(private val network: Network) {
     }
 
     suspend fun getGovernanceProposals(): JsonElement {
-        return queryRaw("queryLedgerState/governanceProposals", buildJsonObject {})
+        return queryRaw("queryLedgerState/governanceProposals", buildJsonObject {}, GOV_PROPOSALS_TIMEOUT_MS)
     }
 
     /**

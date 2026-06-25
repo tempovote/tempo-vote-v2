@@ -32,14 +32,14 @@ import vote.tempo.routes.autoCloseExpiredProposals
 private val logger = KotlinLogging.logger("BackgroundPoller")
 
 private const val POLL_INTERVAL_MS        = 5 * 60 * 1_000L    // 5 min — Ogmios state refresh
-private const val QUERY_TIMEOUT_MS        = 420_000L            // 7 min cap — delegateRepresentatives alone takes ~2 min on mainnet (8 MB response)
+private const val QUERY_TIMEOUT_MS        = 600_000L            // 10 min cap — delegateRepresentatives takes ~2-3 min + governanceProposals up to 2 min on mainnet
 private const val MAX_BACKOFF_MS          = 30 * 60 * 1_000L   // 30 minutes max backoff
 private const val STARTUP_DELAY_MS        = 3_000L
 private const val WHALE_POLL_STARTUP_MS   = 5 * 60 * 1_000L        // 5 min — allow Ogmios first poll to warm drepDelegatorCounts
 private const val WHALE_POLL_INTERVAL_MS  = 2 * 60 * 60 * 1_000L   // 2 h — whale distribution changes slowly
 private const val WHALE_TOP_DREPS         = 20                       // candidates per network
 private const val WHALE_THRESHOLD         = 1_000_000_000_000L      // 1M ADA in lovelace
-private const val POOL_STAKE_STARTUP_MS   = 10 * 60 * 1_000L        // 10 min — wait for govActions cache to warm
+private const val POOL_STAKE_STARTUP_MS   = 2 * 60 * 1_000L         // 2 min — wait for govActions cache to warm
 private const val POOL_STAKE_INTERVAL_MS  = 8 * 60 * 60 * 1_000L   // 8 h — live stake changes slowly
 private const val DAPP_RANKING_STARTUP_MS  = 15_000L                // 15 s — warm DApp ranking soon after boot
 private const val DAPP_RANKING_INTERVAL_MS = 2 * 60 * 60 * 1_000L   // 2 h — TVL/volume/fees change slowly
@@ -109,7 +109,7 @@ fun Application.startBackgroundPoller() {
                 delay(POOL_STAKE_INTERVAL_MS)
             }
         }
-        logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 10 min)" }
+        logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 2 min)" }
     }
 
     // DApp ranking (DefiLlama) snapshot — network-agnostic (Cardano mainnet DeFi). Always runs:
