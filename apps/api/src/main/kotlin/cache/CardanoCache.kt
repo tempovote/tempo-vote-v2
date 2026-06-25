@@ -142,6 +142,15 @@ object CardanoCache {
         .build<String, JsonElement>()   // key: "cardano"
 
     /**
+     * Total live stake of all registered stake pools per network — used as SPO VP denominator.
+     * Refreshed by the Blockfrost pool stake indexer every 8 h alongside pool metadata.
+     * Key: network.name ("MAINNET" | "PREPROD").
+     */
+    val totalSPOStake = Caffeine.newBuilder()
+        .expireAfterWrite(8, TimeUnit.HOURS)
+        .build<String, Long>()
+
+    /**
      * VP (stake) map per network — credHex → lovelace. Written each main poll cycle so the
      * whale indexer (2 h schedule) can select candidates by VP in addition to delegator count.
      */

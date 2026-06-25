@@ -413,7 +413,8 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
             val rationalesMap = withContext(Dispatchers.IO) {
                 ChainIndexDao.buildRationalesMap(proposalPairs, network.name.lowercase())
             }
-            parseProposals(raw, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap)
+            val totalActiveSPOStake = CardanoCache.totalSPOStake.getIfPresent(network.name) ?: 0L
+            parseProposals(raw, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap, totalActiveSPOStake)
                 .also { CardanoCache.parsedGovActions.put(network.name, it) }
         }
 

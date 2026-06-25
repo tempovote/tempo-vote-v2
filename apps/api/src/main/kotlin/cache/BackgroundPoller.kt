@@ -18,6 +18,7 @@ import vote.tempo.cardano.DappRankingSnapshot
 import vote.tempo.cardano.fetchDappRankingSnapshot
 import vote.tempo.db.DappRankingDao
 import vote.tempo.cardano.fetchPoolInfoBlockfrost
+import vote.tempo.cardano.fetchTotalLiveStakeBlockfrost
 import vote.tempo.cardano.runPoolMetadataFetcher
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.parseProposals
@@ -197,11 +198,12 @@ private suspend fun pollNetwork(network: Network) {
             // Parse proposals and pre-warm the parsed cache so the first API request after
             // a poll cycle is served instantly without re-parsing the raw JSON.
             // Pool info: local DB only (idx_pool_metadata populated by Blockfrost pool stake indexer).
-            val spoPoolIds    = extractSPOPoolIds(gas)
-            val poolInfoMap   = buildPoolInfoMap(spoPoolIds, network)
+            val spoPoolIds           = extractSPOPoolIds(gas)
+            val poolInfoMap          = buildPoolInfoMap(spoPoolIds, network)
+            val totalActiveSPOStake  = CardanoCache.totalSPOStake.getIfPresent(network.name) ?: 0L
             // Rationale URLs: local chain index (VoteIndexer populated drep_votes.anchor_url).
             val rationalesMap = buildLocalRationalesMap(gas, network)
-            val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap)
+            val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap, totalActiveSPOStake)
             CardanoCache.parsedGovActions.put(network.name, parsed)
 
             // Persist snapshot to DB — marks disappeared proposals with final status
@@ -291,6 +293,14 @@ private suspend fun fetchAndIndexPoolStakes(networks: List<Network>) {
 
         if (indexed > 0) {
             logger.info { "Pool stake index [$network] upserted $indexed / ${poolIds.size} pools — voting_power refreshed" }
+        }
+
+        // Fetch total live stake for SPO VP denominator — one /network call per cycle
+        val totalStake = fetchTotalLiveStakeBlockfrost(network)
+        if (totalStake != null && totalStake > 0L) {
+            CardanoCache.totalSPOStake.put(network.name, totalStake)
+            CardanoCache.parsedGovActions.invalidate(network.name)
+            logger.info { "Pool stake index [$network] total live SPO stake: ${totalStake / 1_000_000} ADA" }
         }
     }
 }

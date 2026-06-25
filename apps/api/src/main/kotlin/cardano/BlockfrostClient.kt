@@ -107,6 +107,27 @@ suspend fun fetchPoolInfoBlockfrost(
 }
 
 /**
+ * Fetch total live stake delegated to all active pools from Blockfrost (`/network` → `stake.live`).
+ * Used as the denominator for SPO governance voting power percentages.
+ */
+suspend fun fetchTotalLiveStakeBlockfrost(network: Network): Long? {
+    val projectId = blockfrostProjectId(network) ?: return null
+    val base = blockfrostBaseUrl(network)
+    return runCatching {
+        withTimeout(10_000L) {
+            val resp = blockfrostHttp.get("$base/network") { header("project_id", projectId) }
+            if (!resp.status.isSuccess()) {
+                logger.warn { "Blockfrost GET /network → HTTP ${resp.status.value} [$network]" }
+                return@withTimeout null
+            }
+            val json = blockfrostJson.parseToJsonElement(resp.bodyAsText()).jsonObject
+            json["stake"]?.jsonObject?.get("live")?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+        }
+    }.onFailure { logger.warn { "Blockfrost fetchTotalLiveStake failed [$network]: ${it.message}" } }
+     .getOrNull()
+}
+
+/**
  * Fetch all delegators of a DRep from Blockfrost with their active stake amounts.
  * Paginates automatically (100 rows per page) until all delegators are fetched.
  *
