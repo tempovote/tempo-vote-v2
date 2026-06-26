@@ -98,7 +98,7 @@ fun Application.startBackgroundPoller() {
         logger.info { "Blockfrost whale indexer disabled — set BLOCKFROST_MAINNET_PROJECT_ID / BLOCKFROST_PREPROD_PROJECT_ID to enable" }
     }
 
-    // Blockfrost pool stake indexer: fetches live_stake + name/ticker for SPO pools
+    // Blockfrost pool stake indexer: fetches active_stake + name/ticker for SPO pools
     // that have voted on governance actions. Stores into idx_pool_metadata every 8 h.
     // Requires same Blockfrost project IDs — runs only if at least one key is configured.
     if (blockfrostNetworks.isNotEmpty()) {
@@ -285,7 +285,7 @@ private suspend fun fetchAndIndexPoolStakes(networks: List<Network>) {
                     poolIdHex    = info.poolIdHex,
                     name         = info.name,
                     ticker       = info.ticker,
-                    votingPower  = info.liveStake,
+                    votingPower  = info.activeStake,
                 )
             }
             indexed++

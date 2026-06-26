@@ -20,7 +20,7 @@ private val logger = KotlinLogging.logger("BlockfrostClient")
 /** Pool stake + metadata fetched from Blockfrost for a single pool. */
 data class BlockfrostPoolInfo(
     val poolIdHex: String,       // 28-byte pool key hash in hex (from Blockfrost `hex` field)
-    val liveStake: Long,         // live delegated stake in lovelace (= governance voting power)
+    val activeStake: Long,       // active stake (epoch snapshot) in lovelace (= governance voting power)
     val name: String?,
     val ticker: String?,
 )
@@ -53,7 +53,7 @@ private fun blockfrostBaseUrl(network: Network) = when (network) {
 /**
  * Fetch pool live stake and metadata for a single SPO from Blockfrost.
  * Makes two calls:
- *   1. GET /pools/{poolId}          → hex (pool key hash), live_stake
+ *   1. GET /pools/{poolId}          → hex (pool key hash), active_stake
  *   2. GET /pools/{poolId}/metadata → name, ticker  (404 = no metadata registered)
  *
  * Returns null if Blockfrost is not configured or the pool call fails.
@@ -78,7 +78,7 @@ suspend fun fetchPoolInfoBlockfrost(
             }
             val statsJson  = blockfrostJson.parseToJsonElement(statsResp.bodyAsText()).jsonObject
             val poolIdHex  = statsJson["hex"]?.jsonPrimitive?.contentOrNull ?: return@withTimeout null
-            val liveStake  = statsJson["live_stake"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+            val activeStake = statsJson["active_stake"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
 
             // ── 2. Pool metadata (name + ticker) ──────────────────────────────
             val metaResp = blockfrostHttp.get("$base/pools/$poolIdBech32/metadata") {
@@ -99,7 +99,7 @@ suspend fun fetchPoolInfoBlockfrost(
                 ticker = null
             }
 
-            BlockfrostPoolInfo(poolIdHex = poolIdHex, liveStake = liveStake, name = name, ticker = ticker)
+            BlockfrostPoolInfo(poolIdHex = poolIdHex, activeStake = activeStake, name = name, ticker = ticker)
         }
     }.onFailure { e ->
         logger.warn { "Blockfrost fetchPoolInfo failed for $poolIdBech32 [$network]: ${e.message}" }
@@ -107,7 +107,7 @@ suspend fun fetchPoolInfoBlockfrost(
 }
 
 /**
- * Fetch total live stake delegated to all active pools from Blockfrost (`/network` → `stake.live`).
+ * Fetch total active stake delegated to all active pools from Blockfrost (`/network` → `stake.active`).
  * Used as the denominator for SPO governance voting power percentages.
  */
 suspend fun fetchTotalLiveStakeBlockfrost(network: Network): Long? {
@@ -121,7 +121,7 @@ suspend fun fetchTotalLiveStakeBlockfrost(network: Network): Long? {
                 return@withTimeout null
             }
             val json = blockfrostJson.parseToJsonElement(resp.bodyAsText()).jsonObject
-            json["stake"]?.jsonObject?.get("live")?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+            json["stake"]?.jsonObject?.get("active")?.jsonPrimitive?.contentOrNull?.toLongOrNull()
         }
     }.onFailure { logger.warn { "Blockfrost fetchTotalLiveStake failed [$network]: ${it.message}" } }
      .getOrNull()
