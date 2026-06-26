@@ -235,8 +235,12 @@ private fun indexVote(
                 .takeIf { it.length == 56 } ?: return false
             hex to "drep"
         }
-        "constitutionalCommitteeMember" -> {
-            val hex = issuer["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
+        // Ogmios uses "constitutionalCommittee" here (same enum as queryLedgerState/governanceProposals),
+        // not "constitutionalCommitteeMember" — the latter silently dropped every CC vote.
+        "constitutionalCommittee" -> {
+            val raw = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            // Hot credential hash is 56-hex; tolerate a 2-char type prefix (58) defensively.
+            val hex = (if (raw.length == 58) raw.substring(2) else raw).takeIf { it.length == 56 } ?: return false
             hex to "cc"
         }
         "stakePoolOperator" -> {
