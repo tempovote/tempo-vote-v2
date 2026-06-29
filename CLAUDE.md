@@ -121,3 +121,45 @@ git push origin feature/[desc]   # sau đó tạo PR
 ```
 
 Conventional Commits: `feat` · `fix` · `refactor` · `style` · `chore` · `docs`
+
+## Supergraph Workflow (monorepo-aware)
+
+Plugin detect cả 2 stacks qua `bin/detect-project.sh`. `.supergraph-env` có 2 bộ command:
+
+| Var | Command | Khi dùng |
+|-----|---------|----------|
+| `TEST_CMD` | `pnpm test` | Thay đổi TS/TSX (apps/web, packages/*) |
+| `TEST_CMD_KOTLIN` | `./gradlew :apps:api:test` | Thay đổi .kt (apps/api) |
+| `TEST_CMD_ALL` | `bin/test-all.sh` | Trước merge — chạy cả 2 suite |
+| `LINT_CMD` | `pnpm lint && pnpm typecheck` | TS files |
+| `LINT_CMD_KOTLIN` | `./gradlew :apps:api:build` | .kt files (build = compilation check) |
+
+**Quy tắc chọn command** — đọc `git diff --name-only` trước:
+- Toàn bộ file thay đổi là `.kt` → dùng `TEST_CMD_KOTLIN` / `LINT_CMD_KOTLIN`
+- Toàn bộ file thay đổi là `.ts/.tsx` → dùng `TEST_CMD` / `LINT_CMD`
+- Mix cả 2 → dùng `TEST_CMD_ALL` (chạy cả hai)
+
+**TDD focused command cho Kotlin:**
+```bash
+# RED/GREEN — focused test một class
+./gradlew :apps:api:test --tests "vote.tempo.<package>.<ClassName>*"
+
+# Ví dụ:
+./gradlew :apps:api:test --tests "vote.tempo.cardano.TxBuilderTest*"
+./gradlew :apps:api:test --tests "vote.tempo.routes.AllianceProposalRoutesTest*"
+```
+
+**Chú ý:** Kotlin tests dùng Testcontainers (PostgreSQL) — cần Docker daemon đang chạy.
+
+## ⚠️ Quy tắc bắt buộc — Restart API server
+
+**KHÔNG BAO GIỜ** tự ý restart API server (`./gradlew :apps:api:run`, `kill`, `pkill`, `lsof -ti:8080 | xargs kill`) mà không có xác nhận rõ ràng từ người dùng.
+
+API đang chạy VoteIndexer stream toàn bộ blockchain — restart mất toàn bộ tiến độ sync nếu chưa có checkpoint tại điểm hiện tại.
+
+**Trước khi restart phải dùng `AskUserQuestion` để:**
+1. Thông báo lý do cần restart
+2. Nêu rõ hệ quả (mất sync progress, downtime, v.v.)
+3. Hỏi xác nhận có muốn restart không
+
+Quy tắc này áp dụng cho mọi hành động dừng/restart process API, kể cả gián tiếp (thay đổi port, kill process chiếm port 8080).
