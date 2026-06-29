@@ -14,6 +14,10 @@ export function useCommunity(drepId: string, network: string) {
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(() => {
+    if (!drepId) {
+      setIsLoading(false)
+      return () => {}
+    }
     let cancelled = false
     setIsLoading(true)
     setError(null)

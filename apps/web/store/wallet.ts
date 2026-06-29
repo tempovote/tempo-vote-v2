@@ -74,7 +74,7 @@ const initialState: WalletState = {
   error: null,
   walletBalance: null,
   jwt: null,
-  selectedNetwork: "mainnet",
+  selectedNetwork: (process.env.NEXT_PUBLIC_DEFAULT_NETWORK as "mainnet" | "preprod") ?? "mainnet",
   walletModalOpen: false,
 }
 
