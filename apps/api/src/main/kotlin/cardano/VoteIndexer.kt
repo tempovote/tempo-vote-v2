@@ -125,11 +125,14 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
                     val blockHash = block["id"]?.jsonPrimitive?.contentOrNull ?: ""
                     blocksProcessed++
 
-                    // Pre-Conway progress log — fires every 60s regardless of era
+                    // Pre-Conway progress log + checkpoint — fires every 60s.
+                    // Saving a real checkpoint here lets findIntersect resume from this
+                    // slot on restart instead of re-streaming from genesis.
                     if (slot < conwayStartSlot && blockHash.isNotEmpty()) {
                         val now = System.currentTimeMillis()
                         if (now - lastCheckpointMs >= 60_000) {
                             lastCheckpointMs = now
+                            saveCheckpoint(network, slot, blockHash)
                             logger.info {
                                 "VoteIndexer [$network] pre-Conway slot=$slot blocks=$blocksProcessed " +
                                 "(target=$conwayStartSlot, ${((slot.toDouble() / conwayStartSlot) * 100).toInt()}%)"

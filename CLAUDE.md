@@ -150,3 +150,16 @@ Plugin detect cả 2 stacks qua `bin/detect-project.sh`. `.supergraph-env` có 2
 ```
 
 **Chú ý:** Kotlin tests dùng Testcontainers (PostgreSQL) — cần Docker daemon đang chạy.
+
+## ⚠️ Quy tắc bắt buộc — Restart API server
+
+**KHÔNG BAO GIỜ** tự ý restart API server (`./gradlew :apps:api:run`, `kill`, `pkill`, `lsof -ti:8080 | xargs kill`) mà không có xác nhận rõ ràng từ người dùng.
+
+API đang chạy VoteIndexer stream toàn bộ blockchain — restart mất toàn bộ tiến độ sync nếu chưa có checkpoint tại điểm hiện tại.
+
+**Trước khi restart phải dùng `AskUserQuestion` để:**
+1. Thông báo lý do cần restart
+2. Nêu rõ hệ quả (mất sync progress, downtime, v.v.)
+3. Hỏi xác nhận có muốn restart không
+
+Quy tắc này áp dụng cho mọi hành động dừng/restart process API, kể cả gián tiếp (thay đổi port, kill process chiếm port 8080).
