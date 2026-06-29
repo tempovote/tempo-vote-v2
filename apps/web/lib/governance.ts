@@ -153,11 +153,14 @@ function buildIpfsGateways(): string[] {
   const base = [
     "https://gateway.pinata.cloud/ipfs/",
     "https://ipfs.io/ipfs/",
-    "https://dweb.link/ipfs/",
     "https://w3s.link/ipfs/",
-    "https://nftstorage.link/ipfs/",
+    "https://4everland.io/ipfs/",
   ]
-  return pinata ? [`${pinata}/ipfs/`, ...base] : base
+  // Pinata private gateway goes first; avoid duplicate if same as default public gateway
+  if (pinata && pinata !== "https://gateway.pinata.cloud") {
+    return [`${pinata}/ipfs/`, ...base]
+  }
+  return base
 }
 
 const IPFS_GATEWAYS = buildIpfsGateways()
