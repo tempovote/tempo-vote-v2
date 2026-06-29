@@ -21,8 +21,6 @@ fun Network.fromNetworkId(networkId: Int): Network =
  * This single BackendService is sufficient for QuickTxBuilder.
  */
 fun getBackendService(network: Network): BackendService {
-    // KupmiosBackendService uses OkHttp (HTTP) for Ogmios — pass https:// directly.
-    // OgmiosStateQueries.kt has its own toWsUrl() for the native Ktor WebSocket client.
     val ogmiosUrl = when (network) {
         Network.PREPROD -> System.getenv("OGMIOS_PREPROD_URL") ?: error("OGMIOS_PREPROD_URL not set")
         Network.MAINNET -> System.getenv("OGMIOS_MAINNET_URL") ?: error("OGMIOS_MAINNET_URL not set")
@@ -31,7 +29,12 @@ fun getBackendService(network: Network): BackendService {
         Network.PREPROD -> System.getenv("KUPO_PREPROD_URL") ?: error("KUPO_PREPROD_URL not set")
         Network.MAINNET -> System.getenv("KUPO_MAINNET_URL") ?: error("KUPO_MAINNET_URL not set")
     }
-    return ConwayPatchBackendService(KupmiosBackendService(ogmiosUrl, kupoUrl))
+    // KupmiosBackendService uses OkHttp which requires http(s)://.
+    // OGMIOS_*_URL may be ws(s):// — convert so OkHttp accepts it.
+    val ogmiosHttpUrl = ogmiosUrl
+        .replaceFirst("wss://", "https://")
+        .replaceFirst("ws://", "http://")
+    return ConwayPatchBackendService(KupmiosBackendService(ogmiosHttpUrl, kupoUrl))
 }
 
 fun networkFromString(s: String): Network = when (s.lowercase()) {
