@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import type { GovernanceAction } from "@tempo/types"
+import type { GovernanceAction, TreasuryWithdrawalDetails } from "@tempo/types"
 import { useWalletStore } from "@/store/wallet"
 import { useMyVote } from "@/hooks/useMyVote"
 import type { MyVote } from "@/hooks/useMyVote"
@@ -134,7 +134,7 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
           <ActionIdChip txHash={action.txHash} index={action.index} size="sm" />
         </div>
 
-        {/* Meta — single row: epoch · status · type */}
+        {/* Meta — single row: epoch · status · type [· requested amount] */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <span className="text-text-secondary">
             {t("governance.card.expires")}{" "}
@@ -146,6 +146,19 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
           <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-bg-elevated text-text-secondary border border-border-subtle">
             {t(`governance.type.${normalizeActionType(action.actionType)}`)}
           </span>
+          {normalizeActionType(action.actionType) === "treasuryWithdrawals" && action.details != null && (() => {
+            const { withdrawals } = action.details as TreasuryWithdrawalDetails
+            const total = (withdrawals ?? []).reduce((s, w) => s + w.lovelace, 0)
+            if (total === 0) return null
+            return (
+              <>
+                <span className="text-text-muted">·</span>
+                <span className="text-text-primary font-medium text-xs">
+                  {(total / 1_000_000).toLocaleString()} ADA
+                </span>
+              </>
+            )
+          })()}
         </div>
 
         {/* Voting Results */}
