@@ -108,6 +108,8 @@ Plugin detect cả 2 stacks qua `bin/detect-project.sh`. `.supergraph-env` có 2
 - Toàn bộ file thay đổi là `.ts/.tsx` → dùng `TEST_CMD` / `LINT_CMD`
 - Mix cả 2 → dùng `TEST_CMD_ALL` (chạy cả hai)
 
+**⚠️ Tránh false positive do stale build cache:** `packages/types`, `packages/wallet-bridge`, `packages/ui` build ra `dist/` qua tsup — **gitignored**, không commit. `typecheck`/`build` trong `turbo.json` có `dependsOn: ["^build"]` (tự rebuild package phụ thuộc trước). Nếu chạy trực tiếp `pnpm --filter <pkg> typecheck` (bỏ qua Turborepo) mà không rebuild package phụ thuộc trước, `dist/` cũ có thể thiếu type mới nhất → báo lỗi type "giả". Luôn dùng `pnpm typecheck` ở root, hoặc rebuild trước bằng `pnpm --filter @tempo/types build` khi gặp lỗi type khó hiểu ở package tiêu thụ.
+
 **TDD focused command cho Kotlin:**
 ```bash
 # RED/GREEN — focused test một class
