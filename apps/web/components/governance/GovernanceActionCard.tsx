@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import type { GovernanceAction } from "@tempo/types"
+import type { GovernanceAction, TreasuryWithdrawalDetails } from "@tempo/types"
 import { useWalletStore } from "@/store/wallet"
 import { useMyVote } from "@/hooks/useMyVote"
 import type { MyVote } from "@/hooks/useMyVote"
@@ -147,13 +147,8 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
             {t(`governance.type.${normalizeActionType(action.actionType)}`)}
           </span>
           {normalizeActionType(action.actionType) === "treasuryWithdrawals" && action.details != null && (() => {
-            const d = action.details as Record<string, unknown>
-            const raw = d.withdrawals
-            const rows: { lovelace: number }[] = Array.isArray(raw)
-              ? (raw as { lovelace?: number }[]).map((w) => ({ lovelace: w.lovelace ?? 0 }))
-              : Object.values((raw ?? {}) as Record<string, { ada?: { lovelace?: number } }>)
-                  .map((v) => ({ lovelace: v?.ada?.lovelace ?? 0 }))
-            const total = rows.reduce((s, w) => s + w.lovelace, 0)
+            const { withdrawals } = action.details as TreasuryWithdrawalDetails
+            const total = (withdrawals ?? []).reduce((s, w) => s + w.lovelace, 0)
             if (total === 0) return null
             return (
               <>
