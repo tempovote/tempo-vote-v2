@@ -13,7 +13,11 @@ export function useTx() {
    * Full flow: build (backend) → sign (wallet) → submit (backend)
    * Returns txHash on success, throws on error.
    */
-  async function submitTx(txType: BuildTxRequest["txType"], params: Omit<BuildTxRequest, "txType" | "utxos" | "changeAddress" | "rewardAddress" | "network">): Promise<string> {
+  async function submitTx(
+    txType: BuildTxRequest["txType"],
+    params: Omit<BuildTxRequest, "txType" | "utxos" | "changeAddress" | "rewardAddress" | "network">,
+    token?: string,
+  ): Promise<string> {
     if (!api) throw new Error("Wallet not connected")
 
     // 1. Collect wallet data needed by backend to build tx
@@ -45,9 +49,12 @@ export function useTx() {
       ...params,
     }
 
+    const buildHeaders: Record<string, string> = { "Content-Type": "application/json" }
+    if (token) buildHeaders["Authorization"] = `Bearer ${token}`
+
     const buildRes = await fetch(`${API_URL}/tx/build`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: buildHeaders,
       body: JSON.stringify(buildReq),
     })
 

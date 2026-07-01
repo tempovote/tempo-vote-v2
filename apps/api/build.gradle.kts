@@ -28,7 +28,12 @@ fun loadDotEnv(): Map<String, String> {
         .filter { it.isNotBlank() && !it.startsWith("#") && "=" in it }
         .associate { line ->
             val idx = line.indexOf("=")
-            line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+            val key = line.substring(0, idx).trim()
+            val raw = line.substring(idx + 1).trim()
+            val value = if ((raw.startsWith('"') && raw.endsWith('"')) ||
+                            (raw.startsWith('\'') && raw.endsWith('\'')))
+                raw.substring(1, raw.length - 1) else raw
+            key to value
         }
 }
 

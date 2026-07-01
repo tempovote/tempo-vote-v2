@@ -15,8 +15,10 @@ import com.bloxbean.cardano.client.plutus.spec.PlutusV3Script
 import com.bloxbean.cardano.client.plutus.spec.Redeemer
 import com.bloxbean.cardano.client.plutus.spec.RedeemerTag
 import com.bloxbean.cardano.client.plutus.util.ScriptDataHashGenerator
+import com.bloxbean.cardano.client.api.model.Utxo
 import com.bloxbean.cardano.client.quicktx.AbstractTx
 import com.bloxbean.cardano.client.quicktx.QuickTxBuilder
+import com.bloxbean.cardano.client.quicktx.ScriptTx
 import com.bloxbean.cardano.client.quicktx.Tx
 import com.bloxbean.cardano.client.spec.Era
 import com.bloxbean.cardano.client.transaction.spec.TransactionInput
@@ -47,11 +49,17 @@ import com.bloxbean.cardano.client.transaction.spec.governance.PoolVotingThresho
 import com.bloxbean.cardano.client.spec.Rational
 import vote.tempo.routes.ProtocolParamUpdateItem
 import vote.tempo.routes.VoteItem
+import java.util.UUID
 import com.bloxbean.cardano.client.transaction.spec.ProtocolVersion
 import com.bloxbean.cardano.client.transaction.spec.Withdrawal
 import com.bloxbean.cardano.client.spec.UnitInterval
 import com.bloxbean.cardano.client.util.HexUtil
+import com.bloxbean.cardano.client.api.ScriptSupplier
+import com.bloxbean.cardano.client.function.TxBuilder as CardanoTxBuilder
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.math.BigInteger
+
+private val txBuilderLogger = KotlinLogging.logger("TxBuilder")
 
 /**
  * TxBuilder — wraps cardano-client-lib QuickTx API for governance transactions.
@@ -87,12 +95,17 @@ class TxBuilder(private val network: Network) {
         anchorUrl: String,
         anchorDataHash: String,
         selfDelegate: Boolean = false,
+        registerStakeKey: Boolean = false,
     ): String {
         val anchor = Anchor(anchorUrl, HexUtil.decodeHexString(anchorDataHash))
         val drepCredential = drepIdToCredential(drepId)
 
         var tx = Tx().registerDRep(drepCredential, anchor)
         if (selfDelegate) {
+            // Stake key must be registered before voting power can be delegated.
+            // registerStakeKey=true means the key is not yet on-chain — include
+            // StakeRegistration cert in the same TX (ledger processes certs in order).
+            if (registerStakeKey) tx = tx.registerStakeAddress(rewardAddress)
             val selfDrep = LegacyDRepId.toDrep(drepId, DRepType.ADDR_KEYHASH)
             tx = tx.delegateVotingPowerTo(rewardAddress, selfDrep)
         }
@@ -615,6 +628,278 @@ class TxBuilder(private val network: Network) {
             .build()
         val tx = Tx().createProposal(action, rewardAddress, anchor).from(changeAddress)
         return buildUnsigned(tx, changeAddress)
+    }
+
+    // -------------------------------------------------------------------------
+    // Alliance treasury functions
+    // -------------------------------------------------------------------------
+
+    /**
+     * Build an unsigned ALLIANCE_TREASURY_CONTRIBUTE TX.
+     * Pays ADA to the shared treasury script address with an inline TreasuryDatum
+     * so the treasury validator can identify which alliance owns the UTXO.
+     */
+    fun buildAllianceTreasuryContribute(
+        changeAddress: String,
+        allianceId: UUID,
+        amountLovelace: Long,
+    ): String {
+        val datum = FinalizationTxSubmitter.buildTreasuryDatum(allianceId)
+        val treasuryAddr = AllianceScripts.treasuryAddress(network)
+        val tx = Tx()
+            .payToContract(treasuryAddr, Amount.lovelace(BigInteger.valueOf(amountLovelace)), datum)
+            .from(changeAddress)
+        return buildUnsigned(tx, changeAddress)
+    }
+
+    /**
+     * Build an unsigned ALLIANCE_WITHDRAW TX.
+     * Spends a treasury UTXO using the treasury validator.
+     * Requires:
+     *  - treasuryUtxo{TxHash,Index,Lovelace}: the specific UTXO to spend
+     *  - finalization{TxHash,TxIndex}: reference input with ProposalResult datum
+     *  - executableAtMs: POSIX ms from the finalization datum (for validity range lower bound)
+     *  - collateral: wallet ADA-only UTxO forfeited if script fails
+     */
+    suspend fun buildAllianceWithdraw(
+        changeAddress: String,
+        collateral: List<String>,
+        allianceId: UUID,
+        proposalId: UUID,
+        treasuryUtxoTxHash: String,
+        treasuryUtxoIndex: Int,
+        treasuryUtxoLovelace: Long,
+        treasuryUtxoAddress: String? = null,
+        finalizationTxHash: String,
+        finalizationTxIndex: Int,
+        recipientAddress: String,
+        amountLovelace: Long,
+        executableAtMs: Long,
+    ): String {
+        val currentTreasuryAddr = AllianceScripts.treasuryAddress(network)
+        val v1TreasuryAddr      = AllianceScripts.treasuryV1Address(network)
+
+        // Determine which script to attach based on the UTxO's actual address.
+        // The frontend passes treasuryUtxoAddress from the treasury balance endpoint, which
+        // already resolves to the correct address for the alliance (V1 or V2).
+        // If not supplied, fall back to current address (new alliances always use V2).
+        val utxoAddress = treasuryUtxoAddress ?: currentTreasuryAddr
+        val scriptToAttach = when (utxoAddress) {
+            v1TreasuryAddr -> AllianceScripts.treasuryV1Script()
+            else           -> AllianceScripts.treasuryScript()
+        }
+
+        val datum    = FinalizationTxSubmitter.buildTreasuryDatum(allianceId)
+        val redeemer = buildExecuteRedeemer(proposalId)
+
+        // Include the inline datum so QuickTxBuilder's additionalUtxo for evaluateScriptCost
+        // has it — the Aiken validator does `expect Some(td) = datum` which needs the datum.
+        val treasuryUtxo = Utxo.builder()
+            .txHash(treasuryUtxoTxHash)
+            .outputIndex(treasuryUtxoIndex)
+            .address(utxoAddress)
+            .amount(listOf(Amount.lovelace(BigInteger.valueOf(treasuryUtxoLovelace))))
+            .inlineDatum(datum.serializeToHex())
+            .build()
+
+        // Change from the treasury UTxO MUST go back to the treasury contract, NOT to the
+        // executor's wallet. Fee comes from the executor's wallet via Tx().from(changeAddress).
+        // Always send change to the CURRENT treasury address (migrating V1 funds to V2).
+        val treasuryChangeLovelace = treasuryUtxoLovelace - amountLovelace
+
+        // The treasury UTxO carries an INLINE datum (set above via .inlineDatum). Use the
+        // 2-arg collectFrom so the datum is NOT also added to the witness set: a spent input
+        // with an inline datum must resolve its datum from the output, never the witness list.
+        // The 3-arg overload would append it to plutus_data → ledger error 3112 ExtraneousDatums.
+        val scriptTx = ScriptTx()
+            .collectFrom(treasuryUtxo, redeemer)
+            .payToAddress(recipientAddress, Amount.lovelace(BigInteger.valueOf(amountLovelace)))
+            .also { stx ->
+                // Return excess to the SAME treasury address the UTxO was spent from.
+                // The Aiken validator checks: out.address == own_input.output.address.
+                // V1 UTxOs must return change to V1 address, V2 to V2 — never cross-address.
+                if (treasuryChangeLovelace >= 1_500_000L) {
+                    stx.payToContract(
+                        utxoAddress,
+                        Amount.lovelace(BigInteger.valueOf(treasuryChangeLovelace)),
+                        datum,
+                    )
+                }
+            }
+            .attachSpendingValidator(scriptToAttach)
+
+        val tx = Tx().from(changeAddress)
+
+        // Pre-compute validity slots before build() so they are set in the TX body.
+        // QuickTxBuilder.validFrom/validTo() includes them in the transaction before
+        // its internal evaluateTx call, which is needed for the timelock check.
+        //
+        // validFrom (executableAtSlot): The Aiken script checks
+        //   posix_time(validFrom_slot) >= fin.executable_at_ms.
+        // posixMsToSlot uses the tip slot which always lags real time by 10-120s on
+        // preprod/mainnet. For a past executableAtMs this lag makes the computed slot
+        // map to a POSIX time *before* executable_at_ms → 3012 error.
+        // Fix: use currentTipSlot - 120 (≈2 min before tip). Since the timelock is
+        // always ≥1 hour, executableAtMs is ≥1 hour in the past when the user withdraws,
+        // so posix_time(tipSlot - 120) >> executableAtMs. ✓
+        val stateQueries = OgmiosStateQueries(network)
+        val currentTipSlot = stateQueries.getCurrentTipSlot()
+        val executableAtSlot = currentTipSlot - 120L
+        val ttlSlot = stateQueries.posixMsToSlot(System.currentTimeMillis() + 4 * 3600 * 1000L)
+        txBuilderLogger.warn { "AllianceWithdraw: executableAtMs=$executableAtMs executableAtSlot=$executableAtSlot ttlSlot=$ttlSlot currentTip=$currentTipSlot" }
+
+        // Build order inside QuickTxBuilder (confirmed via bytecode):
+        //   1. AbstractTx builders → lambda$_build$3 calls evaluateScriptCost #1 (no ref input yet,
+        //      fails with 3012 from Ogmios, SUPPRESSED by ignoreScriptCostEvaluationError)
+        //   2. preBalanceTrasformer → our hook runs HERE, adds finalization ref input to TX body
+        //   3. ReferenceScriptResolver → scans tx.body.referenceInputs, fetches each UTxO, calls
+        //      scriptSupplier.getScript(). Without a scriptSupplier QuickTxBuilder(BackendService)
+        //      leaves it null → NPE. We supply a no-op ScriptSupplier returning empty so the
+        //      finalization data ref input doesn't crash (it has no embedded reference script).
+        //   4. ScriptBalanceTxProviders.balanceTx → evaluateScriptCost #2 (ref input now present,
+        //      script evaluates successfully, real ExUnits returned)
+        //   5. postBalanceTrasformer
+        val finalizationRefInput = TransactionInput.builder()
+            .transactionId(finalizationTxHash)
+            .index(finalizationTxIndex)
+            .build()
+
+        val transaction = try {
+            QuickTxBuilder(backendService)
+                .compose(scriptTx, tx)
+                .feePayer(changeAddress)
+                .validFrom(executableAtSlot)
+                .validTo(ttlSlot)
+                .ignoreScriptCostEvaluationError(true)
+                .preBalanceTx(CardanoTxBuilder { _, t ->
+                    val refs = t.body.referenceInputs?.toMutableList() ?: mutableListOf()
+                    if (refs.none { it.transactionId == finalizationTxHash && it.index == finalizationTxIndex }) {
+                        refs.add(finalizationRefInput)
+                    }
+                    t.body.referenceInputs = refs
+                    txBuilderLogger.warn { "preBalanceTx: injected finalization ref $finalizationTxHash#$finalizationTxIndex" }
+                })
+                // ReferenceScriptResolver runs after preBalanceTx and calls scriptSupplier.getScript()
+                // for every UTxO in tx.body.referenceInputs. QuickTxBuilder(BackendService) leaves
+                // scriptSupplier=null → NPE. Provide a no-op: the finalization UTxO is a data
+                // reference, not a reference script UTxO; the treasury script is attached inline.
+                .withScriptSupplier(ScriptSupplier { java.util.Optional.empty() })
+                .build()
+                .also { txBuilderLogger.warn { "build() succeeded inputs=${it.body.inputs?.size} outputs=${it.body.outputs?.size}" } }
+        } catch (e: Exception) {
+            txBuilderLogger.warn(e) { "build() THREW ${e.javaClass.simpleName}: ${e.message?.take(300)}" }
+            throw e
+        }
+
+        // Ensure finalization ref input is in the TX (preBalanceTx already added it, but
+        // re-check in case the body was replaced by a later builder step).
+        val refInputs = transaction.body.referenceInputs?.toMutableList() ?: mutableListOf()
+        if (refInputs.none { it.transactionId == finalizationTxHash && it.index == finalizationTxIndex }) {
+            refInputs.add(finalizationRefInput)
+        }
+        transaction.body.referenceInputs = refInputs
+
+        // Attach collateral inputs (required for Plutus spending TX).
+        // After overriding collateral, clear totalCollateral and collateralReturn so the ledger
+        // does not see a stale mismatch (Ogmios error 3135). totalCollateral is optional in Conway;
+        // collateralReturn is only meaningful when splitting a large collateral UTxO.
+        val collateralInputs = collateral.mapNotNull { utxoCbor ->
+            runCatching {
+                val items = CborDecoderLib(ByteArrayInputStream(HexUtil.decodeHexString(utxoCbor))).decode()
+                val utxoArr = items.first() as CborArray
+                val inputArr = utxoArr.dataItems[0] as CborArray
+                val txHash2 = HexUtil.encodeHexString((inputArr.dataItems[0] as CborByteString).bytes)
+                val txIndex2 = (inputArr.dataItems[1] as CborUInt).value.toInt()
+                TransactionInput.builder().transactionId(txHash2).index(txIndex2).build()
+            }.getOrNull()
+        }
+        if (collateralInputs.isNotEmpty()) {
+            transaction.body.collateral = collateralInputs
+        } else {
+            transaction.body.inputs?.firstOrNull()?.let { transaction.body.collateral = listOf(it) }
+        }
+        // Clear stale totalCollateral / collateralReturn set by QuickTxBuilder for its
+        // originally-selected collateral. Both fields are optional; removing them avoids
+        // the error-3135 mismatch without affecting script execution or collateral semantics.
+        transaction.body.totalCollateral = null
+        transaction.body.collateralReturn = null
+
+        // Log treasury input position for diagnostics. QuickTxBuilder already sorted inputs
+        // and set the correct redeemer index — no need to recompute or override it here.
+        val sortedInputs = transaction.body.inputs
+            ?.sortedWith(compareBy({ it.transactionId }, { it.index }))
+            ?: emptyList()
+        val spendIndex = sortedInputs.indexOfFirst {
+            it.transactionId == treasuryUtxoTxHash && it.index == treasuryUtxoIndex
+        }.takeIf { it >= 0 } ?: 0
+        val spendRedeemer = transaction.witnessSet?.redeemers?.firstOrNull { it.tag == RedeemerTag.Spend }
+        txBuilderLogger.warn {
+            "AllianceWithdraw TX built: " +
+            "treasury=${treasuryUtxoTxHash.take(16)}#$treasuryUtxoIndex " +
+            "ref=${finalizationTxHash.take(16)}#$finalizationTxIndex " +
+            "script=${if (utxoAddress == v1TreasuryAddr) "V1" else "V2"} " +
+            "executableSlot=$executableAtSlot " +
+            "spendIndex=$spendIndex redeemerIndex=${spendRedeemer?.index} " +
+            "exUnits=${spendRedeemer?.exUnits?.let { "{${it.mem},${it.steps}}" } ?: "none"} " +
+            "fee=${transaction.body.fee}"
+        }
+
+        // Fix scriptDataHash: cardano-client-lib 0.7.0-beta1 ScriptDataHashGenerator encodes the
+        // datums as a PLAIN CBOR array when hashing, but the Conway witness set serializes them as
+        // a tag-258 SET. The mismatch makes QuickTxBuilder set a wrong body.scriptDataHash, so the
+        // ledger rejects with ScriptIntegrityHashMismatch (and Ogmios v6.14 can't serialize that
+        // error → opaque HTTP 500 "Something went wrong"). Recompute it correctly here.
+        // Only ALLIANCE_WITHDRAW is affected because it is our only script TX carrying a datum.
+        recomputeConwayScriptDataHash(transaction)
+
+        return transaction.serializeToHex()
+    }
+
+    /**
+     * Recompute body.scriptDataHash the way the Conway ledger does:
+     *   blake2b256( redeemers(map) || datums(tag-258 set) || languageViews )
+     * Overwrites the value set by QuickTxBuilder, which hashes datums as a plain array (lib bug).
+     * No-op when the TX has no redeemers (non-script TX).
+     */
+    private fun recomputeConwayScriptDataHash(transaction: com.bloxbean.cardano.client.transaction.spec.Transaction) {
+        val ws = transaction.witnessSet ?: return
+        val redeemers = ws.redeemers ?: return
+        if (redeemers.isEmpty()) return
+        val datums = ws.plutusDataList ?: emptyList()
+
+        // Cost models — must match the node's. Prefer protocol params, fall back to bundled V3.
+        val costMdls = CostMdls()
+        runCatching {
+            val pp = backendService.epochService.getProtocolParameters().value
+            CostModelUtil.getCostModelFromProtocolParams(pp, Language.PLUTUS_V3).ifPresent { costMdls.add(it) }
+        }.onFailure { txBuilderLogger.warn { "scriptDataHash: protocol params fetch failed: ${it.message}" } }
+        if (costMdls.isEmpty) costMdls.add(CostModelUtil.PlutusV3CostModel)
+
+        // Redeemers as a Conway map (tag/index -> [data, exUnits]).
+        val redeemerMap = co.nstant.`in`.cbor.model.Map()
+        for (r in redeemers) {
+            val tuple = r.serialize()
+            redeemerMap.put(tuple._1, tuple._2)
+        }
+        val redeemerBytes = com.bloxbean.cardano.client.common.cbor.CborSerializationUtil.serialize(redeemerMap)
+
+        // Datums as a tag-258 SET — the fix vs ScriptDataHashGenerator's plain `new Array()`.
+        val datumBytes = if (datums.isNotEmpty()) {
+            val datumArray = co.nstant.`in`.cbor.model.Array().apply { setTag(258) }
+            for (d in datums) datumArray.add(d.serialize())
+            com.bloxbean.cardano.client.common.cbor.CborSerializationUtil.serialize(datumArray)
+        } else {
+            ByteArray(0)
+        }
+
+        val preimage = redeemerBytes + datumBytes + costMdls.languageViewEncoding
+        val newHash = com.bloxbean.cardano.client.crypto.Blake2bUtil.blake2bHash256(preimage)
+        val oldHash = transaction.body.scriptDataHash
+        transaction.body.scriptDataHash = newHash
+        txBuilderLogger.warn {
+            "scriptDataHash recomputed: old=${oldHash?.let { HexUtil.encodeHexString(it) }} " +
+            "new=${HexUtil.encodeHexString(newHash)} (datums=${datums.size}, redeemers=${redeemers.size})"
+        }
     }
 
     // -------------------------------------------------------------------------

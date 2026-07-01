@@ -16,6 +16,8 @@ fun Application.configureRouting() {
         stakeRoutes()
         pollRoutes()
         communityRoutes()
+        allianceRoutes()
+        allianceProposalRoutes()
         metadataRoutes()
         walletRoutes()
         dappRankingRoutes()

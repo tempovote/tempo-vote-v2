@@ -65,9 +65,14 @@ export function computeVotePercent(votes: VoteCounts): {
 }
 
 /**
- * Stake-weighted percentage for SPO votes using Koios voting_power.
- * Denominator = totalVotingPower (votes-cast only).
- * Falls back to count-based when no stake data is available.
+ * Stake-weighted percentage for SPO votes.
+ *
+ * Denominator priority:
+ *   1. totalActiveSPOStake — total live stake of ALL registered pools (correct per CIP-1694)
+ *   2. totalVotingPower    — legacy fallback: only voted-pools stake (underestimates non-voters)
+ *   3. count-based         — when no stake data available
+ *
+ * notVotedPercent is shown when totalActiveSPOStake is available (pools that didn't vote).
  */
 export function computeSPOVotePercent(votes: SPOVoteStats): {
   yesPercent: number
@@ -75,12 +80,17 @@ export function computeSPOVotePercent(votes: SPOVoteStats): {
   abstainPercent: number
   notVotedPercent: number
 } {
-  if (votes.totalVotingPower > 0) {
-    const total = votes.totalVotingPower
-    const yesPercent     = Math.round((votes.yesVotingPower     / total) * 100)
-    const noPercent      = Math.round((votes.noVotingPower      / total) * 100)
-    const abstainPercent = Math.round((votes.abstainVotingPower / total) * 100)
-    return { yesPercent, noPercent, abstainPercent, notVotedPercent: 0 }
+  const denominator = votes.totalActiveSPOStake > 0
+    ? votes.totalActiveSPOStake
+    : votes.totalVotingPower
+  if (denominator > 0) {
+    const yesPercent     = Math.round((votes.yesVotingPower     / denominator) * 100)
+    const noPercent      = Math.round((votes.noVotingPower      / denominator) * 100)
+    const abstainPercent = Math.round((votes.abstainVotingPower / denominator) * 100)
+    const notVotedPercent = votes.totalActiveSPOStake > 0
+      ? Math.max(0, 100 - yesPercent - noPercent - abstainPercent)
+      : 0
+    return { yesPercent, noPercent, abstainPercent, notVotedPercent }
   }
   // Fallback: count-based (same as computeVotePercent with activeMembers = 0)
   return computeVotePercent(votes as unknown as VoteCounts)
@@ -224,8 +234,17 @@ export function govActionIdToBech32(txHash: string, index: number): string {
   }
 }
 
+type ThresholdKey =
+  | "treasuryWithdrawals"
+  | "protocolParametersUpdate"
+  | "hardForkInitiation"
+  | "noConfidence"
+  | "updateCommittee"
+  | "newConstitution"
+  | "infoAction"
+
 // Static Conway-era vote thresholds (fraction, e.g. 0.67 = 67%)
-export const VOTE_THRESHOLDS: Record<string, { drep?: number; spo?: number; cc?: number }> = {
+export const VOTE_THRESHOLDS: Record<ThresholdKey, { drep?: number; spo?: number; cc?: number }> = {
   treasuryWithdrawals:      { drep: 0.67, cc: 0.60 },
   protocolParametersUpdate: { drep: 0.75, cc: 0.60 },
   hardForkInitiation:       { drep: 0.60, spo: 0.51, cc: 0.60 },

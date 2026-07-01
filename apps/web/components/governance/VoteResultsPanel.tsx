@@ -12,7 +12,7 @@ export default function VoteResultsPanel({ action }: Props) {
   // action.actionType may be a raw Ogmios string (e.g. "constitutionalCommittee");
   // canonicalise so threshold lookup + role display match.
   const actionType = normalizeActionType(action.actionType)
-  const thresholds = VOTE_THRESHOLDS[actionType] ?? {}
+  const thresholds = VOTE_THRESHOLDS[actionType as keyof typeof VOTE_THRESHOLDS] ?? {}
 
   const drepPct = computeDRepVotePercent(action.drepVotes, actionType)
   const spoPct  = computeSPOVotePercent(action.spoVotes)

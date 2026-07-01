@@ -324,7 +324,13 @@ function VoteTable({
   const t = useT()
   const filtered = votes
     .filter((v) => side === "yes" ? v.vote === "yes" : v.vote === "no" || v.vote === "abstain")
-    .sort((a, b) => b.votingPower - a.votingPower)
+    .sort((a, b) => {
+      // Votes with known power sort by power desc; unknown power (not yet indexed) go last alphabetically
+      if (a.votingPower > 0 && b.votingPower > 0) return b.votingPower - a.votingPower
+      if (a.votingPower > 0) return -1
+      if (b.votingPower > 0) return 1
+      return a.id.localeCompare(b.id)
+    })
 
   const emptyLabel = side === "yes" ? t("governance.voteHistory.emptyYes") : t("governance.voteHistory.emptyNoAbstain")
 

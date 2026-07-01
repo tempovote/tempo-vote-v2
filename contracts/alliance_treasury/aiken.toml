@@ -1,0 +1,10 @@
+name = "tempo_vote/alliance_treasury"
+version = "0.1.0"
+plutus = "v3"
+license = "Apache-2.0"
+description = "Alliance treasury smart contract for Tempo Vote"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "v2.2.1"
+source = "github"

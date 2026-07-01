@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { marked } from "marked"
 import { useWallet } from "@/hooks/useWallet"
 import { useTx } from "@/hooks/useTx"
@@ -319,7 +320,7 @@ export default function UpdateDRepPage() {
           </div>
           <h1 className="text-xl font-bold">{t("drepWizard.notDrepTitle")}</h1>
           <p className="text-text-secondary text-sm">{t("drepWizard.notDrepDesc")}</p>
-          <a href="/dreps/register" className="btn-primary inline-block">{t("drepWizard.registerDrepBtn")}</a>
+          <Link href="/dreps/register" className="btn-primary inline-block">{t("drepWizard.registerDrepBtn")}</Link>
         </div>
       </main>
     )

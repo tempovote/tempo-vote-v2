@@ -1,15 +1,21 @@
 package vote.tempo.routes
 
 import io.ktor.http.*
+import io.ktor.server.auth.*
+import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.transactions.transaction
 import vote.tempo.cardano.Network
 import vote.tempo.cardano.OgmiosStateQueries
 import vote.tempo.cardano.TxBuilder
 import vote.tempo.cardano.getBackendService
 import vote.tempo.cardano.networkFromString
+import vote.tempo.db.AllianceMembers
+import vote.tempo.db.AllianceProposals
 import com.bloxbean.cardano.client.backend.api.BackendService
 import com.bloxbean.cardano.client.transaction.spec.Transaction
 import com.bloxbean.cardano.client.transaction.spec.TransactionWitnessSet
@@ -63,6 +69,19 @@ data class BuildTxRequest(
     val protocolParamUpdate: ProtocolParamUpdateItem? = null,
     // MULTI_VOTE: batch of votes in a single TX
     val votes: List<VoteItem>? = null,
+    // ALLIANCE_TREASURY_CONTRIBUTE
+    val allianceId: String? = null,
+    val amountLovelace: Long? = null,
+    // ALLIANCE_WITHDRAW
+    val proposalId: String? = null,
+    val treasuryUtxoTxHash: String? = null,
+    val treasuryUtxoIndex: Int? = null,
+    val treasuryUtxoLovelace: Long? = null,
+    val treasuryUtxoAddress: String? = null,
+    val finalizationTxHash: String? = null,
+    val finalizationTxIndex: Int? = null,
+    val recipientAddress: String? = null,
+    val executableAtMs: Long? = null,
 )
 
 @Serializable
@@ -156,7 +175,9 @@ fun Route.transactionRoutes() {
         /**
          * POST /tx/build
          * Accepts wallet UTxOs + params, returns unsigned transaction CBOR.
+         * ALLIANCE_WITHDRAW requires a valid JWT with owner/admin role.
          */
+        authenticate("jwt", optional = true) {
         post("/build") {
             val req = call.receive<BuildTxRequest>()
             val network = networkFromString(req.network)
@@ -180,16 +201,57 @@ fun Route.transactionRoutes() {
                 }
             }
 
+            if (req.txType.uppercase() == "ALLIANCE_WITHDRAW") {
+                val principal = call.principal<JWTPrincipal>()
+                    ?: return@post call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Authentication required"))
+                val jwtDrepId = principal.payload.getClaim("drepId")?.asString()
+                    ?: return@post call.respond(HttpStatusCode.Forbidden, ErrorResponse("DRep ID required"))
+                val allianceUuid = runCatching {
+                    java.util.UUID.fromString(req.allianceId ?: error(""))
+                }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("Invalid allianceId"))
+                val role = transaction {
+                    AllianceMembers.selectAll()
+                        .where { (AllianceMembers.allianceId eq allianceUuid) and (AllianceMembers.drepId eq jwtDrepId) }
+                        .firstOrNull()?.get(AllianceMembers.role)
+                } ?: return@post call.respond(HttpStatusCode.Forbidden, ErrorResponse("Alliance membership required"))
+                if (role !in listOf("owner", "admin"))
+                    return@post call.respond(HttpStatusCode.Forbidden, ErrorResponse("Owner or admin required to execute withdrawal"))
+
+                // Drain guard (authoritative): never build a withdrawal TX for a proposal that has
+                // already been executed. The treasury change-back creates a NEW UTxO, so without
+                // this check a second Execute would spend it and drain the treasury one amount at a
+                // time. The frontend also hides the button, but this server-side check is the one
+                // that actually prevents the attack even if the UI/endpoint is bypassed.
+                val proposalUuid = runCatching {
+                    java.util.UUID.fromString(req.proposalId ?: error(""))
+                }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("Invalid proposalId"))
+                val alreadyExecuted = transaction {
+                    AllianceProposals.selectAll()
+                        .where { (AllianceProposals.id eq proposalUuid) and (AllianceProposals.allianceId eq allianceUuid) }
+                        .firstOrNull()?.let {
+                            it[AllianceProposals.status] == "executed" || it[AllianceProposals.executedTxHash] != null
+                        } ?: false
+                }
+                if (alreadyExecuted)
+                    return@post call.respond(HttpStatusCode.Conflict, ErrorResponse("This withdrawal has already been executed"))
+            }
+
             runCatching {
                 when (req.txType.uppercase()) {
-                    "DREP_REGISTER" -> builder.buildDRepRegister(
-                        changeAddress = req.changeAddress,
-                        rewardAddress = req.rewardAddress,
-                        drepId = req.drepId ?: error("drepId required"),
-                        anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
-                        anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
-                        selfDelegate = req.selfDelegate,
-                    )
+                    "DREP_REGISTER" -> {
+                        val needStakeReg = req.selfDelegate && runCatching {
+                            !OgmiosStateQueries(network).isStakeRegistered(req.rewardAddress)
+                        }.getOrDefault(false)
+                        builder.buildDRepRegister(
+                            changeAddress = req.changeAddress,
+                            rewardAddress = req.rewardAddress,
+                            drepId = req.drepId ?: error("drepId required"),
+                            anchorUrl = req.anchorUrl ?: error("anchorUrl required"),
+                            anchorDataHash = req.anchorDataHash ?: error("anchorDataHash required"),
+                            selfDelegate = req.selfDelegate,
+                            registerStakeKey = needStakeReg,
+                        )
+                    }
                     "DREP_UPDATE" -> builder.buildDRepUpdate(
                         changeAddress = req.changeAddress,
                         drepId = req.drepId ?: error("drepId required"),
@@ -301,6 +363,26 @@ fun Route.transactionRoutes() {
                             lovelace = 2_000_000L,
                         )
                     }
+                    "ALLIANCE_TREASURY_CONTRIBUTE" -> builder.buildAllianceTreasuryContribute(
+                        changeAddress = req.changeAddress,
+                        allianceId = java.util.UUID.fromString(req.allianceId ?: error("allianceId required")),
+                        amountLovelace = req.amountLovelace ?: error("amountLovelace required"),
+                    )
+                    "ALLIANCE_WITHDRAW" -> builder.buildAllianceWithdraw(
+                        changeAddress = req.changeAddress,
+                        collateral = req.collateral ?: emptyList(),
+                        allianceId = java.util.UUID.fromString(req.allianceId ?: error("allianceId required")),
+                        proposalId = java.util.UUID.fromString(req.proposalId ?: error("proposalId required")),
+                        treasuryUtxoTxHash = req.treasuryUtxoTxHash ?: error("treasuryUtxoTxHash required"),
+                        treasuryUtxoIndex = req.treasuryUtxoIndex ?: error("treasuryUtxoIndex required"),
+                        treasuryUtxoLovelace = req.treasuryUtxoLovelace ?: error("treasuryUtxoLovelace required"),
+                        treasuryUtxoAddress = req.treasuryUtxoAddress,
+                        finalizationTxHash = req.finalizationTxHash ?: error("finalizationTxHash required"),
+                        finalizationTxIndex = req.finalizationTxIndex ?: 0,
+                        recipientAddress = req.recipientAddress ?: error("recipientAddress required"),
+                        amountLovelace = req.amountLovelace ?: error("amountLovelace required"),
+                        executableAtMs = req.executableAtMs ?: error("executableAtMs required"),
+                    )
                     else -> error("Unknown txType: ${req.txType}")
                 }
             }.fold(
@@ -308,6 +390,7 @@ fun Route.transactionRoutes() {
                 onFailure = { e -> call.respond(HttpStatusCode.BadRequest, ErrorResponse(e.message ?: "Build failed")) }
             )
         }
+        } // authenticate("jwt", optional = true)
 
         /**
          * POST /tx/submit
@@ -349,6 +432,21 @@ fun Route.transactionRoutes() {
                             walletWitnesses.redeemers =
                                 (walletWitnesses.redeemers ?: emptyList()) + preWitnesses.redeemers
                         }
+                        if (preWitnesses?.plutusDataList != null && preWitnesses.plutusDataList.isNotEmpty()) {
+                            println("[Submit] merging ${preWitnesses.plutusDataList.size} datum(s) from unsigned TX")
+                            walletWitnesses.plutusDataList =
+                                (walletWitnesses.plutusDataList ?: emptyList()) + preWitnesses.plutusDataList
+                        }
+                        if (preWitnesses?.nativeScripts != null && preWitnesses.nativeScripts.isNotEmpty()) {
+                            println("[Submit] merging ${preWitnesses.nativeScripts.size} native script(s) from unsigned TX")
+                            walletWitnesses.nativeScripts =
+                                (walletWitnesses.nativeScripts ?: emptyList()) + preWitnesses.nativeScripts
+                        }
+                        if (preWitnesses?.bootstrapWitnesses != null && preWitnesses.bootstrapWitnesses.isNotEmpty()) {
+                            println("[Submit] merging ${preWitnesses.bootstrapWitnesses.size} bootstrap witness(es) from unsigned TX")
+                            walletWitnesses.bootstrapWitnesses =
+                                (walletWitnesses.bootstrapWitnesses ?: emptyList()) + preWitnesses.bootstrapWitnesses
+                        }
                         unsignedTx.witnessSet = walletWitnesses
                         unsignedTx.serialize()
                     }
@@ -364,12 +462,21 @@ fun Route.transactionRoutes() {
                 }
                 val result = backendService.transactionService.submitTransaction(txBytes)
                 if (!result.isSuccessful) {
-                    error(result.response ?: "Ogmios submit failed (no response body)")
+                    val errMsg = result.response ?: "Ogmios submit failed (no response body)"
+                    println("[Submit] FAILED HTTP=${result.code()}: $errMsg")
+                    error(errMsg)
                 }
-                result.value ?: error("Ogmios submit succeeded but txHash is null (response: ${result.response})")
+                val txHash = result.value ?: run {
+                    println("[Submit] Ogmios submit succeeded but txHash is null (response: ${result.response})")
+                    error("Ogmios submit succeeded but txHash is null (response: ${result.response})")
+                }
+                println("[Submit] SUCCESS txHash=$txHash")
+                txHash
             }.fold(
                 onSuccess = { txHash -> call.respond(SubmitTxResponse(txHash)) },
                 onFailure = { e ->
+                    println("[Submit] FAILURE EXCEPTION: ${e.message}")
+                    e.printStackTrace()
                     call.respond(HttpStatusCode.BadRequest, ErrorResponse(e.message ?: "Submit failed"))
                 }
             )

@@ -8,6 +8,7 @@ import { useWalletStore } from "@/store/wallet"
 import WalletModal from "@/components/wallet/WalletModal"
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher"
 import { useT } from "@/i18n/useT"
+import { getWalletInfo } from "@tempo/wallet-bridge"
 
 const BANNER_KEY = "tempo:banner-dismissed-v1"
 
@@ -19,6 +20,7 @@ const navLinks = [
 ]
 
 const othersLinks = [
+  { href: "/alliances",           key: "nav.alliances" },
   { href: "/treasury-projection", key: "nav.treasuryProjection" },
   { href: "/user-guides",         key: "nav.userGuides" },
   { href: "/about",               key: "nav.about" },
@@ -35,8 +37,10 @@ export default function Navbar() {
   const [mobileOpen,  setMobileOpen]  = useState(false)
   const [othersOpen,  setOthersOpen]  = useState(false)
   const [mobileOthersOpen, setMobileOthersOpen] = useState(false)
+  const [networkOpen, setNetworkOpen] = useState(false)
   const [bannerVisible, setBannerVisible] = useState(false)
-  const othersRef = useRef<HTMLDivElement>(null)
+  const othersRef  = useRef<HTMLDivElement>(null)
+  const networkRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     try {
@@ -60,13 +64,19 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClick)
   }, [othersOpen])
 
-  const { isConnected, isWalletHydrating, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal, reset } =
-    useWalletStore()
+  // Close Network dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (networkRef.current && !networkRef.current.contains(e.target as Node)) {
+        setNetworkOpen(false)
+      }
+    }
+    if (networkOpen) document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [networkOpen])
 
-  const handleDisconnect = useCallback(() => {
-    reset()
-    try { localStorage.removeItem("tempo:last_wallet") } catch { /* ignore */ }
-  }, [reset])
+  const { isConnected, isWalletHydrating, name, changeAddress, selectedNetwork, setSelectedNetwork, initNetwork, walletModalOpen, openWalletModal, closeWalletModal } =
+    useWalletStore()
 
   // When wallet is connected, network is locked to wallet's network
   const networkLocked = isConnected
@@ -76,6 +86,8 @@ export default function Navbar() {
 
   // Restore persisted network preference on first render
   useEffect(() => { initNetwork() }, [initNetwork])
+
+  const walletIconUrl = name ? (getWalletInfo(name.toLowerCase())?.icon ?? null) : null
 
   return (
     <>
@@ -164,6 +176,14 @@ export default function Navbar() {
                             : "text-text-secondary hover:text-text-primary hover:bg-white/5"
                         }`}
                       >
+                        {link.href === "/alliances" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          </svg>
+                        )}
                         {link.href === "/treasury-projection" && (
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                             <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
@@ -194,51 +214,60 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
-            {/* Network selector */}
-            <div
-              className="hidden sm:flex items-center gap-0.5 p-1 rounded-lg bg-bg-card border border-border-default"
-              title={networkLocked ? t("wallet.networkLocked") : undefined}
-            >
+            {/* Network selector — dropdown chip */}
+            <div ref={networkRef} className="hidden sm:block relative">
               <button
-                onClick={() => !networkLocked && setSelectedNetwork("mainnet")}
+                onClick={() => !networkLocked && setNetworkOpen(o => !o)}
                 disabled={networkLocked}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                title={networkLocked ? t("wallet.networkLocked") : undefined}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                   selectedNetwork === "mainnet"
-                    ? "bg-success/15 text-success"
-                    : networkLocked
-                    ? "text-text-muted opacity-40"
-                    : "text-text-muted hover:text-text-secondary"
-                } ${networkLocked ? "cursor-default" : "cursor-pointer"}`}
+                    ? "border-success/40 bg-success/10 text-success"
+                    : "border-warning/40 bg-warning/10 text-warning"
+                } ${networkLocked ? "cursor-default" : "cursor-pointer hover:opacity-80"}`}
               >
                 <span
-                  className={`w-1.5 h-1.5 rounded-full ${selectedNetwork === "mainnet" ? "animate-pulse" : ""}`}
-                  style={{ backgroundColor: "#22c55e" }}
+                  className={`w-1.5 h-1.5 rounded-full ${!networkLocked ? "animate-pulse" : ""}`}
+                  style={{ backgroundColor: selectedNetwork === "mainnet" ? "#22c55e" : "#eab308" }}
                 />
-                Mainnet
-              </button>
-              <button
-                onClick={() => !networkLocked && setSelectedNetwork("preprod")}
-                disabled={networkLocked}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  selectedNetwork === "preprod"
-                    ? "bg-warning/15 text-warning"
-                    : networkLocked
-                    ? "text-text-muted opacity-40"
-                    : "text-text-muted hover:text-text-secondary"
-                } ${networkLocked ? "cursor-default" : "cursor-pointer"}`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${selectedNetwork === "preprod" ? "animate-pulse" : ""}`}
-                  style={{ backgroundColor: "#eab308" }}
-                />
-                Preprod
-              </button>
-              {networkLocked && (
-                <span className="px-1.5 text-text-muted opacity-50">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <span className="capitalize">{selectedNetwork === "mainnet" ? "Mainnet" : "Preprod"}</span>
+                {networkLocked ? (
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" className="opacity-50 shrink-0">
                     <path d="M12 1C9.24 1 7 3.24 7 6v2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6c0-2.76-2.24-5-5-5zm0 2c1.66 0 3 1.34 3 3v2H9V6c0-1.66 1.34-3 3-3zm0 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>
                   </svg>
-                </span>
+                ) : (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                    className={`transition-transform duration-150 shrink-0 ${networkOpen ? "rotate-180" : ""}`}>
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                )}
+              </button>
+
+              {networkOpen && !networkLocked && (
+                <div className="absolute top-full right-0 mt-1.5 w-36 bg-bg-card border border-border-default rounded-xl shadow-2xl py-1.5 z-50 animate-fade-in">
+                  {(["mainnet", "preprod"] as const).map((net) => (
+                    <button
+                      key={net}
+                      onClick={() => { setSelectedNetwork(net); setNetworkOpen(false) }}
+                      className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
+                        selectedNetwork === net
+                          ? "text-accent-light bg-accent/10"
+                          : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+                      }`}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: net === "mainnet" ? "#22c55e" : "#eab308" }}
+                      />
+                      <span className="capitalize">{net === "mainnet" ? "Mainnet" : "Preprod"}</span>
+                      {selectedNetwork === net && (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="ml-auto shrink-0">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -248,15 +277,24 @@ export default function Navbar() {
             {/* Wallet button — 3 states: connected / hydrating / disconnected */}
             {isConnected && changeAddress ? (
               <div className="flex items-center gap-1.5">
-                {/* Mobile: avatar circle only */}
+                {/* Mobile: wallet icon circle only */}
                 <div className="sm:hidden">
                   <button
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-accent/30 hover:ring-accent/60 transition-all"
-                    style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                    className="w-8 h-8 rounded-full overflow-hidden ring-2 ring-accent/30 hover:ring-accent/60 transition-all shrink-0 flex items-center justify-center"
                     onClick={openModal}
                     title={changeAddress}
                   >
-                    {name ? name[0]?.toUpperCase() : "W"}
+                    {walletIconUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={walletIconUrl} alt={name ?? "wallet"} className="w-full h-full object-contain bg-bg-elevated" />
+                    ) : (
+                      <span
+                        className="w-full h-full flex items-center justify-center text-[10px] font-bold text-white"
+                        style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                      >
+                        {name ? name[0]?.toUpperCase() : "W"}
+                      </span>
+                    )}
                   </button>
                 </div>
                 {/* Desktop: full button with address */}
@@ -267,11 +305,18 @@ export default function Navbar() {
                     title={changeAddress}
                     id="wallet-connected-btn"
                   >
-                    <div
-                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                      style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
-                    >
-                      {name ? name[0]?.toUpperCase() : "W"}
+                    <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 flex items-center justify-center">
+                      {walletIconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={walletIconUrl} alt={name ?? "wallet"} className="w-full h-full object-contain bg-bg-elevated" />
+                      ) : (
+                        <span
+                          className="w-full h-full flex items-center justify-center text-[10px] font-bold text-white"
+                          style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                        >
+                          {name ? name[0]?.toUpperCase() : "W"}
+                        </span>
+                      )}
                     </div>
                     <span className="font-mono">{truncate(changeAddress)}</span>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-muted">
@@ -279,18 +324,6 @@ export default function Navbar() {
                     </svg>
                   </button>
                 </div>
-                <button
-                  onClick={handleDisconnect}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors shrink-0"
-                  title={t("wallet.disconnect")}
-                  aria-label={t("wallet.disconnect")}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-                    <polyline points="16 17 21 12 16 7" />
-                    <line x1="21" y1="12" x2="9" y2="12" />
-                  </svg>
-                </button>
               </div>
             ) : isWalletHydrating ? (
               <>
@@ -473,31 +506,25 @@ export default function Navbar() {
               {/* Wallet in mobile menu */}
               <div className="px-3 py-2 border-t border-border-subtle mt-1 pt-3">
                 {isConnected && changeAddress ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => { setMobileOpen(false); openWalletModal() }}
-                      className="wallet-connected-btn flex-1"
-                    >
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                        style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
-                      >
-                        {name ? name[0]?.toUpperCase() : "W"}
-                      </div>
-                      <span className="font-mono text-sm">{truncate(changeAddress, 8)}</span>
-                    </button>
-                    <button
-                      onClick={() => { setMobileOpen(false); handleDisconnect() }}
-                      className="w-9 h-9 flex items-center justify-center rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors shrink-0"
-                      aria-label={t("wallet.disconnect")}
-                    >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-                        <polyline points="16 17 21 12 16 7" />
-                        <line x1="21" y1="12" x2="9" y2="12" />
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => { setMobileOpen(false); openWalletModal() }}
+                    className="wallet-connected-btn w-full"
+                  >
+                    <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 flex items-center justify-center">
+                      {walletIconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={walletIconUrl} alt={name ?? "wallet"} className="w-full h-full object-contain bg-bg-elevated" />
+                      ) : (
+                        <span
+                          className="w-full h-full flex items-center justify-center text-[10px] font-bold text-white"
+                          style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+                        >
+                          {name ? name[0]?.toUpperCase() : "W"}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-mono text-sm">{truncate(changeAddress, 8)}</span>
+                  </button>
                 ) : (
                   <button
                     className="btn-primary w-full text-sm py-2"

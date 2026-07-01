@@ -51,6 +51,8 @@ suspend fun runVoteIndexer(network: String, ogmiosUrl: String) {
         .replace("https://", "wss://")
         .replace("http://",  "ws://")
 
+    waitForDb(network)
+
     val conwayStartSlot = CONWAY_SLOTS[network] ?: 0L
     val slotsPerEpoch   = SLOTS_PER_EPOCH[network] ?: 432_000L
 
@@ -236,8 +238,12 @@ private fun indexVote(
                 .takeIf { it.length == 56 } ?: return false
             hex to "drep"
         }
-        "constitutionalCommitteeMember" -> {
-            val hex = issuer["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.length == 56 } ?: return false
+        // Ogmios uses "constitutionalCommittee" here (same enum as queryLedgerState/governanceProposals),
+        // not "constitutionalCommitteeMember" — the latter silently dropped every CC vote.
+        "constitutionalCommittee" -> {
+            val raw = issuer["id"]?.jsonPrimitive?.contentOrNull ?: return false
+            // Hot credential hash is 56-hex; tolerate a 2-char type prefix (58) defensively.
+            val hex = (if (raw.length == 58) raw.substring(2) else raw).takeIf { it.length == 56 } ?: return false
             hex to "cc"
         }
         "stakePoolOperator" -> {
@@ -432,15 +438,29 @@ private fun bech32ToHex(bech32: String): String {
 
 private fun conwayMilestoneKey(network: String) = "${network}_conway_genesis"
 
-private fun loadCheckpoint(network: String): Pair<Long, String>? =
-    runCatching {
-        transaction {
-            IndexerCheckpoint.selectAll()
-                .where { IndexerCheckpoint.network eq network }
-                .singleOrNull()
-                ?.let { it[IndexerCheckpoint.slot] to it[IndexerCheckpoint.blockHash] }
+// Polls every 2 s until a simple DB transaction succeeds. Called once before the
+// main loop so that loadCheckpoint never silently falls back to genesis due to a
+// startup race between Exposed init and VoteIndexer coroutine scheduling.
+private suspend fun waitForDb(network: String) {
+    var logged = false
+    while (true) {
+        val ready = runCatching { transaction { IndexerCheckpoint.selectAll().count() } }.isSuccess
+        if (ready) return
+        if (!logged) {
+            logger.info { "VoteIndexer [$network] waiting for DB to be ready..." }
+            logged = true
         }
-    }.getOrNull()
+        delay(2_000L)
+    }
+}
+
+private fun loadCheckpoint(network: String): Pair<Long, String>? =
+    transaction {
+        IndexerCheckpoint.selectAll()
+            .where { IndexerCheckpoint.network eq network }
+            .singleOrNull()
+            ?.let { it[IndexerCheckpoint.slot] to it[IndexerCheckpoint.blockHash] }
+    }
 
 /** Reads the saved Conway genesis milestone for this network, if present. */
 private fun loadConwayMilestone(network: String): Pair<Long, String>? =

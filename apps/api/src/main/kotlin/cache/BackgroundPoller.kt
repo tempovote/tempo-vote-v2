@@ -18,6 +18,7 @@ import vote.tempo.cardano.DappRankingSnapshot
 import vote.tempo.cardano.fetchDappRankingSnapshot
 import vote.tempo.db.DappRankingDao
 import vote.tempo.cardano.fetchPoolInfoBlockfrost
+import vote.tempo.cardano.fetchTotalLiveStakeBlockfrost
 import vote.tempo.cardano.runPoolMetadataFetcher
 import vote.tempo.cardano.credentialHexToDrepIdCip105
 import vote.tempo.cardano.parseProposals
@@ -25,18 +26,20 @@ import vote.tempo.cardano.blockfrostProjectId
 import vote.tempo.cardano.fetchDRepDelegatorsBlockfrost
 import vote.tempo.db.ChainIndexDao
 import vote.tempo.db.GovernanceActionDao
+import vote.tempo.cardano.FinalizationTxSubmitter
+import vote.tempo.routes.autoCloseExpiredProposals
 
 private val logger = KotlinLogging.logger("BackgroundPoller")
 
 private const val POLL_INTERVAL_MS        = 5 * 60 * 1_000L    // 5 min — Ogmios state refresh
-private const val QUERY_TIMEOUT_MS        = 420_000L            // 7 min cap — delegateRepresentatives alone takes ~2 min on mainnet (8 MB response)
+private const val QUERY_TIMEOUT_MS        = 600_000L            // 10 min cap — delegateRepresentatives takes ~2-3 min + governanceProposals up to 2 min on mainnet
 private const val MAX_BACKOFF_MS          = 30 * 60 * 1_000L   // 30 minutes max backoff
 private const val STARTUP_DELAY_MS        = 3_000L
 private const val WHALE_POLL_STARTUP_MS   = 5 * 60 * 1_000L        // 5 min — allow Ogmios first poll to warm drepDelegatorCounts
 private const val WHALE_POLL_INTERVAL_MS  = 2 * 60 * 60 * 1_000L   // 2 h — whale distribution changes slowly
 private const val WHALE_TOP_DREPS         = 20                       // candidates per network
 private const val WHALE_THRESHOLD         = 1_000_000_000_000L      // 1M ADA in lovelace
-private const val POOL_STAKE_STARTUP_MS   = 10 * 60 * 1_000L        // 10 min — wait for govActions cache to warm
+private const val POOL_STAKE_STARTUP_MS   = 2 * 60 * 1_000L         // 2 min — wait for govActions cache to warm
 private const val POOL_STAKE_INTERVAL_MS  = 8 * 60 * 60 * 1_000L   // 8 h — live stake changes slowly
 private const val DAPP_RANKING_STARTUP_MS  = 15_000L                // 15 s — warm DApp ranking soon after boot
 private const val DAPP_RANKING_INTERVAL_MS = 2 * 60 * 60 * 1_000L   // 2 h — TVL/volume/fees change slowly
@@ -61,6 +64,10 @@ fun Application.startBackgroundPoller() {
         logger.info { "BackgroundPoller first poll starting" }
         while (isActive) {
             pollAllNetworks()
+            runCatching { autoCloseExpiredProposals() }
+                .onFailure { logger.warn { "autoCloseExpiredProposals failed: ${it.message}" } }
+            runCatching { FinalizationTxSubmitter.submitPendingFinalizations() }
+                .onFailure { logger.warn { "submitPendingFinalizations failed: ${it.message}" } }
             delay(POLL_INTERVAL_MS)
         }
     }
@@ -91,7 +98,7 @@ fun Application.startBackgroundPoller() {
         logger.info { "Blockfrost whale indexer disabled — set BLOCKFROST_MAINNET_PROJECT_ID / BLOCKFROST_PREPROD_PROJECT_ID to enable" }
     }
 
-    // Blockfrost pool stake indexer: fetches live_stake + name/ticker for SPO pools
+    // Blockfrost pool stake indexer: fetches active_stake + name/ticker for SPO pools
     // that have voted on governance actions. Stores into idx_pool_metadata every 8 h.
     // Requires same Blockfrost project IDs — runs only if at least one key is configured.
     if (blockfrostNetworks.isNotEmpty()) {
@@ -102,7 +109,7 @@ fun Application.startBackgroundPoller() {
                 delay(POOL_STAKE_INTERVAL_MS)
             }
         }
-        logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 10 min)" }
+        logger.info { "Blockfrost pool stake indexer scheduled for ${blockfrostNetworks.map { it.name }} — every 8 h (startup delay 2 min)" }
     }
 
     // DApp ranking (DefiLlama) snapshot — network-agnostic (Cardano mainnet DeFi). Always runs:
@@ -191,11 +198,12 @@ private suspend fun pollNetwork(network: Network) {
             // Parse proposals and pre-warm the parsed cache so the first API request after
             // a poll cycle is served instantly without re-parsing the raw JSON.
             // Pool info: local DB only (idx_pool_metadata populated by Blockfrost pool stake indexer).
-            val spoPoolIds    = extractSPOPoolIds(gas)
-            val poolInfoMap   = buildPoolInfoMap(spoPoolIds, network)
+            val spoPoolIds           = extractSPOPoolIds(gas)
+            val poolInfoMap          = buildPoolInfoMap(spoPoolIds, network)
+            val totalActiveSPOStake  = CardanoCache.totalSPOStake.getIfPresent(network.name) ?: 0L
             // Rationale URLs: local chain index (VoteIndexer populated drep_votes.anchor_url).
             val rationalesMap = buildLocalRationalesMap(gas, network)
-            val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap)
+            val parsed = parseProposals(gas, stakeCtx, ccCtx, thresholds, epoch, poolInfoMap, rationalesMap, totalActiveSPOStake)
             CardanoCache.parsedGovActions.put(network.name, parsed)
 
             // Persist snapshot to DB — marks disappeared proposals with final status
@@ -277,7 +285,7 @@ private suspend fun fetchAndIndexPoolStakes(networks: List<Network>) {
                     poolIdHex    = info.poolIdHex,
                     name         = info.name,
                     ticker       = info.ticker,
-                    votingPower  = info.liveStake,
+                    votingPower  = info.activeStake,
                 )
             }
             indexed++
@@ -285,6 +293,14 @@ private suspend fun fetchAndIndexPoolStakes(networks: List<Network>) {
 
         if (indexed > 0) {
             logger.info { "Pool stake index [$network] upserted $indexed / ${poolIds.size} pools — voting_power refreshed" }
+        }
+
+        // Fetch total live stake for SPO VP denominator — one /network call per cycle
+        val totalStake = fetchTotalLiveStakeBlockfrost(network)
+        if (totalStake != null && totalStake > 0L) {
+            CardanoCache.totalSPOStake.put(network.name, totalStake)
+            CardanoCache.parsedGovActions.invalidate(network.name)
+            logger.info { "Pool stake index [$network] total live SPO stake: ${totalStake / 1_000_000} ADA" }
         }
     }
 }

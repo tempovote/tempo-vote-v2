@@ -113,22 +113,25 @@ data class VoteCounts(
 }
 
 /**
- * SPO vote totals with ADA voting power sourced from Koios `voting_power` field.
+ * SPO vote totals with ADA voting power sourced from Blockfrost `live_stake`.
  *
- * Denominator = totalVotingPower (sum of voting_power for all SPOs that voted).
- * Unlike DRep, we have no "total registered SPO stake" — only votes cast contribute.
+ * Correct denominator = totalActiveSPOStake (total live stake of ALL registered pools,
+ * fetched from Blockfrost /network → stake.live, updated every 8 h).
+ * totalVotingPower is kept for backward compat but equals totalActiveSPOStake when available.
  */
 @Serializable
 data class SPOVoteStats(
     val yes: Int,
     val no: Int,
     val abstain: Int,
-    /** Lovelace voting_power for SPOs that voted yes/no/abstain. */
+    /** Lovelace live_stake for SPOs that voted yes/no/abstain. */
     val yesVotingPower: Long = 0L,
     val noVotingPower: Long = 0L,
     val abstainVotingPower: Long = 0L,
-    /** Sum of yesVotingPower + noVotingPower + abstainVotingPower — used as % denominator. */
+    /** Effective denominator — equals totalActiveSPOStake when available, else sum of voted pools. */
     val totalVotingPower: Long = 0L,
+    /** Total live stake of ALL registered pools (Blockfrost /network → stake.live). */
+    val totalActiveSPOStake: Long = 0L,
 ) {
     val total: Int get() = yes + no + abstain
 }
@@ -328,6 +331,7 @@ fun parseProposals(
     currentEpoch: Int = 0,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
     rationalesMap: Map<String, Map<String, String>> = emptyMap(),
+    totalActiveSPOStake: Long = 0L,
 ): List<GovernanceActionDto> {
     val array: JsonArray = when (raw) {
         is JsonArray  -> raw
@@ -337,7 +341,9 @@ fun parseProposals(
         else          -> return emptyList()
     }
     return array.mapNotNull { item ->
-        runCatching { mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch, poolInfoMap, rationalesMap) }.getOrNull()
+        runCatching {
+            mapOgmiosProposal(item.jsonObject, stakeCtx, ccCtx, thresholds, currentEpoch, poolInfoMap, rationalesMap, totalActiveSPOStake)
+        }.getOrNull()
     }
 }
 
@@ -350,6 +356,7 @@ fun mapOgmiosProposal(
     currentEpoch: Int = 0,
     poolInfoMap: Map<String, PoolInfo> = emptyMap(),
     rationalesMap: Map<String, Map<String, String>> = emptyMap(),
+    totalActiveSPOStake: Long = 0L,
 ): GovernanceActionDto? = runCatching {
     val proposal = obj["proposal"]?.jsonObject ?: return null
     val txHash = proposal["transaction"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return null
@@ -373,7 +380,7 @@ fun mapOgmiosProposal(
 
     val rationaleForProposal = rationalesMap["$txHash#$index"] ?: emptyMap()
     val drepVotes  = aggregateDRepVotes(votes, stakeCtx)
-    val spoVotes   = aggregateSPOVotes(votes, poolInfoMap)
+    val spoVotes   = aggregateSPOVotes(votes, poolInfoMap, totalActiveSPOStake)
     val ccVotes    = aggregateVotes(votes, "constitutionalCommittee", ccCtx.activeMembers, ccCtx.quorum)
     val voteEntries = extractVoteEntries(votes, stakeCtx, ccCtx, poolInfoMap, rationaleForProposal)
 
@@ -631,7 +638,11 @@ private fun aggregateVotes(votes: JsonArray, role: String, activeMemberCount: In
     return VoteCounts(yes, no, abstain, activeMembers = activeMemberCount, quorum = quorum)
 }
 
-private fun aggregateSPOVotes(votes: JsonArray, poolInfoMap: Map<String, PoolInfo>): SPOVoteStats {
+private fun aggregateSPOVotes(
+    votes: JsonArray,
+    poolInfoMap: Map<String, PoolInfo>,
+    totalActiveSPOStake: Long = 0L,
+): SPOVoteStats {
     var yes = 0; var no = 0; var abstain = 0
     var yesPower = 0L; var noPower = 0L; var abstainPower = 0L
     for (entry in votes) {
@@ -646,8 +657,9 @@ private fun aggregateSPOVotes(votes: JsonArray, poolInfoMap: Map<String, PoolInf
             "abstain" -> { abstain++; abstainPower += power }
         }
     }
-    val total = yesPower + noPower + abstainPower
-    return SPOVoteStats(yes, no, abstain, yesPower, noPower, abstainPower, total)
+    val votedTotal = yesPower + noPower + abstainPower
+    val denominator = if (totalActiveSPOStake > 0L) totalActiveSPOStake else votedTotal
+    return SPOVoteStats(yes, no, abstain, yesPower, noPower, abstainPower, denominator, totalActiveSPOStake)
 }
 
 /** Extract lovelace amount — handles { "ada": { "lovelace": N } } and { "lovelace": N } */

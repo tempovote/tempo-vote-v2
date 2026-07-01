@@ -33,8 +33,10 @@ export const DRepVoteStatsSchema = VoteCountsSchema.extend({
 export type DRepVoteStats = z.infer<typeof DRepVoteStatsSchema>
 
 /**
- * SPO vote totals with ADA voting power sourced from Koios `voting_power`.
- * Denominator = totalVotingPower (votes-cast only; no total registered pool stake available).
+ * SPO vote totals with ADA voting power sourced from Blockfrost `live_stake`.
+ *
+ * Correct denominator = totalActiveSPOStake (total live stake of ALL registered pools).
+ * totalVotingPower is kept for backward compat — equals totalActiveSPOStake when available.
  */
 export const SPOVoteStatsSchema = z.object({
   yes: z.number().int(),
@@ -43,8 +45,10 @@ export const SPOVoteStatsSchema = z.object({
   yesVotingPower: z.number().default(0),
   noVotingPower: z.number().default(0),
   abstainVotingPower: z.number().default(0),
-  /** Sum of all voted SPO voting powers — denominator for stake-weighted percentages. */
+  /** Effective denominator — equals totalActiveSPOStake when available, else sum of voted pools. */
   totalVotingPower: z.number().default(0),
+  /** Total live stake of ALL registered pools (Blockfrost /network → stake.live). 0 = not yet fetched. */
+  totalActiveSPOStake: z.number().default(0),
 })
 export type SPOVoteStats = z.infer<typeof SPOVoteStatsSchema>
 

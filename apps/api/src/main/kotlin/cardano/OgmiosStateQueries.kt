@@ -1,5 +1,6 @@
 package vote.tempo.cardano
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -7,8 +8,12 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+
+private val ogmiosLogger = KotlinLogging.logger("OgmiosStateQueries")
 
 // Raw JSON element (may be object or array)
 typealias JsonResult = JsonElement
@@ -167,6 +172,9 @@ fun credentialHexToDrepIdCip105(credentialHex: String): String? =
 private const val HTTP_TIMEOUT_MS = 20_000L
 // delegateRepresentatives returns ~8 MB on mainnet (10k+ DReps) and takes ~2 min to download.
 private const val HEAVY_QUERY_TIMEOUT_MS = 300_000L
+// governanceProposals grows with the number of active votes — on mainnet with thousands of DRep
+// votes per proposal, the response can easily exceed 20 s. Use a 2-min cap like other large queries.
+private const val GOV_PROPOSALS_TIMEOUT_MS = 120_000L
 
 class OgmiosStateQueries(private val network: Network) {
 
@@ -198,7 +206,7 @@ class OgmiosStateQueries(private val network: Network) {
     }
 
     suspend fun getGovernanceProposals(): JsonElement {
-        return queryRaw("queryLedgerState/governanceProposals", buildJsonObject {})
+        return queryRaw("queryLedgerState/governanceProposals", buildJsonObject {}, GOV_PROPOSALS_TIMEOUT_MS)
     }
 
     /**
@@ -287,6 +295,121 @@ class OgmiosStateQueries(private val network: Network) {
         return queryRaw("queryLedgerState/treasury", buildJsonObject {}).jsonObject
     }
 
+    /**
+     * Get the current chain tip slot number.
+     * Used to convert POSIX time to slot for TX validity intervals.
+     * In Conway era, 1 slot = 1 second.
+     */
+    suspend fun getCurrentTipSlot(): Long {
+        val result = queryRaw("queryNetwork/tip", buildJsonObject {})
+        return result.jsonObject["slot"]?.jsonPrimitive?.long
+            ?: error("queryNetwork/tip returned no slot")
+    }
+
+    /**
+     * Convert a POSIX timestamp (ms) to an approximate chain slot.
+     * Uses the current tip to establish the slot ↔ time mapping.
+     * Accurate in Conway era where 1 slot = 1 second.
+     */
+    suspend fun posixMsToSlot(posixMs: Long): Long {
+        val currentSlot = getCurrentTipSlot()
+        val currentPosixMs = System.currentTimeMillis()
+        val deltaSec = (posixMs - currentPosixMs) / 1000
+        return currentSlot + deltaSec
+    }
+
+    data class KupoUtxo(val txHash: String, val outputIndex: Int, val lovelace: Long, val datumHash: String?)
+
+    /**
+     * Query Kupo for UTxOs at a script address.
+     * Optionally filter by datum hash (blake2b-256 of the inline datum CBOR).
+     * Use PlutusData.getDatumHash() to compute the expected hash for filtering.
+     */
+    suspend fun getScriptUtxos(scriptAddress: String, filterDatumHash: String? = null): List<KupoUtxo> {
+        return withContext(Dispatchers.IO) {
+            val response = client.get("$kupoUrl/matches/$scriptAddress?unspent")
+            val text = response.bodyAsText()
+            val arr = json.parseToJsonElement(text).jsonArray
+            arr.mapNotNull { elem ->
+                val obj = elem.jsonObject
+                val txHash = obj["transaction_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val idx = obj["output_index"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                val coins = obj["value"]?.jsonObject?.get("coins")?.jsonPrimitive?.long ?: 0L
+                val datumHash = obj["datum_hash"]?.jsonPrimitive?.content
+                KupoUtxo(txHash, idx, coins, datumHash)
+            }.filter { filterDatumHash == null || it.datumHash == filterDatumHash }
+        }
+    }
+
+    /**
+     * Reconstruct the alliance's contribution history from Kupo — including outputs already spent
+     * by later withdrawals. Needed because the treasury address holds BOTH contributions and the
+     * change-back outputs of withdrawals (same address + datum), so a live-UTxO view can't tell
+     * them apart and would mislabel withdrawal change as a contribution.
+     *
+     * Classification (DB-free, robust): a treasury output is CHANGE iff its creating transaction
+     * also SPENT a treasury UTxO of this alliance (a withdrawal consumes a treasury UTxO and pays
+     * change back). A pure contribution pays in from a wallet and spends no treasury UTxO. So the
+     * set of "spender" tx hashes = every output's spent_at.transaction_id; any output whose own
+     * creating tx is in that set is change and is excluded.
+     *
+     * Returns real contributions (spent or unspent), newest first.
+     */
+    suspend fun getScriptContributions(scriptAddress: String, filterDatumHash: String? = null): List<KupoUtxo> {
+        return withContext(Dispatchers.IO) {
+            val response = client.get("$kupoUrl/matches/$scriptAddress")  // all matches: spent + unspent
+            val text = response.bodyAsText()
+            val arr = json.parseToJsonElement(text).jsonArray
+
+            data class Match(val utxo: KupoUtxo, val createdSlot: Long, val spentByTx: String?)
+            val matches = arr.mapNotNull { elem ->
+                val obj = elem.jsonObject
+                val txHash = obj["transaction_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val idx = obj["output_index"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                val coins = obj["value"]?.jsonObject?.get("coins")?.jsonPrimitive?.long ?: 0L
+                val datumHash = obj["datum_hash"]?.jsonPrimitive?.content
+                // spent_at is `null` (JsonNull) for unspent matches — use `as?` so a JsonNull
+                // doesn't throw on .jsonObject. created_at is always an object but guard it too.
+                val createdSlot = (obj["created_at"] as? JsonObject)?.get("slot_no")?.jsonPrimitive?.long ?: 0L
+                val spentByTx = (obj["spent_at"] as? JsonObject)?.get("transaction_id")?.jsonPrimitive?.content
+                Match(KupoUtxo(txHash, idx, coins, datumHash), createdSlot, spentByTx)
+            }.filter { filterDatumHash == null || it.utxo.datumHash == filterDatumHash }
+
+            val spenderTxs = matches.mapNotNull { it.spentByTx }.toSet()
+            matches.filter { it.utxo.txHash !in spenderTxs }
+                .sortedByDescending { it.createdSlot }
+                .map { it.utxo }
+        }
+    }
+
+    /**
+     * Evaluate a transaction via Ogmios to get actual execution units for each script.
+     * Returns a map from "purpose:index" (e.g. "spend:0") to (mem, cpu) pair.
+     * Throws on evaluation failure (script error) so the caller can propagate the error.
+     */
+    suspend fun evaluateTx(txCbor: String): Map<String, Pair<Long, Long>> {
+        val result = queryRaw("evaluateTx", buildJsonObject {
+            putJsonObject("transaction") { put("cbor", txCbor) }
+            putJsonArray("additionalUtxo") {}
+        }, timeoutMs = 30_000L)
+
+        if (result is JsonArray) {
+            return result.associate { elem ->
+                val obj = elem.jsonObject
+                val validator = obj["validator"]?.jsonObject
+                val purpose = validator?.get("purpose")?.jsonPrimitive?.content ?: "unknown"
+                val index = validator?.get("index")?.jsonPrimitive?.int ?: 0
+                val budget = obj["budget"]?.jsonObject
+                val mem  = budget?.get("memory")?.jsonPrimitive?.long ?: 0L
+                val cpu  = budget?.get("cpu")?.jsonPrimitive?.long ?: 0L
+                "$purpose:$index" to (mem to cpu)
+            }
+        }
+        // Ogmios returned an error (JSON-RPC error response) or unexpected shape — log full body
+        ogmiosLogger.warn { "evaluateTx: Ogmios returned non-array result: ${result.toString().take(500)}" }
+        return emptyMap()
+    }
+
     suspend fun getProtocolParameters(): JsonObject {
         return queryRaw("queryLedgerState/protocolParameters", buildJsonObject {}).jsonObject
     }
@@ -369,7 +492,13 @@ class OgmiosStateQueries(private val network: Network) {
                 setBody(body)
             }
             val text = response.bodyAsText()
-            json.parseToJsonElement(text).jsonObject["result"] ?: buildJsonObject {}
+            val parsed = json.parseToJsonElement(text).jsonObject
+            parsed["result"] ?: run {
+                if (method == "evaluateTx") {
+                    ogmiosLogger.warn { "evaluateTx Ogmios response (no result field): ${text.take(600)}" }
+                }
+                buildJsonObject {}
+            }
         }
     }
 

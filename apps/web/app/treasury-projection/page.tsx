@@ -114,8 +114,11 @@ function Slider({
 }
 
 // ── Tooltip ────────────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ChartTooltip({ active, payload, label }: any) {
+function ChartTooltip({ active, payload, label }: {
+  active?: boolean
+  payload?: { name: string; value: number; color: string }[]
+  label?: string | number
+}) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-[#1a1a2e] border border-white/10 rounded-xl px-4 py-3 text-sm shadow-2xl backdrop-blur-sm">
