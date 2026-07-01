@@ -185,10 +185,19 @@ interface SPOVoteRowProps {
   threshold: number | null
 }
 
+function formatPct(pct: number): string {
+  if (pct === 0) return "0"
+  if (pct < 1) return pct.toFixed(1)
+  return Math.round(pct).toString()
+}
+
 function SPOVoteRow({ votes, yesPercent, noPercent, threshold }: SPOVoteRowProps) {
   const t = useT()
   const hasPower = votes.totalVotingPower > 0
   const showLabelInBar = yesPercent > 12
+  // Ensure a minimum visible sliver when power exists but rounds below 1%
+  const yesBarWidth = votes.yesVotingPower > 0 ? Math.max(yesPercent, 0.5) : 0
+  const noBarWidth  = votes.noVotingPower  > 0 ? Math.max(noPercent,  0.5) : 0
 
   return (
     <div className="space-y-1.5">
@@ -196,14 +205,14 @@ function SPOVoteRow({ votes, yesPercent, noPercent, threshold }: SPOVoteRowProps
         <span className="text-sm text-text-secondary w-10 shrink-0">SPO</span>
         <div className="flex-1 relative">
           <div className="vote-bar">
-            <div className="vote-bar-yes" style={{ width: `${yesPercent}%` }}>
+            <div className="vote-bar-yes" style={{ width: `${yesBarWidth}%` }}>
               {showLabelInBar && (
                 <span className="text-white text-[10px] font-bold px-1.5 leading-none drop-shadow-sm select-none">
-                  {yesPercent}%
+                  {formatPct(yesPercent)}%
                 </span>
               )}
             </div>
-            <div className="vote-bar-no" style={{ width: `${noPercent}%` }} />
+            <div className="vote-bar-no" style={{ width: `${noBarWidth}%` }} />
           </div>
           {threshold !== null && (
             <div
@@ -231,10 +240,10 @@ function SPOVoteRow({ votes, yesPercent, noPercent, threshold }: SPOVoteRowProps
         {hasPower ? (
           <>
             <div>
-              <span className="text-success font-medium">{yesPercent}% {t("governance.vote.yes")}</span>
+              <span className="text-success font-medium">{formatPct(yesPercent)}% {t("governance.vote.yes")}</span>
               <span className="text-text-muted"> · {lovelaceToAda(votes.yesVotingPower)} ₳</span>
               <span className="mx-1.5 text-text-muted/50">·</span>
-              <span className="text-danger font-medium">{noPercent}% {t("governance.vote.no")}</span>
+              <span className="text-danger font-medium">{formatPct(noPercent)}% {t("governance.vote.no")}</span>
               <span className="text-text-muted"> · {lovelaceToAda(votes.noVotingPower)} ₳</span>
             </div>
             {votes.abstainVotingPower > 0 && (
@@ -245,7 +254,7 @@ function SPOVoteRow({ votes, yesPercent, noPercent, threshold }: SPOVoteRowProps
           </>
         ) : (
           <div>
-            <span className="text-success">{votes.yes} {t("governance.vote.yes")} ({yesPercent}%)</span>
+            <span className="text-success">{votes.yes} {t("governance.vote.yes")} ({formatPct(yesPercent)}%)</span>
             {" · "}
             <span className="text-danger">{votes.no} {t("governance.vote.no")}</span>
             {votes.abstain > 0 && ` · ${votes.abstain} ${t("governance.vote.abstain")}`}

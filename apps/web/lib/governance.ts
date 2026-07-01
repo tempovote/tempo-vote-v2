@@ -84,9 +84,9 @@ export function computeSPOVotePercent(votes: SPOVoteStats): {
     ? votes.totalActiveSPOStake
     : votes.totalVotingPower
   if (denominator > 0) {
-    const yesPercent     = Math.round((votes.yesVotingPower     / denominator) * 100)
-    const noPercent      = Math.round((votes.noVotingPower      / denominator) * 100)
-    const abstainPercent = Math.round((votes.abstainVotingPower / denominator) * 100)
+    const yesPercent     = (votes.yesVotingPower     / denominator) * 100
+    const noPercent      = (votes.noVotingPower      / denominator) * 100
+    const abstainPercent = (votes.abstainVotingPower / denominator) * 100
     const notVotedPercent = votes.totalActiveSPOStake > 0
       ? Math.max(0, 100 - yesPercent - noPercent - abstainPercent)
       : 0
