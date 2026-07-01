@@ -2,6 +2,22 @@
 
 Cardano governance DApp cho DRep. Rebuild từ đầu trên monorepo. Tham chiếu v1: https://tempo.vote
 
+## Nguyên tắc làm việc
+
+Ưu tiên cẩn trọng hơn tốc độ. Với task đơn giản/rõ ràng, dùng judgement — không cần áp dụng cứng nhắc.
+
+### 1. Suy nghĩ trước khi code
+Không đoán, không giấu chỗ chưa rõ. Nêu giả định rõ ràng; nếu có nhiều cách hiểu, trình bày cả hai — không tự chọn ngầm. Nếu thấy cách đơn giản hơn, nói ra, có thể phản biện yêu cầu ban đầu.
+
+### 2. Đơn giản là trên hết
+Viết đúng lượng code cần để giải quyết yêu cầu — không thêm feature/abstraction/error-handling cho tình huống chưa xảy ra.
+
+### 3. Sửa đúng phạm vi
+Chỉ động vào phần liên quan đến yêu cầu. Không "tiện tay" refactor, đổi format, hay xoá dead code không liên quan — nêu ra nếu thấy, để user quyết định. Giữ style hiện có của file dù có cách khác thích hơn.
+
+### 4. Thực thi theo mục tiêu kiểm chứng được
+Biến yêu cầu mơ hồ thành goal kiểm chứng được: "fix bug" → viết test reproduce lỗi trước, rồi sửa cho pass. Task nhiều bước → nêu plan ngắn kèm cách verify từng bước trước khi làm.
+
 ## Kiến trúc
 
 ```
@@ -15,6 +31,8 @@ packages/config        — TS                 — ESLint, TypeScript, Tailwind c
 - Build TS: **Turborepo + pnpm** | Build Kotlin: **Gradle (Kotlin DSL)** — chạy độc lập
 - Cardano infra: **cardano-node + ogmios + kupo** (preprod + mainnet), không dùng Blockfrost
 - Network auto-detect từ `wallet.getNetworkId()` (0=testnet, 1=mainnet)
+
+> Chi tiết riêng từng stack: [`apps/web/CLAUDE.md`](apps/web/CLAUDE.md) (Next.js/TS) · [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md) (Kotlin/Ktor)
 
 ## Lệnh thường dùng
 
@@ -45,57 +63,8 @@ FE: getUtxos + getChangeAddress + getDRepKey
 ```
 Private key **không bao giờ ra khỏi ví**.
 
-## Kotlin backend
+## Quy ước xuyên stack
 
-`KupmiosBackendService(ogmiosUrl, kupoUrl)` + `QuickTxBuilder`. Governance TX:
-`registerDRep` · `createVote` · `delegateVotingPowerTo` · `createProposal`
-State queries (GA list, DRep list) qua Ogmios WS — xem `OgmiosStateQueries.kt`.
-
-## Database
-
-PostgreSQL + Kotlin Exposed. Chỉ lưu off-chain: polls, communities, comments, sessions.
-On-chain data luôn lấy từ Ogmios/Kupo. Migrations: Flyway `db/migration/V*.sql`.
-
-## UI (apps/web) — Giữ nguyên cấu trúc
-
-```
-app/globals.css                       # Tailwind v4 @theme tokens + utility classes
-app/layout.tsx                        # Root: Inter font, Navbar + Footer (suppressHydrationWarning!)
-app/page.tsx                          # Homepage: Become DRep, Delegate, GA preview, Polls
-app/dapp-ranking/page.tsx             # DApp Ranking + ProtocolTable
-app/dreps/page.tsx                    # DReps charts + DRepList
-app/governance-actions/page.tsx       # GA list + GovernanceActionCard
-components/layout/{Navbar,Footer}.tsx
-components/governance/GovernanceActionCard.tsx
-components/dapp-ranking/ProtocolTable.tsx
-components/drep/DRepList.tsx
-lib/mock-data.ts                      # Mock data (thay bằng real API sau)
-public/logo.webp
-```
-
-> `suppressHydrationWarning` trên `<html>` và `<body>` là bắt buộc — wallet extensions inject attributes. **Không xóa.**
-
-Design tokens chính: `bg-bg-primary` · `bg-bg-card` · `card-static` · `card-accent` · `btn-primary` · `notice-success/warning` · `vote-bar-yes/no` · `page-container`
-
-## Key files
-
-| File | Mục đích |
-|------|----------|
-| `packages/wallet-bridge/src/index.ts` | CIP-30/95 functions |
-| `packages/types/src/index.ts` | Zod schemas |
-| `apps/api/.../CardanoConfig.kt` | KupmiosBackendService factory |
-| `apps/api/.../TxBuilder.kt` | Governance TX builders |
-| `apps/api/.../OgmiosStateQueries.kt` | On-chain queries |
-| `apps/api/.../TransactionRoutes.kt` | POST /tx/build, /tx/submit |
-| `apps/web/hooks/useTx.ts` | FE: build → sign → submit |
-| `apps/web/hooks/useWallet.ts` | Wallet state |
-
-Docs chi tiết: `docs/architecture.md` · `docs/cardano-integration.md` · `docs/wallet-bridge.md` · `docs/api-contracts.md` · `docs/development-guide.md`
-
-## Conventions
-
-- **TS**: strict mode, no `any`, Zod cho mọi API boundary
-- **Kotlin**: Coroutines async, sealed classes cho Result<T, Error>
 - **Naming**: camelCase TS · PascalCase Kotlin · snake_case DB
 - **Network**: luôn truyền `network` param, không hardcode
 - **Error**: mọi TX op phải handle `TxSubmitError` + network timeout
@@ -163,3 +132,7 @@ API đang chạy VoteIndexer stream toàn bộ blockchain — restart mất toà
 3. Hỏi xác nhận có muốn restart không
 
 Quy tắc này áp dụng cho mọi hành động dừng/restart process API, kể cả gián tiếp (thay đổi port, kill process chiếm port 8080).
+
+## Docs
+
+Docs chi tiết: `docs/architecture.md` · `docs/cardano-integration.md` · `docs/wallet-bridge.md` · `docs/api-contracts.md` · `docs/development-guide.md`
