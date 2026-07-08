@@ -52,3 +52,6 @@ yarn-error.log*
 coverage/
 test-results/
 .kotlin/
+
+# Superpowers scratch
+.superpowers/
