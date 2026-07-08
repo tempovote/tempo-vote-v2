@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../packages/ui/src";
 
 /* ====================================================================
    Tempo Vote v2 — Design System
