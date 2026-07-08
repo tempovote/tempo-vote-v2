@@ -5,6 +5,9 @@
   "type": "module",
   "sideEffects": ["**/*.css"],
   "exports": {
+    "./components/*.stories": null,
+    "./components/*.test": null,
+    "./lib/*.test": null,
     "./components/*": "./src/components/*.tsx",
     "./lib/*": "./src/lib/*.ts",
     "./styles/*": "./src/styles/*"
