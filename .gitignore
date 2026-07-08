@@ -11,6 +11,7 @@ dist/
 build/
 out/
 *.tsbuildinfo
+storybook-static/
 
 # Kotlin / Gradle
 .gradle/
