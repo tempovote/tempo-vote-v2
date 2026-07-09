@@ -1,12 +1,14 @@
 # Current Status
 
-*Cập nhật lần cuối: 2026-06-06 (session 2)*
+*Cập nhật lần cuối: 2026-07-09*
 
 ---
 
 ## Đã hoàn thành
 
 Core infra, wallet (CIP-30/95), DRep registration wizard, DRep profile page, governance actions (list + detail + vote), DRep community + internal polls, VoteIndexer chain-sync. Chi tiết xem git log.
+
+Mới (06/06 → 07/09): alliance feature (PR #109) · fix SPO vote bar/voting power (active_stake, min-sliver PR #110) · VoteIndexer checkpoint pre-Conway · treasury withdrawal amount trên GA card (PR #107) · **design system @tempo/ui hoàn tất 4/4 đợt** (PR #113/#115/#117/#118 — tokens + 14 primitives + 11 domain components + docs; UI mới bắt buộc import từ `@tempo/ui`, xem `packages/ui/README.md`).
 
 ---
 
