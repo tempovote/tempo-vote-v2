@@ -1,28 +1,26 @@
 # Current Task
 
-*Cập nhật cuối: 2026-06-06*
+*Cập nhật cuối: 2026-07-09*
 
-## Task: Hoàn thiện DRep Community — poll voting
+## Task vừa xong: Design system @tempo/ui — hoàn tất 4/4 đợt
 
-**Branch:** `feature/community-polls`
+Merged vào main (PR #113 → #115 → #117 → #118), theo spec `docs/superpowers/specs/2026-07-08-tempo-design-system-design.md`:
 
-**Đã làm xong:**
-- `CommunityRoutes.kt`: auto-create Yes/No/Abstain khi tạo BASIC poll
-- `CommunityRoutes.kt`: `GET /communities/polls/{pollId}` — poll detail với options + vote counts + userVote
-- `CommunityRoutes.kt`: `POST /communities/polls/{pollId}/vote` — cast vote (validate active, no dup, option belongs)
-- `community.ts` types: thêm `PollDetail`, `PollOptionWithCount`, `CastVoteRequest`
-- `useCommunity.ts`: thêm `usePollDetail` hook
-- `[pollId]/page.tsx`: rewrite — hiển thị poll title/abstract/status + voting UI + result bars + comments
+- **Đợt 1**: scaffold package (source-exports) + tokens light/dark + `cn()`/format + Storybook
+- **Đợt 2**: 14 primitives (shadcn-style trên Radix, restyle Tempo)
+- **Đợt 3**: 11 domain components (VoteBar, GaStatusBadge, ActionIdChip, CopyButton/CopyableId, DRepAvatar, StatCell, AdaAmount, NetworkBadge, MarkdownEditor, RichMarkdownEditor, WalletConnectModal)
+- **Đợt 4**: `packages/ui/README.md` + quy tắc CLAUDE.md — **UI mới bắt buộc import từ @tempo/ui**
 
-**Còn lại (nếu muốn mở rộng):**
-- `votingPower` trong `PollVotes` đang là `0L` — cần Kupo UTxO query để lấy actual voting power
-- Weighted results (by votingPower) vs simple count — hiện dùng simple count
+Trước đó (cùng giai đoạn): alliance feature (PR #109), fix SPO vote bar/voting power, VoteIndexer checkpoint pre-Conway.
 
 ---
 
 ## Bước tiếp theo
 
-**Next feature task — chọn 1:**
-1. **Active Voting Power (Kupo)**: implement Kupo UTxO query cho `stakeKeyBalance` + `votingPower` trong polls
-2. **Delegation UI**: nối flow `buildDelegation()` vào FE, tạo DelegateModal trên DRep profile
-3. **Auth enforcement**: quyết định scope rồi add JWT middleware cho community/poll endpoints
+**Next task — chọn 1:**
+
+1. **Migrate apps/web sang @tempo/ui**: từng domain 1 PR riêng (so màn hình cũ–mới), sau đó gỡ dần CSS class legacy khỏi `globals.css`. Bảng mapping token: `packages/ui/README.md`.
+2. **Backlog high-priority** (từ trước, chưa làm — chi tiết `CURRENT_STATUS.md`):
+   - Active Voting Power (Kupo): query UTxO cho `stakeKeyBalance` + `votingPower` trong polls
+   - Auth enforcement: quyết định scope rồi enforce JWT trên community/poll endpoints
+   - DRep Registration e2e test thủ công trên preprod
