@@ -25,6 +25,7 @@ apps/web          — Next.js 15 (TypeScript)  — DApp frontend
 apps/api          — Kotlin / Ktor            — TX building, off-chain API
 packages/wallet-bridge — TS/CIP-30/CIP-95   — Raw wallet bridge (không dùng MeshSDK)
 packages/types         — TS/Zod             — API schemas shared FE/BE
+packages/ui            — TS/React/Tailwind  — Design system @tempo/ui (tokens + primitives + domain components)
 packages/config        — TS                 — ESLint, TypeScript, Tailwind configs
 ```
 
@@ -68,6 +69,7 @@ Private key **không bao giờ ra khỏi ví**.
 - **Naming**: camelCase TS · PascalCase Kotlin · snake_case DB
 - **Network**: luôn truyền `network` param, không hardcode
 - **Error**: mọi TX op phải handle `TxSubmitError` + network timeout
+- **UI mới**: bắt buộc import component từ `@tempo/ui` — không viết lại bằng CSS class cũ trong `globals.css`. Xem [`packages/ui/README.md`](packages/ui/README.md) (danh mục component, quy tắc API, bảng mapping token)
 
 ## Git Workflow ⚠️
 
@@ -108,7 +110,7 @@ Plugin detect cả 2 stacks qua `bin/detect-project.sh`. `.supergraph-env` có 2
 - Toàn bộ file thay đổi là `.ts/.tsx` → dùng `TEST_CMD` / `LINT_CMD`
 - Mix cả 2 → dùng `TEST_CMD_ALL` (chạy cả hai)
 
-**⚠️ Tránh false positive do stale build cache:** `packages/types`, `packages/wallet-bridge`, `packages/ui` build ra `dist/` qua tsup — **gitignored**, không commit. `typecheck`/`build` trong `turbo.json` có `dependsOn: ["^build"]` (tự rebuild package phụ thuộc trước). Nếu chạy trực tiếp `pnpm --filter <pkg> typecheck` (bỏ qua Turborepo) mà không rebuild package phụ thuộc trước, `dist/` cũ có thể thiếu type mới nhất → báo lỗi type "giả". Luôn dùng `pnpm typecheck` ở root, hoặc rebuild trước bằng `pnpm --filter @tempo/types build` khi gặp lỗi type khó hiểu ở package tiêu thụ.
+**⚠️ Tránh false positive do stale build cache:** `packages/types`, `packages/wallet-bridge` build ra `dist/` qua tsup — **gitignored**, không commit (`packages/ui` là source-exports, không có build step nên không bị stale). `typecheck`/`build` trong `turbo.json` có `dependsOn: ["^build"]` (tự rebuild package phụ thuộc trước). Nếu chạy trực tiếp `pnpm --filter <pkg> typecheck` (bỏ qua Turborepo) mà không rebuild package phụ thuộc trước, `dist/` cũ có thể thiếu type mới nhất → báo lỗi type "giả". Luôn dùng `pnpm typecheck` ở root, hoặc rebuild trước bằng `pnpm --filter @tempo/types build` khi gặp lỗi type khó hiểu ở package tiêu thụ.
 
 **TDD focused command cho Kotlin:**
 ```bash
