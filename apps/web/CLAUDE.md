@@ -21,7 +21,21 @@ public/logo.webp
 
 > `suppressHydrationWarning` trên `<html>` và `<body>` là bắt buộc — wallet extensions inject attributes. **Không xóa.**
 
-Design tokens chính: `bg-bg-primary` · `bg-bg-card` · `card-static` · `card-accent` · `btn-primary` · `notice-success/warning` · `vote-bar-yes/no` · `page-container`
+Design tokens chính (legacy): `bg-bg-primary` · `bg-bg-card` · `card-static` · `card-accent` · `btn-primary` · `notice-success/warning` · `vote-bar-yes/no` · `page-container`
+
+## Design system — @tempo/ui ⚠️
+
+**Code UI MỚI bắt buộc import từ `@tempo/ui`** — không viết lại button/card/badge/modal bằng CSS class cũ ở `globals.css` (class cũ chỉ cho màn hình legacy, gỡ dần khi migrate).
+
+```tsx
+import { Button } from "@tempo/ui/components/button"
+import { VoteBar } from "@tempo/ui/components/vote-bar"
+```
+
+- Danh mục 25 components + quy tắc API + bảng mapping token cũ→mới: [`packages/ui/README.md`](../../packages/ui/README.md)
+- DS **i18n-free**: app truyền text đã dịch qua props (`label`, `labels{}`) — `useT()` chỉ ở app layer
+- `RichMarkdownEditor` phải bọc `next/dynamic` với `ssr: false` khi dùng trong app
+- Wiring có sẵn (`transpilePackages` + `@source`) — không cần config thêm khi thêm component mới
 
 ## Key files
 
