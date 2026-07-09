@@ -1,0 +1,113 @@
+/* ── @uiw/react-md-editor — Tempo skin (theme-aware qua biến gốc tokens.css) ── */
+.tempo-rich-md-wrap .w-md-editor {
+  --md-editor-background-color: var(--secondary);
+  --md-editor-box-shadow-color: var(--border-subtle);
+  --color-fg-default: var(--foreground);
+  --color-canvas-default: var(--secondary);
+  --color-border-default: var(--border-subtle);
+  --color-neutral-muted: var(--popover);
+  --color-accent-fg: var(--primary-light);
+  background-color: var(--secondary);
+  border-radius: 0.75rem;
+  box-shadow: 0 0 0 1px var(--border-subtle);
+  color: var(--foreground);
+}
+
+.tempo-rich-md-wrap .w-md-editor-toolbar {
+  background-color: var(--popover);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0.75rem 0.75rem 0 0;
+  padding: 4px 6px;
+}
+
+.tempo-rich-md-wrap .w-md-editor-toolbar ul li button {
+  color: var(--muted-foreground);
+  border-radius: 4px;
+}
+
+.tempo-rich-md-wrap .w-md-editor-toolbar ul li button:hover,
+.tempo-rich-md-wrap .w-md-editor-toolbar ul li.active button {
+  color: var(--foreground);
+  background-color: var(--card);
+}
+
+/* Divider giữa các nhóm toolbar */
+.tempo-rich-md-wrap .w-md-editor-toolbar li.divider {
+  background-color: var(--border-subtle);
+}
+
+/* Vùng textarea */
+.tempo-rich-md-wrap .w-md-editor-text-pre,
+.tempo-rich-md-wrap .w-md-editor-text-input,
+.tempo-rich-md-wrap .w-md-editor-text {
+  color: var(--foreground) !important;
+  caret-color: var(--foreground);
+}
+
+/* Preview pane */
+.tempo-rich-md-wrap .w-md-editor-preview {
+  background-color: var(--secondary);
+  box-shadow: inset 1px 0 0 0 var(--border-subtle);
+}
+
+.tempo-rich-md-wrap .w-md-editor-preview .wmde-markdown {
+  background-color: transparent;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* Markdown elements trong preview */
+.tempo-rich-md-wrap .wmde-markdown h1,
+.tempo-rich-md-wrap .wmde-markdown h2,
+.tempo-rich-md-wrap .wmde-markdown h3 {
+  color: var(--foreground);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tempo-rich-md-wrap .wmde-markdown a {
+  color: var(--primary-light);
+}
+
+.tempo-rich-md-wrap .wmde-markdown code {
+  background-color: var(--popover);
+  color: var(--primary-light);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.tempo-rich-md-wrap .wmde-markdown pre {
+  background-color: var(--popover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.tempo-rich-md-wrap .wmde-markdown blockquote {
+  border-left: 3px solid var(--primary);
+  color: var(--muted-foreground-subtle);
+}
+
+.tempo-rich-md-wrap .wmde-markdown ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tempo-rich-md-wrap .wmde-markdown ul {
+  list-style: disc;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tempo-rich-md-wrap .wmde-markdown li {
+  margin: 0.2em 0;
+}
+
+.tempo-rich-md-wrap .wmde-markdown li > p {
+  margin: 0;
+}
+
+/* Đường chia split mode */
+.tempo-rich-md-wrap .w-md-editor-show-live .w-md-editor-input {
+  box-shadow: inset -1px 0 0 0 var(--border-subtle);
+}
