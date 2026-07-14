@@ -4,6 +4,7 @@ import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.VarCharColumnType
+import vote.tempo.cardano.GovernanceActionDto
 import vote.tempo.cardano.PoolInfo
 import vote.tempo.cardano.VoteEntry
 
@@ -106,18 +107,37 @@ object ChainIndexDao {
 
     /**
      * Persist a server-side-resolved CIP-108 title (and abstract) for a governance action.
-     * Updates the existing idx_governance_proposals row; a no-op (returns 0) if the proposal
-     * isn't indexed yet. Called lazily from the GA endpoint so titles survive across requests
-     * instead of relying on the browser to fetch slow IPFS gateways within its 5 s timeout.
+     * Updates the existing idx_governance_proposals row; if the proposal isn't indexed yet
+     * (live GA whose submission tx predates the indexer checkpoint), inserts a stub row so
+     * the title still persists — otherwise it would be refetched from IPFS on every request.
+     * VoteIndexer's upsert later heals the stub's chain fields (it never touches title/abstract).
+     * submitted_slot/epoch are unknown here and left 0; insertIgnore covers a concurrent
+     * VoteIndexer upsert. Called lazily from the GA endpoint.
      */
-    fun updateGaTitle(network: String, txHash: String, index: Int, title: String, abstract: String?): Int = transaction {
-        IdxGovernanceProposals.update({
+    fun upsertGaTitle(network: String, ga: GovernanceActionDto, title: String, abstract: String?): Unit = transaction {
+        val updated = IdxGovernanceProposals.update({
             (IdxGovernanceProposals.network eq network) and
-            (IdxGovernanceProposals.txHash eq txHash) and
-            (IdxGovernanceProposals.index eq index)
+            (IdxGovernanceProposals.txHash eq ga.txHash) and
+            (IdxGovernanceProposals.index eq ga.index)
         }) {
             it[IdxGovernanceProposals.title] = title
             if (abstract != null) it[IdxGovernanceProposals.abstract] = abstract
+        }
+        if (updated == 0) {
+            IdxGovernanceProposals.insertIgnore {
+                it[IdxGovernanceProposals.network]        = network
+                it[IdxGovernanceProposals.txHash]         = ga.txHash
+                it[IdxGovernanceProposals.index]          = ga.index
+                it[IdxGovernanceProposals.actionType]     = ga.actionType
+                it[IdxGovernanceProposals.anchorUrl]      = ga.anchorUrl
+                it[IdxGovernanceProposals.anchorHash]     = ga.anchorHash
+                it[IdxGovernanceProposals.deposit]        = ga.deposit
+                it[IdxGovernanceProposals.submittedSlot]  = 0
+                it[IdxGovernanceProposals.submittedEpoch] = 0
+                it[IdxGovernanceProposals.expiresEpoch]   = ga.expiresEpoch
+                it[IdxGovernanceProposals.title]          = title
+                it[IdxGovernanceProposals.abstract]       = abstract
+            }
         }
     }
 

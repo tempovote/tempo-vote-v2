@@ -344,8 +344,16 @@ private const val GA_TITLE_BACKFILL_LIMIT = 20
 private val gaTitleMissCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap()
 private const val GA_TITLE_MISS_TTL_MS = 10 * 60 * 1000L
 
+/**
+ * DRep voters whose metadata fetch failed or yielded neither name nor image — same TTL scheme
+ * as gaTitleMissCache. Without this, every /governance-actions request re-fetched the same
+ * failing anchors (only successes are cached in CardanoCache.drepInfo), adding a flat multi-second
+ * cost per request. Key: "NETWORK:credentialHex".
+ */
+private val drepMetaMissCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap()
+
 /** True if [key] failed recently enough that it should be skipped rather than retried. */
-internal fun isGaTitleMissRecent(key: String, missCache: Map<String, Long>, now: Long, ttlMs: Long = GA_TITLE_MISS_TTL_MS): Boolean {
+internal fun isMissRecent(key: String, missCache: Map<String, Long>, now: Long, ttlMs: Long = GA_TITLE_MISS_TTL_MS): Boolean {
     val lastMiss = missCache[key] ?: return false
     return now - lastMiss < ttlMs
 }
@@ -444,31 +452,36 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
     val all = live + historical + indexed
 
     // Collect DRep voters with an anchorUrl but no cached name — fetch server-side (bypasses CORS).
-    // Cap the total wait at 10 s so the endpoint never hangs on slow IPFS gateways.
+    // Voters whose fetch failed recently are skipped (drepMetaMissCache) so dead anchors don't
+    // add a flat multi-second cost to every request. Each voter gets its own 10 s budget: a
+    // shared batch timeout would cancel in-flight fetches together and record spurious misses.
+    val drepNowMs = System.currentTimeMillis()
     val uncached = all.flatMap { it.votes }
         .filter { v -> v.role == "drep" && v.anchorUrl != null &&
-            CardanoCache.drepInfo.getIfPresent("${network.name}:${v.id}") == null }
+            CardanoCache.drepInfo.getIfPresent("${network.name}:${v.id}") == null &&
+            !isMissRecent("${network.name}:${v.id}", drepMetaMissCache, drepNowMs) }
         .distinctBy { it.id }
 
     if (uncached.isNotEmpty()) {
-        runCatching {
-            withTimeout(10_000L) {
-                coroutineScope {
-                    uncached.map { vote ->
-                        async {
-                            val meta = runCatching { resolveDRepMeta(network, vote.id, vote.anchorUrl) }.getOrNull()
-                            val name     = meta?.name
-                            val imageUrl = meta?.imageUrl
-                            if (name != null || imageUrl != null) {
-                                CardanoCache.drepInfo.put("${network.name}:${vote.id}", buildJsonObject {
-                                    put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
-                                    put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                                })
-                            }
-                        }
-                    }.forEach { it.await() }
+        coroutineScope {
+            uncached.map { vote ->
+                async {
+                    val key = "${network.name}:${vote.id}"
+                    val meta = runCatching {
+                        withTimeout(10_000L) { resolveDRepMeta(network, vote.id, vote.anchorUrl) }
+                    }.getOrNull()
+                    val name     = meta?.name
+                    val imageUrl = meta?.imageUrl
+                    if (name != null || imageUrl != null) {
+                        CardanoCache.drepInfo.put(key, buildJsonObject {
+                            put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
+                            put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                        })
+                    } else {
+                        drepMetaMissCache[key] = System.currentTimeMillis()
+                    }
                 }
-            }
+            }.forEach { it.await() }
         }
     }
 
@@ -489,7 +502,7 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
             ga.anchorUrl != null &&
             ga.title == null &&
             titleMap["${ga.txHash}#${ga.index}"] == null &&
-            !isGaTitleMissRecent("${ga.txHash}#${ga.index}", gaTitleMissCache, nowMs)
+            !isMissRecent("${ga.txHash}#${ga.index}", gaTitleMissCache, nowMs)
         }
         .distinctBy { "${it.txHash}#${it.index}" }
         .take(GA_TITLE_BACKFILL_LIMIT)
@@ -512,7 +525,7 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
                     resolvedTitles[key] = ta.first
                     runCatching {
                         withContext(Dispatchers.IO) {
-                            ChainIndexDao.updateGaTitle(netLower, ga.txHash, ga.index, ta.first, ta.second)
+                            ChainIndexDao.upsertGaTitle(netLower, ga, ta.first, ta.second)
                         }
                     }
                 }
