@@ -335,8 +335,20 @@ private suspend fun resolveVoterNames(network: Network, votes: List<VoteEntry>):
 /** Max number of missing titles to resolve from anchors per request — bounds latency/connections. */
 private const val GA_TITLE_BACKFILL_LIMIT = 20
 
-/** Anchors that yielded no title (dead/unreachable/no title field) — skip re-fetching for this process. */
-private val gaTitleMissCache: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+/**
+ * Anchors that yielded no title (dead/unreachable/no title field/timeout) — maps key to the
+ * epoch millis of the last failed attempt. Retried after [GA_TITLE_MISS_TTL_MS] instead of being
+ * blacklisted forever, since most misses are transient (slow gateway, timeout under concurrent
+ * load) rather than a genuine absence of a title in the anchor content.
+ */
+private val gaTitleMissCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap()
+private const val GA_TITLE_MISS_TTL_MS = 10 * 60 * 1000L
+
+/** True if [key] failed recently enough that it should be skipped rather than retried. */
+internal fun isGaTitleMissRecent(key: String, missCache: Map<String, Long>, now: Long, ttlMs: Long = GA_TITLE_MISS_TTL_MS): Boolean {
+    val lastMiss = missCache[key] ?: return false
+    return now - lastMiss < ttlMs
+}
 
 /**
  * Fetch a governance action's CIP-108 metadata server-side and extract (title, abstract).
@@ -471,38 +483,40 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
     // and writing to the DB means every later request serves the title instantly from titleMap.
     val resolvedTitles = HashMap<String, String>()
     val netLower = network.name.lowercase()
+    val nowMs = System.currentTimeMillis()
     val needTitle = all
         .filter { ga ->
             ga.anchorUrl != null &&
             ga.title == null &&
             titleMap["${ga.txHash}#${ga.index}"] == null &&
-            "${ga.txHash}#${ga.index}" !in gaTitleMissCache
+            !isGaTitleMissRecent("${ga.txHash}#${ga.index}", gaTitleMissCache, nowMs)
         }
         .distinctBy { "${it.txHash}#${it.index}" }
         .take(GA_TITLE_BACKFILL_LIMIT)
 
     if (needTitle.isNotEmpty()) {
-        runCatching {
-            withTimeout(12_000L) {
-                coroutineScope {
-                    needTitle.map { ga ->
-                        async {
-                            val key = "${ga.txHash}#${ga.index}"
-                            val ta = runCatching { fetchAnchorTitleAbstract(ga.anchorUrl!!) }.getOrNull()
-                            if (ta == null) {
-                                gaTitleMissCache.add(key)   // skip dead/slow anchors next time
-                                return@async
-                            }
-                            resolvedTitles[key] = ta.first
-                            runCatching {
-                                withContext(Dispatchers.IO) {
-                                    ChainIndexDao.updateGaTitle(netLower, ga.txHash, ga.index, ta.first, ta.second)
-                                }
-                            }
+        // Each GA gets its own 12 s budget (bounded by fetchAnchorTitleAbstract's own gateway
+        // fallback loop). A single shared timeout around the whole batch would cancel every
+        // in-flight fetch — including ones about to succeed — as soon as the slowest GA in the
+        // batch (or plain connection contention across many concurrent gateway calls) blew past
+        // the deadline, which is what caused most GAs in a large batch to end up with no title.
+        coroutineScope {
+            needTitle.map { ga ->
+                async {
+                    val key = "${ga.txHash}#${ga.index}"
+                    val ta = runCatching { withTimeout(12_000L) { fetchAnchorTitleAbstract(ga.anchorUrl!!) } }.getOrNull()
+                    if (ta == null) {
+                        gaTitleMissCache[key] = System.currentTimeMillis()   // skip dead/slow anchors for GA_TITLE_MISS_TTL_MS
+                        return@async
+                    }
+                    resolvedTitles[key] = ta.first
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            ChainIndexDao.updateGaTitle(netLower, ga.txHash, ga.index, ta.first, ta.second)
                         }
-                    }.forEach { it.await() }
+                    }
                 }
-            }
+            }.forEach { it.await() }
         }
     }
 
