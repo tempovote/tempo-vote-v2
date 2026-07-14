@@ -5,9 +5,12 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
@@ -451,94 +454,22 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
 
     val all = live + historical + indexed
 
-    // Collect DRep voters with an anchorUrl but no cached name — fetch server-side (bypasses CORS).
-    // Voters whose fetch failed recently are skipped (drepMetaMissCache) so dead anchors don't
-    // add a flat multi-second cost to every request. Each voter gets its own 10 s budget: a
-    // shared batch timeout would cancel in-flight fetches together and record spurious misses.
-    val drepNowMs = System.currentTimeMillis()
-    val uncached = all.flatMap { it.votes }
-        .filter { v -> v.role == "drep" && v.anchorUrl != null &&
-            CardanoCache.drepInfo.getIfPresent("${network.name}:${v.id}") == null &&
-            !isMissRecent("${network.name}:${v.id}", drepMetaMissCache, drepNowMs) }
-        .distinctBy { it.id }
-
-    if (uncached.isNotEmpty()) {
-        coroutineScope {
-            uncached.map { vote ->
-                async {
-                    val key = "${network.name}:${vote.id}"
-                    val meta = runCatching {
-                        withTimeout(10_000L) { resolveDRepMeta(network, vote.id, vote.anchorUrl) }
-                    }.getOrNull()
-                    val name     = meta?.name
-                    val imageUrl = meta?.imageUrl
-                    if (name != null || imageUrl != null) {
-                        CardanoCache.drepInfo.put(key, buildJsonObject {
-                            put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
-                            put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
-                        })
-                    } else {
-                        drepMetaMissCache[key] = System.currentTimeMillis()
-                    }
-                }
-            }.forEach { it.await() }
-        }
-    }
-
     // Batch-load titles from idx_governance_proposals for GAs that don't have one yet.
     val titleMap = withContext(Dispatchers.IO) {
         ChainIndexDao.buildGaTitleMap(network.name.lowercase())
     }
 
-    // GAs still missing a title after the DB lookup: resolve the anchor JSON server-side once
-    // and persist it. The browser's own 5 s fetch timeout drops slow IPFS gateways (Pinata can
-    // take 4–6 s), so titles flicker/vanish on the client; resolving here (8 s/gateway, no CORS)
-    // and writing to the DB means every later request serves the title instantly from titleMap.
-    val resolvedTitles = HashMap<String, String>()
-    val netLower = network.name.lowercase()
-    val nowMs = System.currentTimeMillis()
-    val needTitle = all
-        .filter { ga ->
-            ga.anchorUrl != null &&
-            ga.title == null &&
-            titleMap["${ga.txHash}#${ga.index}"] == null &&
-            !isMissRecent("${ga.txHash}#${ga.index}", gaTitleMissCache, nowMs)
-        }
-        .distinctBy { "${it.txHash}#${it.index}" }
-        .take(GA_TITLE_BACKFILL_LIMIT)
+    // External enrichment (anchor titles + DRep names from IPFS) runs in the background —
+    // the response is served immediately from DB/caches and enriched data appears on later
+    // requests (the FE renders progressively). Blocking here used to cost 5–12 s per request
+    // whenever new voters/GAs appeared or a miss-cache TTL expired.
+    launchEnrichment(network, all, titleMap)
 
-    if (needTitle.isNotEmpty()) {
-        // Each GA gets its own 12 s budget (bounded by fetchAnchorTitleAbstract's own gateway
-        // fallback loop). A single shared timeout around the whole batch would cancel every
-        // in-flight fetch — including ones about to succeed — as soon as the slowest GA in the
-        // batch (or plain connection contention across many concurrent gateway calls) blew past
-        // the deadline, which is what caused most GAs in a large batch to end up with no title.
-        coroutineScope {
-            needTitle.map { ga ->
-                async {
-                    val key = "${ga.txHash}#${ga.index}"
-                    val ta = runCatching { withTimeout(12_000L) { fetchAnchorTitleAbstract(ga.anchorUrl!!) } }.getOrNull()
-                    if (ta == null) {
-                        gaTitleMissCache[key] = System.currentTimeMillis()   // skip dead/slow anchors for GA_TITLE_MISS_TTL_MS
-                        return@async
-                    }
-                    resolvedTitles[key] = ta.first
-                    runCatching {
-                        withContext(Dispatchers.IO) {
-                            ChainIndexDao.upsertGaTitle(netLower, ga, ta.first, ta.second)
-                        }
-                    }
-                }
-            }.forEach { it.await() }
-        }
-    }
-
-    // Enrich all DRep vote entries with names from (now-populated) drepInfo cache.
-    // Also merge DB title for any GA missing one (active GAs parsed from Ogmios have title=null).
+    // Enrich DRep vote entries with names from the drepInfo cache (populated by earlier
+    // enrichment rounds). Also merge DB title for any GA missing one (active GAs parsed
+    // from Ogmios have title=null).
     return all.map { ga ->
-        val enrichedTitle = ga.title
-            ?: titleMap["${ga.txHash}#${ga.index}"]
-            ?: resolvedTitles["${ga.txHash}#${ga.index}"]
+        val enrichedTitle = ga.title ?: titleMap["${ga.txHash}#${ga.index}"]
         ga.copy(
             title = enrichedTitle,
             votes = ga.votes.map { vote ->
@@ -550,6 +481,86 @@ private suspend fun fetchProposals(network: Network): List<GovernanceActionDto> 
                 } else vote
             },
         )
+    }
+}
+
+/** Background scope for IPFS enrichment — survives request cancellation (client disconnect). */
+private val enrichmentScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+/** Networks with an enrichment batch currently running — concurrent requests don't start another. */
+private val enrichmentInFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+/**
+ * Resolve missing GA titles and DRep voter names from their anchors, off the request path.
+ * Results are persisted (titles → idx_governance_proposals, names → drepInfo cache backed by
+ * drep_metadata) so subsequent requests serve them instantly; failures go to the miss caches
+ * and are retried after their TTL. At most one batch per network runs at a time.
+ */
+private fun launchEnrichment(network: Network, all: List<GovernanceActionDto>, titleMap: Map<String, String>) {
+    val nowMs = System.currentTimeMillis()
+
+    // DRep voters with an anchorUrl but no cached name. Each gets its own 10 s budget: a shared
+    // batch timeout would cancel in-flight fetches together and record spurious misses.
+    val uncached = all.flatMap { it.votes }
+        .filter { v -> v.role == "drep" && v.anchorUrl != null &&
+            CardanoCache.drepInfo.getIfPresent("${network.name}:${v.id}") == null &&
+            !isMissRecent("${network.name}:${v.id}", drepMetaMissCache, nowMs) }
+        .distinctBy { it.id }
+
+    // GAs still missing a title after the DB lookup. Per-GA 12 s budget for the same reason.
+    val needTitle = all
+        .filter { ga ->
+            ga.anchorUrl != null &&
+            ga.title == null &&
+            titleMap["${ga.txHash}#${ga.index}"] == null &&
+            !isMissRecent("${ga.txHash}#${ga.index}", gaTitleMissCache, nowMs)
+        }
+        .distinctBy { "${it.txHash}#${it.index}" }
+        .take(GA_TITLE_BACKFILL_LIMIT)
+
+    if (uncached.isEmpty() && needTitle.isEmpty()) return
+    if (!enrichmentInFlight.add(network.name)) return
+
+    val netLower = network.name.lowercase()
+    enrichmentScope.launch {
+        try {
+            coroutineScope {
+                uncached.map { vote ->
+                    async {
+                        val key = "${network.name}:${vote.id}"
+                        val meta = runCatching {
+                            withTimeout(10_000L) { resolveDRepMeta(network, vote.id, vote.anchorUrl) }
+                        }.getOrNull()
+                        val name     = meta?.name
+                        val imageUrl = meta?.imageUrl
+                        if (name != null || imageUrl != null) {
+                            CardanoCache.drepInfo.put(key, buildJsonObject {
+                                put("name",     name?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("imageUrl", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                            })
+                        } else {
+                            drepMetaMissCache[key] = System.currentTimeMillis()
+                        }
+                    }
+                } + needTitle.map { ga ->
+                    async {
+                        val key = "${ga.txHash}#${ga.index}"
+                        val ta = runCatching { withTimeout(12_000L) { fetchAnchorTitleAbstract(ga.anchorUrl!!) } }.getOrNull()
+                        if (ta == null) {
+                            gaTitleMissCache[key] = System.currentTimeMillis()   // skip dead/slow anchors for GA_TITLE_MISS_TTL_MS
+                            return@async
+                        }
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                ChainIndexDao.upsertGaTitle(netLower, ga, ta.first, ta.second)
+                            }
+                        }
+                    }
+                }.forEach { it.await() }
+            }
+        } finally {
+            enrichmentInFlight.remove(network.name)
+        }
     }
 }
 
