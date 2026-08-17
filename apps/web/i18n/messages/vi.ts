@@ -165,6 +165,7 @@ const vi: Messages = {
     card: {
       expires: "Hết hạn",
       epoch: "Epoch {n}",
+      timeLeft: "(còn {time})",
       voteResults: "Kết quả bỏ phiếu",
       copyId: "Copy {mode} ID",
     },

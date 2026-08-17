@@ -165,6 +165,7 @@ const en = {
     card: {
       expires: "Expires",
       epoch: "Epoch {n}",
+      timeLeft: "({time} left)",
       voteResults: "Voting Results",
       copyId: "Copy {mode} ID",
     },

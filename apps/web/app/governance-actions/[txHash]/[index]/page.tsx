@@ -18,6 +18,7 @@ import { ActionDetailCard } from "@/components/governance/ActionDetailCard"
 import { GaStatusBadge } from "@/components/governance/GaStatusBadge"
 import { GaDetailTabs } from "@/components/governance/GaDetailTabs"
 import { AllianceStancesPanel } from "@/components/alliance/AllianceStancesPanel"
+import { useEpochCountdown } from "@/hooks/useEpochCountdown"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
@@ -150,6 +151,11 @@ export default function GovernanceActionDetailPage({
   const network = useWalletStore((s) => s.selectedNetwork)
 
   const { action, loading, error: fetchError } = useGovernanceAction(network, txHash, index)
+  const { formattedTime, isExpired } = useEpochCountdown(
+    action?.expiresEpoch,
+    network,
+    action?.status === "active"
+  )
 
   // Use DB title if available; fall back to anchor-fetch for new proposals not yet in DB
   const anchorTitle = useAnchorTitle(action?.title ? null : (action?.anchorUrl ?? null))
@@ -213,7 +219,14 @@ export default function GovernanceActionDetailPage({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
               <div>
                 <p className="text-text-muted text-xs mb-0.5">{t("governance.card.expires")}</p>
-                <p className="font-medium">{t("governance.card.epoch", { n: action.expiresEpoch })}</p>
+                <p className="font-medium">
+                  {t("governance.card.epoch", { n: action.expiresEpoch })}
+                  {action.status === "active" && formattedTime && !isExpired ? (
+                    <span className="text-text-muted text-xs font-normal ml-1.5">
+                      {t("governance.card.timeLeft", { time: formattedTime })}
+                    </span>
+                  ) : null}
+                </p>
               </div>
               <div>
                 <p className="text-text-muted text-xs mb-0.5">{t("governance.detail.deposit")}</p>

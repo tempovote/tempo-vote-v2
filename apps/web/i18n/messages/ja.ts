@@ -166,6 +166,7 @@ const ja: Messages = {
     card: {
       expires: "期限",
       epoch: "エポック{n}",
+      timeLeft: "(残り{time})",
       voteResults: "投票結果",
       copyId: "{mode} IDをコピー",
     },

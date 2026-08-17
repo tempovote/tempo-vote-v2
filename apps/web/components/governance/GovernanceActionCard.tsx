@@ -12,6 +12,7 @@ import { normalizeActionType } from "@/lib/governance"
 import { GaStatusBadge } from "./GaStatusBadge"
 import { useT } from "@/i18n/useT"
 import { useVoteQueue, queueKey, type VoteChoice } from "@/store/voteQueue"
+import { useEpochCountdown } from "@/hooks/useEpochCountdown"
 
 interface Props {
   action: GovernanceAction
@@ -115,6 +116,11 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
   const { isConnected, isDrepRegistered, drepKey, selectedNetwork } = useWalletStore()
   const drepId = isDrepRegistered ? drepKey?.dRepIDCip105 : undefined
   const myVote = useMyVote(action.txHash, action.index, drepId, selectedNetwork)
+  const { formattedTime, isExpired } = useEpochCountdown(
+    action.expiresEpoch,
+    selectedNetwork,
+    action.status === "active"
+  )
 
   const proposalTitle = action.title ?? anchorTitle ?? t(`governance.type.${normalizeActionType(action.actionType)}`)
   const showVoteButtons = isDrepRegistered && action.status === "active"
@@ -139,6 +145,11 @@ export default function GovernanceActionCard({ action, compact = false }: Props)
           <span className="text-text-secondary">
             {t("governance.card.expires")}{" "}
             <span className="text-text-primary font-medium">{t("governance.card.epoch", { n: action.expiresEpoch })}</span>
+            {action.status === "active" && formattedTime && !isExpired ? (
+              <span className="text-text-muted font-normal ml-1">
+                {t("governance.card.timeLeft", { time: formattedTime })}
+              </span>
+            ) : null}
           </span>
           <span className="text-text-muted">·</span>
           <GaStatusBadge status={action.status} />
