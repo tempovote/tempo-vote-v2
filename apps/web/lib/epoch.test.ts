@@ -12,8 +12,8 @@ describe("epoch calculations", () => {
     // Epoch 0 end (epoch 1 start): 1506203091 + 1 * 432000 = 1506635091 s
     expect(getEpochEndTimeMs(0, "mainnet")).toBe(1506635091 * 1000)
 
-    // Epoch 500 end: 1506203091 + 501 * 432000 = 1722607091 s
-    expect(getEpochEndTimeMs(500, "mainnet")).toBe(1722607091 * 1000)
+    // Epoch 500 end: 1506203091 + 501 * 432000 = 1722635091 s
+    expect(getEpochEndTimeMs(500, "mainnet")).toBe(1722635091 * 1000)
   })
 
   it("computes epoch end time for preprod", () => {
